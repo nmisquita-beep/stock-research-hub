@@ -220,7 +220,7 @@ export default function AIInsights({ watchlist = [], darkMode, finnhubFetch }) {
       }
 
       // Call Gemini proxy
-      const response = await fetch('/api/gemini', {
+      const response = await fetch('https://stock-api-proxy-seven.vercel.app/api/gemini', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
