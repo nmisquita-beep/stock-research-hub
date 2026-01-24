@@ -1204,7 +1204,6 @@ const SECTORS = [
 function SectorsTab({ onSelectStock, darkMode }) {
   const [sectorData, setSectorData] = useState({})
   const [loading, setLoading] = useState(true)
-  const [selectedSector, setSelectedSector] = useState(null)
 
   useEffect(() => {
     const fetchSectors = async () => {
@@ -1234,7 +1233,7 @@ function SectorsTab({ onSelectStock, darkMode }) {
           <PieChart className="w-7 h-7 text-blue-400" />
           Sector Performance
         </h2>
-        <p className="text-gray-400 mt-1">S&P 500 sector breakdown</p>
+        <p className="text-gray-400 mt-1">Click any sector to view chart & details</p>
       </div>
 
       {/* Sector Heat Map */}
@@ -1246,66 +1245,27 @@ function SectorsTab({ onSelectStock, darkMode }) {
           return (
             <button
               key={sector.symbol}
-              onClick={() => setSelectedSector(sector)}
-              className={`rounded-xl p-4 text-left transition-all hover:scale-105 border ${
-                selectedSector?.symbol === sector.symbol
-                  ? 'border-blue-500 ring-2 ring-blue-500/30'
-                  : 'border-gray-700 hover:border-gray-600'
-              } ${isPositive ? 'bg-green-900/20' : 'bg-red-900/20'}`}
+              onClick={() => onSelectStock(sector.symbol)}
+              className={`rounded-xl p-4 text-left transition-all hover:scale-105 border border-gray-700 hover:border-gray-500 ${isPositive ? 'bg-green-900/20' : 'bg-red-900/20'}`}
             >
               <div className="text-xs text-gray-400 mb-1">{sector.symbol}</div>
               <div className="font-medium text-white text-sm truncate">{sector.name}</div>
               {loading ? (
                 <div className="h-5 bg-gray-700 rounded animate-pulse mt-2" />
               ) : (
-                <div className={`text-lg font-bold mt-1 ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
-                  {isPositive ? '+' : ''}{change.toFixed(2)}%
-                </div>
+                <>
+                  <div className={`text-lg font-bold mt-1 ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
+                    {isPositive ? '+' : ''}{change.toFixed(2)}%
+                  </div>
+                  <div className="text-xs text-gray-400 mt-1">
+                    ${data?.c?.toFixed(2) || '—'}
+                  </div>
+                </>
               )}
             </button>
           )
         })}
       </div>
-
-      {/* Selected Sector Details */}
-      {selectedSector && (
-        <div className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${selectedSector.color} flex items-center justify-center`}>
-                <Layers className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h3 className="font-bold text-white">{selectedSector.name}</h3>
-                <p className="text-gray-400 text-sm">{selectedSector.symbol}</p>
-              </div>
-            </div>
-            {sectorData[selectedSector.symbol] && (
-              <div className="text-right">
-                <div className="text-xl font-bold text-white">
-                  ${sectorData[selectedSector.symbol].c?.toFixed(2)}
-                </div>
-                <div className={`text-sm font-medium ${
-                  ((sectorData[selectedSector.symbol].c - sectorData[selectedSector.symbol].pc) / sectorData[selectedSector.symbol].pc * 100) >= 0
-                    ? 'text-green-400'
-                    : 'text-red-400'
-                }`}>
-                  {((sectorData[selectedSector.symbol].c - sectorData[selectedSector.symbol].pc) / sectorData[selectedSector.symbol].pc * 100) >= 0 ? '+' : ''}
-                  {((sectorData[selectedSector.symbol].c - sectorData[selectedSector.symbol].pc) / sectorData[selectedSector.symbol].pc * 100).toFixed(2)}%
-                </div>
-              </div>
-            )}
-          </div>
-
-          <button
-            onClick={() => onSelectStock(selectedSector.symbol)}
-            className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg text-white text-sm font-medium flex items-center justify-center gap-2"
-          >
-            <Eye className="w-4 h-4" />
-            View {selectedSector.symbol} Chart & Details
-          </button>
-        </div>
-      )}
     </div>
   )
 }
@@ -1506,8 +1466,6 @@ function EarningsTab({ onSelectStock, watchlist, darkMode }) {
   const [earnings, setEarnings] = useState([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all')
-  const [predictions, setPredictions] = useState({})
-  const [loadingPrediction, setLoadingPrediction] = useState(null)
 
   useEffect(() => {
     const fetchEarnings = async () => {
@@ -1539,48 +1497,6 @@ function EarningsTab({ onSelectStock, watchlist, darkMode }) {
     fetchEarnings()
   }, [])
 
-  const getPrediction = async (stock) => {
-    const cacheKey = `earnings_${stock.symbol}`
-    const cached = aiCache.get(cacheKey, 'earnings')
-    if (cached) {
-      setPredictions(prev => ({ ...prev, [stock.symbol]: cached }))
-      return
-    }
-
-    setLoadingPrediction(stock.symbol)
-    try {
-      const prompt = `Company: ${stock.name || stock.symbol} (${stock.symbol})
-Report Date: ${stock.date}
-Expected EPS: $${stock.expectedEps}
-Previous EPS: $${stock.prevEps}
-Current Price: $${stock.price?.toFixed(2) || 'N/A'}
-
-Will ${stock.symbol} BEAT, MISS, or MEET earnings expectations?
-Respond with JSON only: {"prediction": "BEAT" or "MISS" or "MEET", "confidence": "HIGH" or "MEDIUM" or "LOW", "reason": "one sentence specific to ${stock.symbol}'s business"}`
-
-      console.log('AI Prompt (Earnings):', prompt)
-      const rawPrediction = await groqFetch(prompt, {}, true)
-      const parsed = parseAiJson(rawPrediction)
-
-      if (parsed && parsed.prediction) {
-        setPredictions(prev => ({ ...prev, [stock.symbol]: parsed }))
-        aiCache.set(cacheKey, parsed)
-      } else {
-        // Fallback: try to extract from text
-        const fallback = {
-          prediction: rawPrediction.includes('BEAT') ? 'BEAT' : rawPrediction.includes('MISS') ? 'MISS' : 'MEET',
-          confidence: rawPrediction.includes('HIGH') ? 'HIGH' : rawPrediction.includes('LOW') ? 'LOW' : 'MEDIUM',
-          reason: rawPrediction.slice(0, 150)
-        }
-        setPredictions(prev => ({ ...prev, [stock.symbol]: fallback }))
-        aiCache.set(cacheKey, fallback)
-      }
-    } catch {
-      setPredictions(prev => ({ ...prev, [stock.symbol]: { prediction: 'N/A', confidence: 'LOW', reason: 'Prediction unavailable' } }))
-    }
-    setLoadingPrediction(null)
-  }
-
   const filteredEarnings = filter === 'watchlist'
     ? earnings.filter(e => watchlist?.includes(e.symbol))
     : earnings
@@ -1595,7 +1511,7 @@ Respond with JSON only: {"prediction": "BEAT" or "MISS" or "MEET", "confidence":
             <Calendar className="w-7 h-7 text-yellow-400" />
             Earnings Calendar
           </h2>
-          <p className="text-gray-400 mt-1">Upcoming earnings with AI predictions</p>
+          <p className="text-gray-400 mt-1">Upcoming earnings reports</p>
         </div>
 
         <div className="flex gap-2">
@@ -1620,30 +1536,31 @@ Respond with JSON only: {"prediction": "BEAT" or "MISS" or "MEET", "confidence":
 
       {loading ? (
         <div className="space-y-3">
-          {[1,2,3,4,5].map(i => <div key={i} className="h-24 bg-gray-800 rounded-xl animate-pulse" />)}
+          {[1,2,3,4,5].map(i => <div key={i} className="h-20 bg-gray-800 rounded-xl animate-pulse" />)}
         </div>
       ) : (
         <div className="space-y-3">
           {sortedEarnings.map(stock => {
             const isThisWeek = new Date(stock.date) <= new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
             return (
-              <div
+              <button
                 key={stock.symbol}
-                className={`rounded-xl p-4 border transition-all ${
-                  isThisWeek ? 'bg-yellow-900/20 border-yellow-500/30' : 'bg-gray-800/50 border-gray-700'
+                onClick={() => onSelectStock(stock.symbol)}
+                className={`w-full rounded-xl p-4 border transition-all cursor-pointer hover:scale-[1.01] ${
+                  isThisWeek
+                    ? 'bg-yellow-900/20 border-yellow-500/30 hover:border-yellow-500/50'
+                    : 'bg-gray-800/50 border-gray-700 hover:border-gray-500'
                 }`}
               >
                 <div className="flex items-center justify-between flex-wrap gap-4">
                   <div className="flex items-center gap-4">
-                    <button onClick={() => onSelectStock(stock.symbol)} className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-                        <span className="text-white font-bold">{stock.symbol.charAt(0)}</span>
-                      </div>
-                      <div>
-                        <div className="font-bold text-white">{stock.symbol}</div>
-                        <div className="text-sm text-gray-400">{stock.name}</div>
-                      </div>
-                    </button>
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                      <span className="text-white font-bold">{stock.symbol.charAt(0)}</span>
+                    </div>
+                    <div className="text-left">
+                      <div className="font-bold text-white">{stock.symbol}</div>
+                      <div className="text-sm text-gray-400">{stock.name}</div>
+                    </div>
                     {isThisWeek && (
                       <span className="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-medium rounded">
                         This Week
@@ -1664,45 +1581,9 @@ Respond with JSON only: {"prediction": "BEAT" or "MISS" or "MEET", "confidence":
                       <div className="text-xs text-gray-400">Previous EPS</div>
                       <div className="text-white font-medium">${stock.prevEps}</div>
                     </div>
-                    <button
-                      onClick={() => getPrediction(stock)}
-                      disabled={loadingPrediction === stock.symbol}
-                      className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-white text-sm flex items-center gap-2 disabled:opacity-50"
-                    >
-                      {loadingPrediction === stock.symbol ? (
-                        <RefreshCw className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Brain className="w-4 h-4" />
-                      )}
-                      Predict
-                    </button>
                   </div>
                 </div>
-
-                {predictions[stock.symbol] && (
-                  <div className="mt-4 p-3 bg-purple-900/20 rounded-lg border border-purple-500/20">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Sparkles className="w-4 h-4 text-purple-400" />
-                      <span className="text-sm font-medium text-purple-300">AI Prediction</span>
-                      <span className={`px-2 py-0.5 rounded text-xs font-bold ${
-                        predictions[stock.symbol].prediction === 'BEAT' ? 'bg-green-500/30 text-green-400' :
-                        predictions[stock.symbol].prediction === 'MISS' ? 'bg-red-500/30 text-red-400' :
-                        'bg-yellow-500/30 text-yellow-400'
-                      }`}>
-                        {predictions[stock.symbol].prediction || 'N/A'}
-                      </span>
-                      <span className={`px-2 py-0.5 rounded text-xs ${
-                        predictions[stock.symbol].confidence === 'HIGH' ? 'bg-blue-500/30 text-blue-400' :
-                        predictions[stock.symbol].confidence === 'LOW' ? 'bg-gray-500/30 text-gray-400' :
-                        'bg-purple-500/30 text-purple-400'
-                      }`}>
-                        {predictions[stock.symbol].confidence || 'MEDIUM'} confidence
-                      </span>
-                    </div>
-                    <p className="text-gray-200 text-sm">{predictions[stock.symbol].reason || predictions[stock.symbol]}</p>
-                  </div>
-                )}
-              </div>
+              </button>
             )
           })}
         </div>
