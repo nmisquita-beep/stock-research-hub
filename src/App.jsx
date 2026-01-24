@@ -5,13 +5,18 @@ import {
   Activity, Search, Bell, Moon, Sun, ArrowUp, ArrowDown, Zap, Target,
   GitCompare, ExternalLink, ChevronDown, ChevronUp, Compass, Calendar,
   PieChart, Briefcase, DollarSign, Percent, TrendingUp as TrendUp,
-  AlertTriangle, Layers, BarChart2, Wallet, Play, Pause, ChevronRight
+  AlertTriangle, Layers, BarChart2, Wallet, Play, Pause, ChevronRight,
+  Cloud, CloudOff, LogIn, LogOut, User
 } from 'lucide-react'
 import { LineChart, Line, ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, Cell } from 'recharts'
+import { auth, db, googleProvider } from './firebase'
+import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth'
+import { doc, setDoc, getDoc, onSnapshot } from 'firebase/firestore'
 
 // ============ CONTEXTS ============
 const ThemeContext = createContext({ dark: true, toggle: () => {} })
 const ToastContext = createContext({ addToast: () => {} })
+const AuthContext = createContext({ user: null, loading: true, signIn: () => {}, signOut: () => {} })
 
 // ============ CONSTANTS ============
 const SECTORS = [
@@ -182,6 +187,138 @@ function ToastProvider({ children }) {
 }
 
 const useToast = () => useContext(ToastContext)
+
+// ============ AUTH PROVIDER ============
+function AuthProvider({ children }) {
+  const [user, setUser] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setUser(user)
+      setLoading(false)
+    })
+    return () => unsubscribe()
+  }, [])
+
+  const handleSignIn = async () => {
+    try {
+      await signInWithPopup(auth, googleProvider)
+    } catch (error) {
+      console.error('Sign in error:', error)
+    }
+  }
+
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth)
+    } catch (error) {
+      console.error('Sign out error:', error)
+    }
+  }
+
+  return (
+    <AuthContext.Provider value={{ user, loading, signIn: handleSignIn, signOut: handleSignOut }}>
+      {children}
+    </AuthContext.Provider>
+  )
+}
+
+const useAuth = () => useContext(AuthContext)
+
+// ============ CLOUD SYNC HOOK ============
+function useCloudSync(key, localValue, setLocalValue, user) {
+  const [synced, setSynced] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  const isInitialMount = useRef(true)
+  const unsubscribeRef = useRef(null)
+
+  // Migrate localStorage data to Firestore on first sign-in
+  const migrateToCloud = useCallback(async () => {
+    if (!user) return
+    setSyncing(true)
+    try {
+      const docRef = doc(db, `users/${user.uid}/${key}`, 'data')
+      const docSnap = await getDoc(docRef)
+
+      if (!docSnap.exists()) {
+        // No cloud data - migrate local data
+        await setDoc(docRef, { value: localValue, updatedAt: new Date().toISOString() })
+      } else {
+        // Cloud data exists - use it
+        const cloudData = docSnap.data()
+        setLocalValue(cloudData.value)
+      }
+      setSynced(true)
+    } catch (error) {
+      console.error('Migration error:', error)
+    }
+    setSyncing(false)
+  }, [user, key, localValue, setLocalValue])
+
+  // Set up real-time listener
+  useEffect(() => {
+    if (!user) {
+      setSynced(false)
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current()
+        unsubscribeRef.current = null
+      }
+      return
+    }
+
+    const docRef = doc(db, `users/${user.uid}/${key}`, 'data')
+
+    unsubscribeRef.current = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const cloudData = docSnap.data()
+        setLocalValue(cloudData.value)
+        setSynced(true)
+      }
+    }, (error) => {
+      console.error('Snapshot error:', error)
+      setSynced(false)
+    })
+
+    return () => {
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current()
+      }
+    }
+  }, [user, key, setLocalValue])
+
+  // Sync local changes to cloud
+  useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false
+      if (user) migrateToCloud()
+      return
+    }
+
+    if (!user) {
+      // Save to localStorage when not signed in
+      localStorage.setItem(key, JSON.stringify(localValue))
+      return
+    }
+
+    // Debounced sync to cloud
+    const timeout = setTimeout(async () => {
+      setSyncing(true)
+      try {
+        const docRef = doc(db, `users/${user.uid}/${key}`, 'data')
+        await setDoc(docRef, { value: localValue, updatedAt: new Date().toISOString() })
+        setSynced(true)
+      } catch (error) {
+        console.error('Sync error:', error)
+      }
+      setSyncing(false)
+    }, 1000)
+
+    return () => clearTimeout(timeout)
+  }, [localValue, user, key, migrateToCloud])
+
+  return { synced, syncing }
+}
 
 // ============ UI COMPONENTS ============
 function Tooltip({ children, content }) {
@@ -514,21 +651,13 @@ function PriceTargetTracker({ symbol, currentPrice, apiKey, darkMode }) {
 }
 
 // ============ PORTFOLIO SIMULATOR ============
-function PortfolioSimulator({ apiKey, darkMode }) {
-  const [portfolio, setPortfolio] = useState(() => {
-    const saved = localStorage.getItem('paper_portfolio')
-    return saved ? JSON.parse(saved) : { cash: 100000, positions: [], history: [] }
-  })
+function PortfolioSimulator({ apiKey, darkMode, portfolio, setPortfolio }) {
   const [quotes, setQuotes] = useState({})
   const [showTrade, setShowTrade] = useState(false)
   const [tradeSymbol, setTradeSymbol] = useState('')
   const [tradeShares, setTradeShares] = useState('')
   const [tradeType, setTradeType] = useState('buy')
   const { addToast } = useToast()
-
-  useEffect(() => {
-    localStorage.setItem('paper_portfolio', JSON.stringify(portfolio))
-  }, [portfolio])
 
   useEffect(() => {
     const fetchQuotes = async () => {
@@ -881,7 +1010,10 @@ function MobileBottomNav({ activePage, setActivePage, darkMode }) {
 }
 
 // ============ DESKTOP NAVIGATION ============
-function DesktopNav({ activePage, setActivePage, rateLimitStatus, onSearchOpen, darkMode, toggleDarkMode }) {
+function DesktopNav({ activePage, setActivePage, rateLimitStatus, onSearchOpen, darkMode, toggleDarkMode, syncStatus }) {
+  const { user, loading: authLoading, signIn, signOut: handleSignOut } = useAuth()
+  const [showUserMenu, setShowUserMenu] = useState(false)
+
   const navItems = [
     { id: 'overview', label: 'Overview', icon: Home },
     { id: 'watchlist', label: 'Watchlist', icon: Star },
@@ -913,6 +1045,17 @@ function DesktopNav({ activePage, setActivePage, rateLimitStatus, onSearchOpen, 
             ))}
           </div>
           <div className="flex items-center gap-2">
+            {/* Sync Status Indicator */}
+            {user && (
+              <Tooltip content={syncStatus.synced ? 'Synced to cloud' : syncStatus.syncing ? 'Syncing...' : 'Not synced'}>
+                <div className={`hidden sm:flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full ${
+                  syncStatus.synced ? 'bg-green-500/20 text-green-400' : syncStatus.syncing ? 'bg-yellow-500/20 text-yellow-400' : 'bg-gray-500/20 text-gray-400'
+                }`}>
+                  {syncStatus.syncing ? <RefreshCw className="w-3 h-3 animate-spin" /> : syncStatus.synced ? <Cloud className="w-3 h-3" /> : <CloudOff className="w-3 h-3" />}
+                  <span>{syncStatus.synced ? 'Synced' : syncStatus.syncing ? 'Syncing' : 'Offline'}</span>
+                </div>
+              </Tooltip>
+            )}
             <Tooltip content="Search (/)">
               <button onClick={onSearchOpen} className={`p-2 rounded-lg transition-colors ${darkMode ? 'hover:bg-gray-700 text-gray-300' : 'hover:bg-gray-100 text-gray-600'}`}>
                 <Search className="w-5 h-5" />
@@ -927,6 +1070,44 @@ function DesktopNav({ activePage, setActivePage, rateLimitStatus, onSearchOpen, 
               <Activity className="w-3 h-3" />
               <span>{rateLimitStatus.remaining}/60</span>
             </div>
+            {/* User Profile / Sign In */}
+            {authLoading ? (
+              <div className={`w-8 h-8 rounded-full ${darkMode ? 'bg-gray-700' : 'bg-gray-200'} animate-pulse`} />
+            ) : user ? (
+              <div className="relative">
+                <button onClick={() => setShowUserMenu(!showUserMenu)} className="flex items-center gap-2">
+                  {user.photoURL ? (
+                    <img src={user.photoURL} alt={user.displayName} className="w-8 h-8 rounded-full border-2 border-blue-500" />
+                  ) : (
+                    <div className={`w-8 h-8 rounded-full ${darkMode ? 'bg-gray-700' : 'bg-gray-200'} flex items-center justify-center`}>
+                      <User className={`w-4 h-4 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
+                    </div>
+                  )}
+                </button>
+                {showUserMenu && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
+                    <div className={`absolute right-0 top-full mt-2 w-56 rounded-xl shadow-xl border z-50 overflow-hidden ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+                      <div className={`p-3 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                        <div className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>{user.displayName}</div>
+                        <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'} truncate`}>{user.email}</div>
+                      </div>
+                      <button onClick={() => { handleSignOut(); setShowUserMenu(false) }}
+                        className={`w-full flex items-center gap-2 p-3 text-left transition-colors ${darkMode ? 'hover:bg-gray-700 text-gray-300' : 'hover:bg-gray-50 text-gray-600'}`}>
+                        <LogOut className="w-4 h-4" />
+                        <span>Sign out</span>
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : (
+              <button onClick={signIn}
+                className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg text-white text-sm transition-colors">
+                <LogIn className="w-4 h-4" />
+                <span className="hidden sm:inline">Sign in</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -1161,7 +1342,6 @@ function Watchlist({ apiKey, watchlist, setWatchlist, onSelectStock, darkMode })
       if (data.c === 0 && data.h === 0) { addToast('Invalid symbol', 'error'); return }
       const newWatchlist = [...watchlist, symbol]
       setWatchlist(newWatchlist)
-      localStorage.setItem('watchlist', JSON.stringify(newWatchlist))
       setQuotes(prev => ({ ...prev, [symbol]: { ...data, timestamp: new Date() } }))
       addToast(`${symbol} added`, 'success')
       setShowSearch(false)
@@ -1171,7 +1351,6 @@ function Watchlist({ apiKey, watchlist, setWatchlist, onSelectStock, darkMode })
   const removeSymbol = (symbol) => {
     const newWatchlist = watchlist.filter(s => s !== symbol)
     setWatchlist(newWatchlist)
-    localStorage.setItem('watchlist', JSON.stringify(newWatchlist))
     addToast(`${symbol} removed`, 'info')
   }
 
@@ -1330,14 +1509,14 @@ function ExplorePage({ apiKey, onSelectStock, darkMode }) {
 }
 
 // ============ PORTFOLIO PAGE ============
-function PortfolioPage({ apiKey, darkMode }) {
+function PortfolioPage({ apiKey, darkMode, portfolio, setPortfolio }) {
   return (
     <div className="space-y-6 animate-fade-in">
       <div>
         <h2 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>Portfolio</h2>
         <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>Practice trading with $100,000 virtual cash</p>
       </div>
-      <PortfolioSimulator apiKey={apiKey} darkMode={darkMode} />
+      <PortfolioSimulator apiKey={apiKey} darkMode={darkMode} portfolio={portfolio} setPortfolio={setPortfolio} />
     </div>
   )
 }
@@ -1405,9 +1584,10 @@ function NewsPage({ apiKey, darkMode }) {
 }
 
 // ============ SETTINGS PAGE ============
-function SettingsPage({ apiKey, onChangeApiKey, darkMode }) {
+function SettingsPage({ apiKey, onChangeApiKey, darkMode, syncStatus }) {
   const [newApiKey, setNewApiKey] = useState(apiKey)
   const { addToast } = useToast()
+  const { user, signIn, signOut: handleSignOut } = useAuth()
 
   const handleSave = () => {
     localStorage.setItem('finnhub_api_key', newApiKey)
@@ -1416,12 +1596,71 @@ function SettingsPage({ apiKey, onChangeApiKey, darkMode }) {
   }
 
   const handleClear = () => {
-    if (window.confirm('Clear all data?')) { localStorage.clear(); window.location.reload() }
+    if (window.confirm('Clear all local data? Cloud data will remain.')) { localStorage.clear(); window.location.reload() }
   }
 
   return (
     <div className="space-y-6 max-w-2xl animate-fade-in">
       <h2 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Settings</h2>
+
+      {/* Account Section */}
+      <div className={`rounded-xl border p-6 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+        <div className="flex items-center gap-3 mb-4">
+          <User className={`w-5 h-5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
+          <h3 className={`text-lg font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>Account</h3>
+        </div>
+        {user ? (
+          <div className="space-y-4">
+            <div className="flex items-center gap-4">
+              {user.photoURL ? (
+                <img src={user.photoURL} alt={user.displayName} className="w-12 h-12 rounded-full border-2 border-blue-500" />
+              ) : (
+                <div className={`w-12 h-12 rounded-full ${darkMode ? 'bg-gray-700' : 'bg-gray-200'} flex items-center justify-center`}>
+                  <User className={`w-6 h-6 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
+                </div>
+              )}
+              <div>
+                <div className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>{user.displayName}</div>
+                <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{user.email}</div>
+              </div>
+            </div>
+            <div className={`flex items-center gap-2 p-3 rounded-lg ${syncStatus.synced ? 'bg-green-500/10' : 'bg-yellow-500/10'}`}>
+              {syncStatus.syncing ? (
+                <RefreshCw className="w-4 h-4 text-yellow-400 animate-spin" />
+              ) : syncStatus.synced ? (
+                <Cloud className="w-4 h-4 text-green-400" />
+              ) : (
+                <CloudOff className="w-4 h-4 text-yellow-400" />
+              )}
+              <span className={`text-sm ${syncStatus.synced ? 'text-green-400' : 'text-yellow-400'}`}>
+                {syncStatus.syncing ? 'Syncing data to cloud...' : syncStatus.synced ? 'Data synced to cloud' : 'Waiting to sync...'}
+              </span>
+            </div>
+            <button onClick={handleSignOut}
+              className="flex items-center gap-2 px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded-lg text-white">
+              <LogOut className="w-4 h-4" />
+              Sign out
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className={`p-4 rounded-lg ${darkMode ? 'bg-blue-500/10 border border-blue-500/20' : 'bg-blue-50 border border-blue-100'}`}>
+              <div className="flex items-center gap-2 mb-2">
+                <Cloud className="w-5 h-5 text-blue-400" />
+                <span className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>Sync across devices</span>
+              </div>
+              <p className={`text-sm mb-3 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                Sign in to sync your watchlist, portfolio, and settings across all your devices.
+              </p>
+              <button onClick={signIn}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-white">
+                <LogIn className="w-4 h-4" />
+                Sign in with Google
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       <div className={`rounded-xl border p-6 space-y-6 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
         <div>
@@ -1436,7 +1675,7 @@ function SettingsPage({ apiKey, onChangeApiKey, darkMode }) {
         <hr className={darkMode ? 'border-gray-700' : 'border-gray-200'} />
 
         <div>
-          <h3 className={`text-lg font-medium mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>Data</h3>
+          <h3 className={`text-lg font-medium mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>Local Data</h3>
           <button onClick={handleClear} className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-white flex items-center gap-2">
             <Trash2 className="w-4 h-4" /> Clear All Data
           </button>
@@ -1460,8 +1699,9 @@ function SettingsPage({ apiKey, onChangeApiKey, darkMode }) {
   )
 }
 
-// ============ MAIN APP ============
-function App() {
+// ============ APP CONTENT (WITH AUTH CONTEXT) ============
+function AppContent() {
+  const { user, loading: authLoading } = useAuth()
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('finnhub_api_key') || '')
   const [activePage, setActivePage] = useState('overview')
   const [selectedStock, setSelectedStock] = useState(null)
@@ -1471,7 +1711,26 @@ function App() {
     const saved = localStorage.getItem('watchlist')
     return saved ? JSON.parse(saved) : ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA']
   })
+  const [portfolio, setPortfolio] = useState(() => {
+    const saved = localStorage.getItem('paper_portfolio')
+    return saved ? JSON.parse(saved) : { cash: 100000, positions: [], history: [] }
+  })
+  const [settings, setSettings] = useState(() => {
+    const saved = localStorage.getItem('user_settings')
+    return saved ? JSON.parse(saved) : { apiKey: localStorage.getItem('finnhub_api_key') || '' }
+  })
   const [rateLimitStatus, setRateLimitStatus] = useState({ used: 0, remaining: 60 })
+
+  // Cloud sync hooks - only sync when user is signed in
+  const watchlistSync = useCloudSync('watchlist', watchlist, setWatchlist, user)
+  const portfolioSync = useCloudSync('portfolio', portfolio, setPortfolio, user)
+  const settingsSync = useCloudSync('settings', settings, setSettings, user)
+
+  // Combined sync status
+  const syncStatus = {
+    synced: user ? (watchlistSync.synced && portfolioSync.synced && settingsSync.synced) : false,
+    syncing: user ? (watchlistSync.syncing || portfolioSync.syncing || settingsSync.syncing) : false
+  }
 
   useEffect(() => {
     const interval = setInterval(() => setRateLimitStatus(rateLimiter.getStatus()), 1000)
@@ -1491,29 +1750,91 @@ function App() {
 
   useEffect(() => { localStorage.setItem('dark_mode', darkMode) }, [darkMode])
 
-  if (!apiKey) return <ErrorBoundary><ApiKeySetup onSave={setApiKey} /></ErrorBoundary>
+  // Sync settings apiKey with local apiKey state
+  useEffect(() => {
+    if (settings.apiKey && settings.apiKey !== apiKey) {
+      setApiKey(settings.apiKey)
+    }
+  }, [settings.apiKey])
+
+  const handleChangeApiKey = (newKey) => {
+    setApiKey(newKey)
+    setSettings(prev => ({ ...prev, apiKey: newKey }))
+    localStorage.setItem('finnhub_api_key', newKey)
+  }
+
+  // Show loading while auth state is being determined
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <div className="text-center">
+          <RefreshCw className="w-8 h-8 text-blue-500 animate-spin mx-auto mb-4" />
+          <p className="text-gray-400">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!apiKey) return <ApiKeySetup onSave={handleChangeApiKey} />
+
+  const { signIn } = useAuth()
+  const [dismissedSyncBanner, setDismissedSyncBanner] = useState(() => sessionStorage.getItem('dismissed_sync_banner') === 'true')
+
+  const dismissBanner = () => {
+    setDismissedSyncBanner(true)
+    sessionStorage.setItem('dismissed_sync_banner', 'true')
+  }
 
   return (
-    <ErrorBoundary>
-      <ToastProvider>
-        <div className={`min-h-screen pb-20 md:pb-0 transition-colors ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
-          <DesktopNav activePage={activePage} setActivePage={setActivePage} rateLimitStatus={rateLimitStatus}
-            onSearchOpen={() => setShowSearch(true)} darkMode={darkMode} toggleDarkMode={() => setDarkMode(!darkMode)} />
-          <MobileBottomNav activePage={activePage} setActivePage={setActivePage} darkMode={darkMode} />
+    <div className={`min-h-screen pb-20 md:pb-0 transition-colors ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
+      <DesktopNav activePage={activePage} setActivePage={setActivePage} rateLimitStatus={rateLimitStatus}
+        onSearchOpen={() => setShowSearch(true)} darkMode={darkMode} toggleDarkMode={() => setDarkMode(!darkMode)} syncStatus={syncStatus} />
+      <MobileBottomNav activePage={activePage} setActivePage={setActivePage} darkMode={darkMode} />
 
-          <main className="max-w-7xl mx-auto px-4 py-6">
-            {activePage === 'overview' && <MarketOverview apiKey={apiKey} onSelectStock={setSelectedStock} darkMode={darkMode} />}
-            {activePage === 'watchlist' && <Watchlist apiKey={apiKey} watchlist={watchlist} setWatchlist={setWatchlist} onSelectStock={setSelectedStock} darkMode={darkMode} />}
-            {activePage === 'explore' && <ExplorePage apiKey={apiKey} onSelectStock={setSelectedStock} darkMode={darkMode} />}
-            {activePage === 'portfolio' && <PortfolioPage apiKey={apiKey} darkMode={darkMode} />}
-            {activePage === 'news' && <NewsPage apiKey={apiKey} darkMode={darkMode} />}
-            {activePage === 'settings' && <SettingsPage apiKey={apiKey} onChangeApiKey={setApiKey} darkMode={darkMode} />}
-          </main>
-
-          {selectedStock && <StockDetail symbol={selectedStock} apiKey={apiKey} onClose={() => setSelectedStock(null)} darkMode={darkMode} />}
-          {showSearch && <PredictiveSearch apiKey={apiKey} onSelect={setSelectedStock} onClose={() => setShowSearch(false)} />}
+      {/* Sign in to sync banner */}
+      {!user && !dismissedSyncBanner && (
+        <div className={`border-b ${darkMode ? 'bg-blue-900/20 border-blue-500/30' : 'bg-blue-50 border-blue-100'}`}>
+          <div className="max-w-7xl mx-auto px-4 py-2.5 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2 text-sm">
+              <Cloud className={`w-4 h-4 ${darkMode ? 'text-blue-400' : 'text-blue-500'}`} />
+              <span className={darkMode ? 'text-gray-300' : 'text-gray-700'}>Sign in to sync your data across devices</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={signIn} className="px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded-lg text-white text-sm">
+                Sign in
+              </button>
+              <button onClick={dismissBanner} className={`p-1 rounded ${darkMode ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-200 text-gray-500'}`}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
         </div>
-      </ToastProvider>
+      )}
+
+      <main className="max-w-7xl mx-auto px-4 py-6">
+        {activePage === 'overview' && <MarketOverview apiKey={apiKey} onSelectStock={setSelectedStock} darkMode={darkMode} />}
+        {activePage === 'watchlist' && <Watchlist apiKey={apiKey} watchlist={watchlist} setWatchlist={setWatchlist} onSelectStock={setSelectedStock} darkMode={darkMode} />}
+        {activePage === 'explore' && <ExplorePage apiKey={apiKey} onSelectStock={setSelectedStock} darkMode={darkMode} />}
+        {activePage === 'portfolio' && <PortfolioPage apiKey={apiKey} darkMode={darkMode} portfolio={portfolio} setPortfolio={setPortfolio} />}
+        {activePage === 'news' && <NewsPage apiKey={apiKey} darkMode={darkMode} />}
+        {activePage === 'settings' && <SettingsPage apiKey={apiKey} onChangeApiKey={handleChangeApiKey} darkMode={darkMode} syncStatus={syncStatus} />}
+      </main>
+
+      {selectedStock && <StockDetail symbol={selectedStock} apiKey={apiKey} onClose={() => setSelectedStock(null)} darkMode={darkMode} />}
+      {showSearch && <PredictiveSearch apiKey={apiKey} onSelect={setSelectedStock} onClose={() => setShowSearch(false)} />}
+    </div>
+  )
+}
+
+// ============ MAIN APP ============
+function App() {
+  return (
+    <ErrorBoundary>
+      <AuthProvider>
+        <ToastProvider>
+          <AppContent />
+        </ToastProvider>
+      </AuthProvider>
     </ErrorBoundary>
   )
 }
