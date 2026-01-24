@@ -46,34 +46,86 @@ class RateLimiter {
     this.maxCalls = maxCalls
     this.windowMs = windowMs
     this.calls = []
+    this.waitingUntil = null
+    this.listeners = []
   }
+
+  addListener(callback) {
+    this.listeners.push(callback)
+    return () => {
+      this.listeners = this.listeners.filter(l => l !== callback)
+    }
+  }
+
+  notifyListeners() {
+    const status = this.getStatus()
+    this.listeners.forEach(callback => callback(status))
+  }
+
   async throttle() {
     const now = Date.now()
     this.calls = this.calls.filter(time => now - time < this.windowMs)
+
     if (this.calls.length >= this.maxCalls) {
       const waitTime = this.windowMs - (now - this.calls[0]) + 100
-      await new Promise(resolve => setTimeout(resolve, waitTime))
+      this.waitingUntil = now + waitTime
+      this.notifyListeners()
+
+      // Don't block indefinitely - use a shorter wait with retry
+      const actualWait = Math.min(waitTime, 5000)
+      await new Promise(resolve => setTimeout(resolve, actualWait))
+      this.waitingUntil = null
+      this.notifyListeners()
+
+      // After waiting, check if we can proceed
       return this.throttle()
     }
+
     this.calls.push(now)
+    this.notifyListeners()
     return true
   }
+
   getStatus() {
     const now = Date.now()
     this.calls = this.calls.filter(time => now - time < this.windowMs)
-    return { used: this.calls.length, remaining: this.maxCalls - this.calls.length }
+    const remaining = this.maxCalls - this.calls.length
+    const waitTimeLeft = this.waitingUntil ? Math.max(0, this.waitingUntil - now) : 0
+
+    return {
+      used: this.calls.length,
+      remaining,
+      isLimited: remaining <= 0,
+      waitTimeLeft,
+      waitingUntil: this.waitingUntil
+    }
   }
 }
 
 const rateLimiter = new RateLimiter(60, 60000)
 
 // ============ API HELPERS ============
-const finnhubFetch = async (endpoint, apiKey) => {
+const finnhubFetch = async (endpoint, apiKey, timeout = 10000) => {
   await rateLimiter.throttle()
   const separator = endpoint.includes('?') ? '&' : '?'
-  const response = await fetch(`https://finnhub.io/api/v1${endpoint}${separator}token=${apiKey}`)
-  if (!response.ok) throw new Error(`API Error: ${response.status}`)
-  return response.json()
+
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeout)
+
+  try {
+    const response = await fetch(`https://finnhub.io/api/v1${endpoint}${separator}token=${apiKey}`, {
+      signal: controller.signal
+    })
+    clearTimeout(timeoutId)
+    if (!response.ok) throw new Error(`API Error: ${response.status}`)
+    return response.json()
+  } catch (error) {
+    clearTimeout(timeoutId)
+    if (error.name === 'AbortError') {
+      throw new Error('Request timeout')
+    }
+    throw error
+  }
 }
 
 // ============ UTILITY FUNCTIONS ============
@@ -957,32 +1009,85 @@ function ApiKeySetup({ onSave }) {
     try {
       const response = await fetch(`https://finnhub.io/api/v1/quote?symbol=AAPL&token=${apiKey}`)
       const data = await response.json()
-      if (data.error || (data.c === 0 && data.h === 0)) { setError('Invalid API key') }
-      else { localStorage.setItem('finnhub_api_key', apiKey); onSave(apiKey) }
-    } catch { setError('Failed to validate') }
+      if (data.error || (data.c === 0 && data.h === 0)) {
+        setError('Invalid API key. Please check and try again.')
+      } else {
+        localStorage.setItem('finnhub_api_key', apiKey)
+        onSave(apiKey)
+      }
+    } catch {
+      setError('Failed to validate. Check your connection and try again.')
+    }
     finally { setTesting(false) }
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center p-4">
       <div className="bg-gray-800/80 backdrop-blur-xl rounded-2xl p-8 max-w-md w-full shadow-2xl border border-gray-700 animate-scale-in">
-        <div className="text-center mb-8">
+        <div className="text-center mb-6">
           <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
             <BarChart3 className="w-10 h-10 text-white" />
           </div>
           <h1 className="text-3xl font-bold text-white mb-2">Stock Research Hub</h1>
-          <p className="text-gray-400">Enter your Finnhub API key</p>
+          <p className="text-gray-400">Free real-time stock data and analysis</p>
         </div>
+
+        {/* Onboarding instructions */}
+        <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 mb-6">
+          <h3 className="text-blue-300 font-medium mb-2 flex items-center gap-2">
+            <Zap className="w-4 h-4" />
+            Get your FREE API key (30 seconds)
+          </h3>
+          <ol className="text-gray-300 text-sm space-y-1.5 list-decimal list-inside">
+            <li>Go to <span className="text-blue-400">finnhub.io/register</span></li>
+            <li>Create a free account</li>
+            <li>Copy your API key from the dashboard</li>
+          </ol>
+          <div className="mt-3 pt-3 border-t border-blue-500/20">
+            <p className="text-gray-400 text-xs">
+              Free tier includes: 60 API calls/minute, 15-min delayed stock data, real-time news
+            </p>
+          </div>
+        </div>
+
         <div className="space-y-4">
-          <input type="text" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="API key"
-            className="w-full px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-blue-500" />
-          {error && <div className="text-red-400 text-sm flex items-center gap-2"><AlertCircle className="w-4 h-4" />{error}</div>}
-          <button onClick={testAndSave} disabled={testing} className="w-full py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:opacity-50 text-white font-medium rounded-xl flex items-center justify-center gap-2">
-            {testing ? <><RefreshCw className="w-4 h-4 animate-spin" />Validating...</> : 'Continue'}
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1.5">Your API Key</label>
+            <input
+              type="text"
+              value={apiKey}
+              onChange={e => setApiKey(e.target.value)}
+              placeholder="Paste your API key here..."
+              className="w-full px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
+
+          {error && (
+            <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
+              <div className="text-red-400 text-sm flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                {error}
+              </div>
+            </div>
+          )}
+
+          <button
+            onClick={testAndSave}
+            disabled={testing}
+            className="w-full py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:opacity-50 text-white font-medium rounded-xl flex items-center justify-center gap-2 transition-all"
+          >
+            {testing ? <><RefreshCw className="w-4 h-4 animate-spin" />Validating...</> : 'Get Started'}
           </button>
-          <p className="text-center text-sm text-gray-500">
-            <a href="https://finnhub.io/register" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300">Get free API key</a>
-          </p>
+
+          <a
+            href="https://finnhub.io/register"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full py-3 bg-gray-700/50 hover:bg-gray-700 border border-gray-600 text-white font-medium rounded-xl flex items-center justify-center gap-2 transition-all"
+          >
+            <ExternalLink className="w-4 h-4" />
+            Get Free API Key
+          </a>
         </div>
       </div>
     </div>
@@ -1533,57 +1638,137 @@ function PortfolioPage({ apiKey, darkMode, portfolio, setPortfolio }) {
 }
 
 // ============ NEWS PAGE ============
+// Crypto-related keywords to filter out from stock news
+const CRYPTO_KEYWORDS = ['bitcoin', 'btc', 'ethereum', 'eth', 'crypto', 'cryptocurrency', 'blockchain', 'dogecoin', 'solana', 'cardano', 'xrp', 'ripple', 'binance', 'coinbase', 'nft', 'defi', 'altcoin', 'token', 'mining', 'wallet']
+
 function NewsPage({ apiKey, darkMode }) {
   const [news, setNews] = useState([])
   const [loading, setLoading] = useState(true)
   const [category, setCategory] = useState('general')
-  const categories = [{ id: 'general', label: 'General' }, { id: 'forex', label: 'Forex' }, { id: 'crypto', label: 'Crypto' }, { id: 'merger', label: 'M&A' }]
+  const [hideCrypto, setHideCrypto] = useState(() => localStorage.getItem('hide_crypto_news') === 'true')
+  const categories = [
+    { id: 'general', label: 'Market News' },
+    { id: 'forex', label: 'Forex' },
+    { id: 'crypto', label: 'Crypto' },
+    { id: 'merger', label: 'M&A' }
+  ]
+
+  const isCryptoRelated = (article) => {
+    const text = `${article.headline || ''} ${article.summary || ''}`.toLowerCase()
+    return CRYPTO_KEYWORDS.some(keyword => text.includes(keyword))
+  }
 
   const fetchNews = useCallback(async () => {
     setLoading(true)
     try {
       const data = await finnhubFetch(`/news?category=${category}`, apiKey)
-      setNews(Array.isArray(data) ? data.slice(0, 15) : [])
-    } catch { setNews([]) }
+      let filteredNews = Array.isArray(data) ? data : []
+
+      // Filter out crypto news if enabled and not on crypto tab
+      if (hideCrypto && category !== 'crypto') {
+        filteredNews = filteredNews.filter(article => !isCryptoRelated(article))
+      }
+
+      setNews(filteredNews.slice(0, 20))
+    } catch {
+      setNews([])
+    }
     finally { setLoading(false) }
-  }, [apiKey, category])
+  }, [apiKey, category, hideCrypto])
 
   useEffect(() => { fetchNews() }, [fetchNews])
 
+  const toggleHideCrypto = () => {
+    const newValue = !hideCrypto
+    setHideCrypto(newValue)
+    localStorage.setItem('hide_crypto_news', String(newValue))
+  }
+
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <h2 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Market News</h2>
-        <button onClick={fetchNews} disabled={loading} className={`p-2 rounded-lg ${darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'}`}>
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h2 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Market News</h2>
+          <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Latest financial news and updates</p>
+        </div>
+        <button
+          onClick={fetchNews}
+          disabled={loading}
+          className={`p-2.5 rounded-xl transition-colors ${darkMode ? 'bg-gray-800 hover:bg-gray-700 border border-gray-700' : 'bg-white hover:bg-gray-50 border border-gray-200'}`}
+        >
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''} ${darkMode ? 'text-gray-300' : 'text-gray-600'}`} />
         </button>
       </div>
 
-      <div className="flex gap-2 overflow-x-auto pb-2">
-        {categories.map(cat => (
-          <button key={cat.id} onClick={() => setCategory(cat.id)}
-            className={`px-4 py-2 rounded-lg whitespace-nowrap transition-all ${
-              category === cat.id ? 'bg-blue-600 text-white' : darkMode ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}>
-            {cat.label}
-          </button>
-        ))}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {categories.map(cat => (
+            <button
+              key={cat.id}
+              onClick={() => setCategory(cat.id)}
+              className={`px-4 py-2 rounded-xl whitespace-nowrap transition-all font-medium ${
+                category === cat.id
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25'
+                  : darkMode ? 'bg-gray-800 text-gray-300 hover:bg-gray-700 border border-gray-700' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
+              }`}
+            >
+              {cat.label}
+            </button>
+          ))}
+        </div>
+
+        {category !== 'crypto' && (
+          <label className={`flex items-center gap-2 text-sm cursor-pointer ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+            <input
+              type="checkbox"
+              checked={hideCrypto}
+              onChange={toggleHideCrypto}
+              className="w-4 h-4 rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-500"
+            />
+            Hide crypto news
+          </label>
+        )}
       </div>
 
       {loading ? (
-        <div className="space-y-4">{[1,2,3].map(i => <Skeleton key={i} className="h-24 w-full" />)}</div>
-      ) : (
         <div className="space-y-4">
+          {[1, 2, 3].map(i => (
+            <div key={i} className={`h-24 rounded-xl animate-pulse ${darkMode ? 'bg-gray-800' : 'bg-gray-100'}`} />
+          ))}
+        </div>
+      ) : news.length === 0 ? (
+        <div className={`rounded-xl p-12 border text-center ${darkMode ? 'bg-gray-800/50 border-gray-700' : 'bg-white border-gray-200'}`}>
+          <Newspaper className={`w-12 h-12 mx-auto mb-4 ${darkMode ? 'text-gray-600' : 'text-gray-300'}`} />
+          <h3 className={`text-lg font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>No news found</h3>
+          <p className={`${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>Try a different category or refresh</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
           {news.map((article, i) => {
             const sentiment = analyzeSentiment(article.headline)
+            const isCrypto = isCryptoRelated(article)
             return (
-              <a key={i} href={article.url} target="_blank" rel="noopener noreferrer"
-                className={`block rounded-xl p-4 border transition-all hover:scale-[1.01] ${darkMode ? 'bg-gray-800/50 border-gray-700 hover:border-gray-600' : 'bg-white border-gray-200 hover:shadow-md'}`}>
+              <a
+                key={i}
+                href={article.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`block rounded-xl p-4 border transition-all hover:scale-[1.005] ${darkMode ? 'bg-gray-800/50 border-gray-700 hover:border-gray-600 hover:bg-gray-800' : 'bg-white border-gray-200 hover:shadow-md hover:border-gray-300'}`}
+              >
                 <h3 className={`font-medium mb-2 line-clamp-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>{article.headline}</h3>
-                <div className="flex items-center gap-3 text-sm">
+                <div className="flex items-center gap-3 text-sm flex-wrap">
                   <span className={darkMode ? 'text-gray-500' : 'text-gray-400'}>{article.source}</span>
                   <span className={darkMode ? 'text-gray-500' : 'text-gray-400'}>{new Date(article.datetime * 1000).toLocaleDateString()}</span>
-                  <span className={`px-2 py-0.5 rounded-full text-xs ${sentiment.label === 'bullish' ? 'bg-green-500/20 text-green-400' : sentiment.label === 'bearish' ? 'bg-red-500/20 text-red-400' : 'bg-gray-500/20 text-gray-400'}`}>{sentiment.label}</span>
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                    sentiment.label === 'bullish' ? 'bg-green-500/20 text-green-400' :
+                    sentiment.label === 'bearish' ? 'bg-red-500/20 text-red-400' :
+                    'bg-gray-500/20 text-gray-400'
+                  }`}>
+                    {sentiment.label}
+                  </span>
+                  {isCrypto && category !== 'crypto' && (
+                    <span className="px-2 py-0.5 rounded-full text-xs bg-orange-500/20 text-orange-400">crypto</span>
+                  )}
                 </div>
               </a>
             )
@@ -1597,22 +1782,61 @@ function NewsPage({ apiKey, darkMode }) {
 // ============ SETTINGS PAGE ============
 function SettingsPage({ apiKey, onChangeApiKey, darkMode, syncStatus }) {
   const [newApiKey, setNewApiKey] = useState(apiKey)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState(null) // 'success', 'error', null
   const { addToast } = useToast()
   const { user, signIn, signOut: handleSignOut } = useAuth()
 
-  const handleSave = () => {
-    localStorage.setItem('finnhub_api_key', newApiKey)
-    onChangeApiKey(newApiKey)
-    addToast('API key saved', 'success')
+  const validateAndSave = async () => {
+    if (!newApiKey.trim()) {
+      addToast('Please enter an API key', 'error')
+      return
+    }
+
+    setTesting(true)
+    setTestResult(null)
+
+    try {
+      const response = await fetch(`https://finnhub.io/api/v1/quote?symbol=AAPL&token=${newApiKey}`)
+      const data = await response.json()
+
+      if (data.error || (data.c === 0 && data.h === 0)) {
+        setTestResult('error')
+        addToast('Invalid API key', 'error')
+      } else {
+        setTestResult('success')
+        localStorage.setItem('finnhub_api_key', newApiKey)
+        onChangeApiKey(newApiKey)
+        addToast('API key saved successfully', 'success')
+      }
+    } catch {
+      setTestResult('error')
+      addToast('Failed to validate API key', 'error')
+    }
+
+    setTesting(false)
+  }
+
+  const handleReset = () => {
+    if (window.confirm('Reset API key? You will need to enter a new one.')) {
+      localStorage.removeItem('finnhub_api_key')
+      onChangeApiKey('')
+    }
   }
 
   const handleClear = () => {
-    if (window.confirm('Clear all local data? Cloud data will remain.')) { localStorage.clear(); window.location.reload() }
+    if (window.confirm('Clear all local data? Cloud data will remain.')) {
+      localStorage.clear()
+      window.location.reload()
+    }
   }
 
   return (
     <div className="space-y-6 max-w-2xl animate-fade-in">
-      <h2 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Settings</h2>
+      <div>
+        <h2 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Settings</h2>
+        <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Manage your account and preferences</p>
+      </div>
 
       {/* Account Section */}
       <div className={`rounded-xl border p-6 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
@@ -1647,24 +1871,28 @@ function SettingsPage({ apiKey, onChangeApiKey, darkMode, syncStatus }) {
                 {syncStatus.syncing ? 'Syncing data to cloud...' : syncStatus.synced ? 'Data synced to cloud' : 'Waiting to sync...'}
               </span>
             </div>
-            <button onClick={handleSignOut}
-              className="flex items-center gap-2 px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded-lg text-white">
+            <button
+              onClick={handleSignOut}
+              className="flex items-center gap-2 px-4 py-2.5 bg-gray-600 hover:bg-gray-700 rounded-xl text-white transition-colors"
+            >
               <LogOut className="w-4 h-4" />
               Sign out
             </button>
           </div>
         ) : (
           <div className="space-y-4">
-            <div className={`p-4 rounded-lg ${darkMode ? 'bg-blue-500/10 border border-blue-500/20' : 'bg-blue-50 border border-blue-100'}`}>
+            <div className={`p-4 rounded-xl ${darkMode ? 'bg-blue-500/10 border border-blue-500/20' : 'bg-blue-50 border border-blue-100'}`}>
               <div className="flex items-center gap-2 mb-2">
                 <Cloud className="w-5 h-5 text-blue-400" />
                 <span className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>Sync across devices</span>
               </div>
-              <p className={`text-sm mb-3 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+              <p className={`text-sm mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
                 Sign in to sync your watchlist, portfolio, and settings across all your devices.
               </p>
-              <button onClick={signIn}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-white">
+              <button
+                onClick={signIn}
+                className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 rounded-xl text-white transition-colors"
+              >
                 <LogIn className="w-4 h-4" />
                 Sign in with Google
               </button>
@@ -1673,36 +1901,112 @@ function SettingsPage({ apiKey, onChangeApiKey, darkMode, syncStatus }) {
         )}
       </div>
 
-      <div className={`rounded-xl border p-6 space-y-6 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-        <div>
-          <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Finnhub API Key</label>
-          <div className="flex gap-2">
-            <input type="text" value={newApiKey} onChange={e => setNewApiKey(e.target.value)}
-              className={`flex-1 px-4 py-2 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-200'}`} />
-            <button onClick={handleSave} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-white">Save</button>
-          </div>
+      {/* API Key Section */}
+      <div className={`rounded-xl border p-6 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+        <div className="flex items-center gap-3 mb-4">
+          <Settings className={`w-5 h-5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
+          <h3 className={`text-lg font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>API Configuration</h3>
         </div>
 
-        <hr className={darkMode ? 'border-gray-700' : 'border-gray-200'} />
+        <div className="space-y-4">
+          <div>
+            <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+              Finnhub API Key
+            </label>
+            <div className="flex gap-2">
+              <div className="flex-1 relative">
+                <input
+                  type="text"
+                  value={newApiKey}
+                  onChange={e => {
+                    setNewApiKey(e.target.value)
+                    setTestResult(null)
+                  }}
+                  placeholder="Enter your API key..."
+                  className={`w-full px-4 py-2.5 rounded-xl border ${
+                    testResult === 'success' ? 'border-green-500' :
+                    testResult === 'error' ? 'border-red-500' :
+                    darkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'bg-gray-50 border-gray-200 placeholder-gray-400'
+                  }`}
+                />
+                {testResult === 'success' && (
+                  <CheckCircle className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-green-400" />
+                )}
+                {testResult === 'error' && (
+                  <AlertCircle className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-red-400" />
+                )}
+              </div>
+              <button
+                onClick={validateAndSave}
+                disabled={testing || !newApiKey.trim()}
+                className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-xl text-white font-medium transition-colors flex items-center gap-2"
+              >
+                {testing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                {testing ? 'Testing...' : 'Save'}
+              </button>
+            </div>
+            {testResult === 'error' && (
+              <p className="text-red-400 text-sm mt-2 flex items-center gap-1">
+                <AlertCircle className="w-4 h-4" />
+                Invalid API key. Please check and try again.
+              </p>
+            )}
+          </div>
 
-        <div>
-          <h3 className={`text-lg font-medium mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>Local Data</h3>
-          <button onClick={handleClear} className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-white flex items-center gap-2">
-            <Trash2 className="w-4 h-4" /> Clear All Data
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <a
+              href="https://finnhub.io/register"
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm transition-colors ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
+            >
+              <ExternalLink className="w-4 h-4" />
+              Get Free API Key
+            </a>
+            <button
+              onClick={handleReset}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm transition-colors ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
+            >
+              <RefreshCw className="w-4 h-4" />
+              Change API Key
+            </button>
+          </div>
+
+          <p className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+            Free tier: 60 API calls/minute, 15-minute delayed stock data
+          </p>
         </div>
       </div>
 
+      {/* Data Management */}
+      <div className={`rounded-xl border p-6 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+        <div className="flex items-center gap-3 mb-4">
+          <Trash2 className={`w-5 h-5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
+          <h3 className={`text-lg font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>Data Management</h3>
+        </div>
+        <p className={`text-sm mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+          Clear all locally stored data including watchlist, portfolio, and settings. Cloud data will remain if you're signed in.
+        </p>
+        <button
+          onClick={handleClear}
+          className="px-4 py-2.5 bg-red-600 hover:bg-red-700 rounded-xl text-white flex items-center gap-2 transition-colors"
+        >
+          <Trash2 className="w-4 h-4" />
+          Clear All Local Data
+        </button>
+      </div>
+
+      {/* Keyboard Shortcuts */}
       <div className={`rounded-xl border p-6 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
         <h3 className={`text-lg font-medium mb-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>Keyboard Shortcuts</h3>
-        <div className="space-y-2 text-sm">
+        <div className="space-y-3 text-sm">
           <div className="flex items-center gap-3">
-            <kbd className={`px-2 py-1 rounded ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'}`}>/</kbd>
-            <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>Open search</span>
+            <kbd className={`px-2.5 py-1 rounded-lg font-mono ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'}`}>/</kbd>
+            <span className={darkMode ? 'text-gray-300' : 'text-gray-600'}>Open search</span>
           </div>
           <div className="flex items-center gap-3">
-            <kbd className={`px-2 py-1 rounded ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'}`}>Esc</kbd>
-            <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>Close modals</span>
+            <kbd className={`px-2.5 py-1 rounded-lg font-mono ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'}`}>Esc</kbd>
+            <span className={darkMode ? 'text-gray-300' : 'text-gray-600'}>Close modals</span>
           </div>
         </div>
       </div>
@@ -1713,6 +2017,7 @@ function SettingsPage({ apiKey, onChangeApiKey, darkMode, syncStatus }) {
 // ============ APP CONTENT (WITH AUTH CONTEXT) ============
 function AppContent() {
   const { user, loading: authLoading, signIn } = useAuth()
+  const { addToast } = useToast()
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('finnhub_api_key') || '')
   const [activePage, setActivePage] = useState('overview')
   const [selectedStock, setSelectedStock] = useState(null)
@@ -1730,7 +2035,7 @@ function AppContent() {
     const saved = localStorage.getItem('user_settings')
     return saved ? JSON.parse(saved) : { apiKey: localStorage.getItem('finnhub_api_key') || '' }
   })
-  const [rateLimitStatus, setRateLimitStatus] = useState({ used: 0, remaining: 60 })
+  const [rateLimitStatus, setRateLimitStatus] = useState({ used: 0, remaining: 60, isLimited: false, waitTimeLeft: 0 })
   const [dismissedSyncBanner, setDismissedSyncBanner] = useState(() => sessionStorage.getItem('dismissed_sync_banner') === 'true')
 
   // Cloud sync hooks - only sync when user is signed in
@@ -1816,6 +2121,18 @@ function AppContent() {
                 <X className="w-4 h-4" />
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rate Limit Warning Banner */}
+      {rateLimitStatus.isLimited && (
+        <div className={`border-b ${darkMode ? 'bg-yellow-900/20 border-yellow-500/30' : 'bg-yellow-50 border-yellow-200'}`}>
+          <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-center gap-3">
+            <RefreshCw className="w-4 h-4 text-yellow-400 animate-spin" />
+            <span className={`text-sm ${darkMode ? 'text-yellow-300' : 'text-yellow-700'}`}>
+              Rate limit reached. Waiting {Math.ceil(rateLimitStatus.waitTimeLeft / 1000)}s before next request...
+            </span>
           </div>
         </div>
       )}

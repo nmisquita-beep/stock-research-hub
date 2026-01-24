@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Brain, Sparkles, AlertTriangle, TrendingUp, TrendingDown, RefreshCw, Key, Lightbulb, Shield, Eye, BarChart3, HelpCircle } from 'lucide-react'
+import { Brain, Sparkles, AlertTriangle, TrendingUp, TrendingDown, RefreshCw, Key, Lightbulb, Shield, Eye, BarChart3, HelpCircle, X } from 'lucide-react'
 
 // Sentiment analysis helper
 const POSITIVE_WORDS = ['surge', 'jump', 'gain', 'rise', 'rally', 'soar', 'boom', 'growth', 'profit', 'beat', 'exceed', 'bullish', 'upgrade', 'buy', 'outperform', 'strong', 'positive', 'record', 'high', 'breakout', 'momentum', 'optimistic', 'success']
@@ -26,12 +26,12 @@ function InfoTooltip({ text, darkMode }) {
       <button
         onMouseEnter={() => setShow(true)}
         onMouseLeave={() => setShow(false)}
-        className={`p-0.5 rounded-full ${darkMode ? 'text-gray-500 hover:text-gray-400' : 'text-gray-400 hover:text-gray-500'}`}
+        className={`p-0.5 rounded-full ${darkMode ? 'text-gray-400 hover:text-gray-300' : 'text-gray-400 hover:text-gray-500'}`}
       >
         <HelpCircle className="w-3.5 h-3.5" />
       </button>
       {show && (
-        <div className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 text-xs rounded-lg shadow-lg z-50 w-48 ${darkMode ? 'bg-gray-700 text-gray-200' : 'bg-gray-900 text-white'}`}>
+        <div className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 text-xs rounded-lg shadow-lg z-50 w-48 ${darkMode ? 'bg-gray-700 text-gray-100' : 'bg-gray-900 text-white'}`}>
           {text}
           <div className={`absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent ${darkMode ? 'border-t-gray-700' : 'border-t-gray-900'}`}></div>
         </div>
@@ -51,13 +51,13 @@ function SectionExplainer({ title, description, darkMode }) {
         <span className={`text-xs ml-auto ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>{expanded ? 'Hide' : 'What is this?'}</span>
       </button>
       {expanded && (
-        <p className={`mt-2 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>{description}</p>
+        <p className={`mt-2 text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{description}</p>
       )}
     </div>
   )
 }
 
-export default function AIInsights({ apiKey, watchlist, darkMode, finnhubFetch }) {
+export default function AIInsights({ apiKey, watchlist = [], darkMode, finnhubFetch }) {
   const [anthropicKey, setAnthropicKey] = useState(() => localStorage.getItem('anthropic_api_key') || '')
   const [showApiKeyInput, setShowApiKeyInput] = useState(false)
   const [marketMood, setMarketMood] = useState(50)
@@ -68,15 +68,20 @@ export default function AIInsights({ apiKey, watchlist, darkMode, finnhubFetch }
   const [loading, setLoading] = useState(true)
   const [analyzing, setAnalyzing] = useState(null)
   const [aiAnalysis, setAiAnalysis] = useState(null)
+  const [error, setError] = useState(null)
+
+  // Safe watchlist
+  const safeWatchlist = Array.isArray(watchlist) ? watchlist : []
 
   // Generate rule-based insights
   const generateInsights = useCallback(async () => {
-    if (!apiKey || watchlist.length === 0) {
+    if (!apiKey || safeWatchlist.length === 0) {
       setLoading(false)
       return
     }
 
     setLoading(true)
+    setError(null)
     const newInsights = []
     const alerts = []
     const toWatch = []
@@ -84,11 +89,15 @@ export default function AIInsights({ apiKey, watchlist, darkMode, finnhubFetch }
     try {
       // Fetch data for watchlist stocks
       const stockData = {}
-      for (const symbol of watchlist.slice(0, 10)) {
+      for (const symbol of safeWatchlist.slice(0, 10)) {
         try {
           const quote = await finnhubFetch(`/quote?symbol=${symbol}`, apiKey)
-          stockData[symbol] = quote
-        } catch {}
+          if (quote && typeof quote.c === 'number') {
+            stockData[symbol] = quote
+          }
+        } catch (err) {
+          console.warn(`Failed to fetch ${symbol}:`, err)
+        }
       }
 
       // Analyze each stock
@@ -162,12 +171,13 @@ export default function AIInsights({ apiKey, watchlist, darkMode, finnhubFetch }
       setInsights(newInsights)
       setRiskAlerts(alerts)
       setStocksToWatch(toWatch)
-    } catch (error) {
-      console.error('Error generating insights:', error)
+    } catch (err) {
+      console.error('Error generating insights:', err)
+      setError('Failed to generate insights. Please try again.')
     }
 
     setLoading(false)
-  }, [apiKey, watchlist, finnhubFetch])
+  }, [apiKey, safeWatchlist, finnhubFetch])
 
   useEffect(() => {
     generateInsights()
@@ -192,13 +202,13 @@ export default function AIInsights({ apiKey, watchlist, darkMode, finnhubFetch }
       ])
 
       const newsHeadlines = (news || []).slice(0, 5).map(n => n.headline).join('\n')
-      const change = quote.pc ? ((quote.c - quote.pc) / quote.pc * 100).toFixed(2) : 0
+      const change = quote?.pc ? ((quote.c - quote.pc) / quote.pc * 100).toFixed(2) : 0
 
-      const prompt = `Analyze ${symbol} (${profile.name || symbol}) stock briefly:
+      const prompt = `Analyze ${symbol} (${profile?.name || symbol}) stock briefly:
 
-Current Price: $${quote.c}
+Current Price: $${quote?.c || 'N/A'}
 Today's Change: ${change}%
-Day Range: $${quote.l} - $${quote.h}
+Day Range: $${quote?.l || 'N/A'} - $${quote?.h || 'N/A'}
 
 Recent Headlines:
 ${newsHeadlines || 'No recent news'}
@@ -233,8 +243,8 @@ Be concise and direct. Do not give financial advice.`
         analysis: data.content[0].text,
         timestamp: new Date().toISOString()
       })
-    } catch (error) {
-      console.error('AI analysis error:', error)
+    } catch (err) {
+      console.error('AI analysis error:', err)
       setAiAnalysis({
         symbol,
         error: 'Failed to generate AI analysis. Check your API key.',
@@ -250,6 +260,11 @@ Be concise and direct. Do not give financial advice.`
     setShowApiKeyInput(false)
   }
 
+  const clearAnthropicKey = () => {
+    localStorage.removeItem('anthropic_api_key')
+    setAnthropicKey('')
+  }
+
   const getMoodLabel = (mood) => {
     if (mood <= 25) return { text: 'Very Bearish', color: 'text-red-400', emoji: '🐻' }
     if (mood <= 40) return { text: 'Bearish', color: 'text-orange-400', emoji: '📉' }
@@ -262,7 +277,7 @@ Be concise and direct. Do not give financial advice.`
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h2 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>AI Insights</h2>
           <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Smart analysis of your watchlist and market trends</p>
@@ -270,7 +285,7 @@ Be concise and direct. Do not give financial advice.`
         <button
           onClick={generateInsights}
           disabled={loading}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl transition-colors ${darkMode ? 'bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700' : 'bg-white hover:bg-gray-50 text-gray-700 border border-gray-200'}`}
         >
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           Refresh
@@ -283,14 +298,25 @@ Be concise and direct. Do not give financial advice.`
         darkMode={darkMode}
       />
 
+      {error && (
+        <div className={`p-3 rounded-lg ${darkMode ? 'bg-red-900/20 border border-red-500/30' : 'bg-red-50 border border-red-200'}`}>
+          <p className={`text-sm ${darkMode ? 'text-red-300' : 'text-red-700'}`}>{error}</p>
+        </div>
+      )}
+
       {/* API Key Setup */}
       {showApiKeyInput && (
         <div className={`rounded-xl p-4 border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-          <div className="flex items-center gap-2 mb-3">
-            <Key className="w-5 h-5 text-purple-400" />
-            <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Anthropic API Key (Optional)</h3>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Key className="w-5 h-5 text-purple-400" />
+              <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Anthropic API Key (Optional)</h3>
+            </div>
+            <button onClick={() => setShowApiKeyInput(false)} className={`p-1 rounded-lg ${darkMode ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}>
+              <X className="w-5 h-5" />
+            </button>
           </div>
-          <p className={`text-sm mb-3 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+          <p className={`text-sm mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
             Add your Anthropic API key to enable AI-powered stock analysis. Your key is stored locally and never sent to our servers.
           </p>
           <div className="flex gap-2">
@@ -299,191 +325,213 @@ Be concise and direct. Do not give financial advice.`
               value={anthropicKey}
               onChange={(e) => setAnthropicKey(e.target.value)}
               placeholder="sk-ant-..."
-              className={`flex-1 px-4 py-2 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-200'}`}
+              className={`flex-1 px-4 py-2.5 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'bg-gray-50 border-gray-200 placeholder-gray-400'}`}
             />
-            <button onClick={saveAnthropicKey} className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-white">
+            <button onClick={saveAnthropicKey} className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 rounded-lg text-white font-medium transition-colors">
               Save
             </button>
-            <button onClick={() => setShowApiKeyInput(false)} className={`px-4 py-2 rounded-lg ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-700'}`}>
-              Cancel
-            </button>
           </div>
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Market Mood */}
-        <div className={`rounded-xl p-4 border ${darkMode ? 'bg-gradient-to-br from-gray-800 to-gray-900 border-gray-700' : 'bg-white border-gray-200'}`}>
-          <div className="flex items-center gap-2 mb-4">
-            <Brain className="w-5 h-5 text-purple-400" />
-            <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Market Mood</h3>
-            <InfoTooltip text="Based on the average performance of your watchlist stocks today" darkMode={darkMode} />
-          </div>
-          <div className="text-center">
-            <div className="text-4xl mb-2">{moodLabel.emoji}</div>
-            <div className={`text-xl font-bold ${moodLabel.color}`}>{moodLabel.text}</div>
-            <div className="relative h-3 bg-gradient-to-r from-red-500 via-yellow-500 to-green-500 rounded-full mt-4">
-              <div
-                className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full shadow-lg border-2 border-gray-800 transition-all duration-500"
-                style={{ left: `calc(${marketMood}% - 8px)` }}
-              />
-            </div>
-            <p className={`text-xs mt-3 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-              Based on your watchlist performance
-            </p>
-          </div>
+      {safeWatchlist.length === 0 ? (
+        <div className={`rounded-xl p-12 border text-center ${darkMode ? 'bg-gray-800/50 border-gray-700' : 'bg-white border-gray-200'}`}>
+          <Brain className={`w-12 h-12 mx-auto mb-4 ${darkMode ? 'text-gray-600' : 'text-gray-300'}`} />
+          <h3 className={`text-lg font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>No stocks to analyze</h3>
+          <p className={`${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>Add stocks to your watchlist to see AI insights</p>
         </div>
-
-        {/* Watchlist Summary */}
-        <div className={`rounded-xl p-4 border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-          <div className="flex items-center gap-2 mb-4">
-            <BarChart3 className="w-5 h-5 text-blue-400" />
-            <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Watchlist Summary</h3>
-          </div>
-          {watchlistSummary ? (
-            <div className="space-y-3">
-              <div className="flex justify-between">
-                <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>Stocks Tracked</span>
-                <span className={darkMode ? 'text-white' : 'text-gray-900'}>{watchlistSummary.total}</span>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Market Mood */}
+            <div className={`rounded-xl p-4 border ${darkMode ? 'bg-gradient-to-br from-gray-800 to-gray-900 border-gray-700' : 'bg-white border-gray-200'}`}>
+              <div className="flex items-center gap-2 mb-4">
+                <Brain className="w-5 h-5 text-purple-400" />
+                <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Market Mood</h3>
+                <InfoTooltip text="Based on the average performance of your watchlist stocks today" darkMode={darkMode} />
               </div>
-              <div className="flex justify-between">
-                <span className="text-green-400">Gainers</span>
-                <span className="text-green-400">{watchlistSummary.gainers}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-red-400">Losers</span>
-                <span className="text-red-400">{watchlistSummary.losers}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>Avg Change</span>
-                <span className={parseFloat(watchlistSummary.avgChange) >= 0 ? 'text-green-400' : 'text-red-400'}>
-                  {parseFloat(watchlistSummary.avgChange) >= 0 ? '+' : ''}{watchlistSummary.avgChange}%
-                </span>
-              </div>
-              {watchlistSummary.bestPerformer && (
-                <div className="flex justify-between">
-                  <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>Best Today</span>
-                  <span className="text-green-400">{watchlistSummary.bestPerformer}</span>
+              <div className="text-center">
+                <div className="text-4xl mb-2">{moodLabel.emoji}</div>
+                <div className={`text-xl font-bold ${moodLabel.color}`}>{moodLabel.text}</div>
+                <div className="relative h-3 bg-gradient-to-r from-red-500 via-yellow-500 to-green-500 rounded-full mt-4">
+                  <div
+                    className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full shadow-lg border-2 border-gray-800 transition-all duration-500"
+                    style={{ left: `calc(${marketMood}% - 8px)` }}
+                  />
                 </div>
+                <p className={`text-xs mt-3 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                  Based on your watchlist performance
+                </p>
+              </div>
+            </div>
+
+            {/* Watchlist Summary */}
+            <div className={`rounded-xl p-4 border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+              <div className="flex items-center gap-2 mb-4">
+                <BarChart3 className="w-5 h-5 text-blue-400" />
+                <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Watchlist Summary</h3>
+              </div>
+              {watchlistSummary ? (
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>Stocks Tracked</span>
+                    <span className={darkMode ? 'text-white' : 'text-gray-900'}>{watchlistSummary.total}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-green-400">Gainers</span>
+                    <span className="text-green-400">{watchlistSummary.gainers}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-red-400">Losers</span>
+                    <span className="text-red-400">{watchlistSummary.losers}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>Avg Change</span>
+                    <span className={parseFloat(watchlistSummary.avgChange) >= 0 ? 'text-green-400' : 'text-red-400'}>
+                      {parseFloat(watchlistSummary.avgChange) >= 0 ? '+' : ''}{watchlistSummary.avgChange}%
+                    </span>
+                  </div>
+                  {watchlistSummary.bestPerformer && (
+                    <div className="flex justify-between">
+                      <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>Best Today</span>
+                      <span className="text-green-400">{watchlistSummary.bestPerformer}</span>
+                    </div>
+                  )}
+                </div>
+              ) : loading ? (
+                <div className="flex items-center justify-center py-8">
+                  <RefreshCw className={`w-6 h-6 animate-spin ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
+                </div>
+              ) : (
+                <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                  Add stocks to your watchlist to see summary
+                </p>
               )}
             </div>
-          ) : (
-            <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-              Add stocks to your watchlist to see summary
-            </p>
-          )}
-        </div>
 
-        {/* AI Analysis Button */}
-        <div className={`rounded-xl p-4 border ${darkMode ? 'bg-gradient-to-br from-purple-900/20 to-gray-800 border-purple-500/30' : 'bg-purple-50 border-purple-100'}`}>
-          <div className="flex items-center gap-2 mb-4">
-            <Sparkles className="w-5 h-5 text-purple-400" />
-            <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>AI Stock Analysis</h3>
-          </div>
-          <p className={`text-sm mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-            Get AI-powered analysis of any stock using Claude.
-          </p>
-          {anthropicKey ? (
-            <div className="space-y-2">
-              {watchlist.slice(0, 3).map(symbol => (
+            {/* AI Analysis Button */}
+            <div className={`rounded-xl p-4 border ${darkMode ? 'bg-gradient-to-br from-purple-900/20 to-gray-800 border-purple-500/30' : 'bg-purple-50 border-purple-100'}`}>
+              <div className="flex items-center gap-2 mb-4">
+                <Sparkles className="w-5 h-5 text-purple-400" />
+                <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>AI Stock Analysis</h3>
+              </div>
+              <p className={`text-sm mb-4 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                Get AI-powered analysis of any stock using Claude.
+              </p>
+              {anthropicKey ? (
+                <div className="space-y-2">
+                  {safeWatchlist.slice(0, 3).map(symbol => (
+                    <button
+                      key={symbol}
+                      onClick={() => analyzeWithAI(symbol)}
+                      disabled={analyzing === symbol}
+                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition-colors ${darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-white hover:bg-gray-50 border border-gray-200'}`}
+                    >
+                      <span className={darkMode ? 'text-white' : 'text-gray-900'}>{symbol}</span>
+                      {analyzing === symbol ? (
+                        <RefreshCw className="w-4 h-4 animate-spin text-purple-400" />
+                      ) : (
+                        <span className="text-purple-400 text-sm font-medium">Analyze</span>
+                      )}
+                    </button>
+                  ))}
+                  <button
+                    onClick={clearAnthropicKey}
+                    className={`w-full text-xs py-2 ${darkMode ? 'text-gray-500 hover:text-gray-400' : 'text-gray-400 hover:text-gray-500'}`}
+                  >
+                    Remove API Key
+                  </button>
+                </div>
+              ) : (
                 <button
-                  key={symbol}
-                  onClick={() => analyzeWithAI(symbol)}
-                  disabled={analyzing === symbol}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg ${darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-white hover:bg-gray-50'}`}
+                  onClick={() => setShowApiKeyInput(true)}
+                  className="w-full px-4 py-2.5 bg-purple-600 hover:bg-purple-700 rounded-lg text-white flex items-center justify-center gap-2 font-medium transition-colors"
                 >
-                  <span className={darkMode ? 'text-white' : 'text-gray-900'}>{symbol}</span>
-                  {analyzing === symbol ? (
-                    <RefreshCw className="w-4 h-4 animate-spin text-purple-400" />
-                  ) : (
-                    <span className="text-purple-400 text-sm">Analyze</span>
-                  )}
+                  <Key className="w-4 h-4" />
+                  Add API Key
                 </button>
-              ))}
+              )}
             </div>
-          ) : (
-            <button
-              onClick={() => setShowApiKeyInput(true)}
-              className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-white flex items-center justify-center gap-2"
-            >
-              <Key className="w-4 h-4" />
-              Add API Key
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* AI Analysis Result */}
-      {aiAnalysis && (
-        <div className={`rounded-xl p-4 border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-          <div className="flex items-center gap-2 mb-3">
-            <Sparkles className="w-5 h-5 text-purple-400" />
-            <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>AI Analysis: {aiAnalysis.symbol}</h3>
           </div>
-          {aiAnalysis.error ? (
-            <p className="text-red-400 text-sm">{aiAnalysis.error}</p>
-          ) : (
-            <p className={`text-sm leading-relaxed ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-              {aiAnalysis.analysis}
-            </p>
-          )}
-          <p className={`text-xs mt-3 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-            Generated at {new Date(aiAnalysis.timestamp).toLocaleString()}
-          </p>
-        </div>
-      )}
 
-      {/* Risk Alerts */}
-      {riskAlerts.length > 0 && (
-        <div className={`rounded-xl p-4 border ${darkMode ? 'bg-red-900/20 border-red-500/30' : 'bg-red-50 border-red-100'}`}>
-          <div className="flex items-center gap-2 mb-4">
-            <Shield className="w-5 h-5 text-red-400" />
-            <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Risk Alerts</h3>
-            <InfoTooltip text="Stocks in your watchlist with significant price movements today" darkMode={darkMode} />
-          </div>
-          <div className="space-y-2">
-            {riskAlerts.map((alert, i) => (
-              <div key={i} className={`flex items-center gap-3 p-2 rounded-lg ${darkMode ? 'bg-gray-800/50' : 'bg-white'}`}>
-                {alert.type === 'surge' ? (
-                  <TrendingUp className="w-4 h-4 text-green-400" />
-                ) : (
-                  <TrendingDown className="w-4 h-4 text-red-400" />
-                )}
-                <span className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>{alert.symbol}</span>
-                <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>{alert.message}</span>
-                {alert.severity === 'high' && (
-                  <span className="px-2 py-0.5 text-xs bg-red-500/20 text-red-400 rounded-full">High</span>
-                )}
+          {/* AI Analysis Result */}
+          {aiAnalysis && (
+            <div className={`rounded-xl p-4 border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-purple-400" />
+                  <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>AI Analysis: {aiAnalysis.symbol}</h3>
+                </div>
+                <button onClick={() => setAiAnalysis(null)} className={`p-1 rounded-lg ${darkMode ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}>
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
+              {aiAnalysis.error ? (
+                <p className="text-red-400 text-sm">{aiAnalysis.error}</p>
+              ) : (
+                <p className={`text-sm leading-relaxed ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
+                  {aiAnalysis.analysis}
+                </p>
+              )}
+              <p className={`text-xs mt-3 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                Generated at {new Date(aiAnalysis.timestamp).toLocaleString()}
+              </p>
+            </div>
+          )}
 
-      {/* Stocks to Watch */}
-      {stocksToWatch.length > 0 && (
-        <div className={`rounded-xl p-4 border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-          <div className="flex items-center gap-2 mb-4">
-            <Eye className="w-5 h-5 text-blue-400" />
-            <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Stocks to Watch</h3>
-            <InfoTooltip text="Stocks showing interesting patterns or trading near significant levels" darkMode={darkMode} />
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            {stocksToWatch.map((stock, i) => (
-              <div key={i} className={`flex items-center gap-3 p-3 rounded-lg ${darkMode ? 'bg-gray-700/50' : 'bg-gray-50'}`}>
-                <span className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>{stock.symbol}</span>
-                <span className={`text-sm ${stock.type === 'bullish' ? 'text-green-400' : 'text-red-400'}`}>
-                  {stock.reason}
-                </span>
+          {/* Risk Alerts */}
+          {riskAlerts.length > 0 && (
+            <div className={`rounded-xl p-4 border ${darkMode ? 'bg-red-900/20 border-red-500/30' : 'bg-red-50 border-red-100'}`}>
+              <div className="flex items-center gap-2 mb-4">
+                <Shield className="w-5 h-5 text-red-400" />
+                <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Risk Alerts</h3>
+                <InfoTooltip text="Stocks in your watchlist with significant price movements today" darkMode={darkMode} />
               </div>
-            ))}
-          </div>
-        </div>
+              <div className="space-y-2">
+                {riskAlerts.map((alert, i) => (
+                  <div key={i} className={`flex items-center gap-3 p-3 rounded-lg ${darkMode ? 'bg-gray-800/50' : 'bg-white'}`}>
+                    {alert.type === 'surge' ? (
+                      <TrendingUp className="w-4 h-4 text-green-400 flex-shrink-0" />
+                    ) : (
+                      <TrendingDown className="w-4 h-4 text-red-400 flex-shrink-0" />
+                    )}
+                    <span className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>{alert.symbol}</span>
+                    <span className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{alert.message}</span>
+                    {alert.severity === 'high' && (
+                      <span className="px-2 py-0.5 text-xs bg-red-500/20 text-red-400 rounded-full">High</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Stocks to Watch */}
+          {stocksToWatch.length > 0 && (
+            <div className={`rounded-xl p-4 border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+              <div className="flex items-center gap-2 mb-4">
+                <Eye className="w-5 h-5 text-blue-400" />
+                <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Stocks to Watch</h3>
+                <InfoTooltip text="Stocks showing interesting patterns or trading near significant levels" darkMode={darkMode} />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {stocksToWatch.map((stock, i) => (
+                  <div key={i} className={`flex items-center gap-3 p-3 rounded-lg ${darkMode ? 'bg-gray-700/50' : 'bg-gray-50'}`}>
+                    <span className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>{stock.symbol}</span>
+                    <span className={`text-sm ${stock.type === 'bullish' ? 'text-green-400' : 'text-red-400'}`}>
+                      {stock.reason}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* Disclaimer */}
-      <div className={`p-4 rounded-lg ${darkMode ? 'bg-gray-800/50' : 'bg-gray-50'}`}>
-        <p className={`text-xs text-center ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+      <div className={`p-4 rounded-lg ${darkMode ? 'bg-gray-800/50 border border-gray-700' : 'bg-gray-50 border border-gray-200'}`}>
+        <p className={`text-xs text-center ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
           AI Insights are generated using automated analysis and AI models. This is not financial advice.
           Always do your own research before making investment decisions. Data may be delayed up to 15 minutes.
         </p>
