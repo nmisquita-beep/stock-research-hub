@@ -1704,7 +1704,7 @@ function SettingsPage({ apiKey, onChangeApiKey, darkMode, syncStatus }) {
 
 // ============ APP CONTENT (WITH AUTH CONTEXT) ============
 function AppContent() {
-  const { user, loading: authLoading } = useAuth()
+  const { user, loading: authLoading, signIn } = useAuth()
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('finnhub_api_key') || '')
   const [activePage, setActivePage] = useState('overview')
   const [selectedStock, setSelectedStock] = useState(null)
@@ -1723,6 +1723,7 @@ function AppContent() {
     return saved ? JSON.parse(saved) : { apiKey: localStorage.getItem('finnhub_api_key') || '' }
   })
   const [rateLimitStatus, setRateLimitStatus] = useState({ used: 0, remaining: 60 })
+  const [dismissedSyncBanner, setDismissedSyncBanner] = useState(() => sessionStorage.getItem('dismissed_sync_banner') === 'true')
 
   // Cloud sync hooks - only sync when user is signed in
   const watchlistSync = useCloudSync('watchlist', watchlist, setWatchlist, user)
@@ -1779,9 +1780,6 @@ function AppContent() {
   }
 
   if (!apiKey) return <ApiKeySetup onSave={handleChangeApiKey} />
-
-  const { signIn } = useAuth()
-  const [dismissedSyncBanner, setDismissedSyncBanner] = useState(() => sessionStorage.getItem('dismissed_sync_banner') === 'true')
 
   const dismissBanner = () => {
     setDismissedSyncBanner(true)
