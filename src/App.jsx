@@ -2007,10 +2007,17 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock, darkMode }) {
               const positive = change >= 0
               const sparkData = quote ? generateSparklineData(quote.c, quote.pc) : []
               return (
-                <div key={symbol} className="rounded-xl p-3 border transition-all hover:scale-[1.02] bg-gray-800/50 border-gray-700 hover:border-gray-600">
+                <div
+                  key={symbol}
+                  onClick={() => onSelectStock(symbol)}
+                  className="rounded-xl p-3 border transition-all hover:scale-[1.02] bg-gray-800/50 border-gray-700 hover:border-blue-500 cursor-pointer"
+                >
                   <div className="flex items-center justify-between mb-2">
-                    <button onClick={() => onSelectStock(symbol)} className="font-bold hover:text-blue-400 text-white">{symbol}</button>
-                    <button onClick={() => removeSymbol(symbol)} className="p-1 hover:bg-red-600/20 rounded text-gray-400 hover:text-red-400">
+                    <span className="font-bold text-white">{symbol}</span>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); removeSymbol(symbol); }}
+                      className="p-1 hover:bg-red-600/20 rounded text-gray-400 hover:text-red-400 z-10"
+                    >
                       <Trash2 className="w-3 h-3" />
                     </button>
                   </div>
@@ -2096,6 +2103,114 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock, darkMode }) {
           </div>
         </div>
       </div>
+
+      {/* Browse Stocks Section */}
+      <BrowseStocks onSelectStock={onSelectStock} allQuotes={{ ...marketData, ...watchlistQuotes }} />
+    </div>
+  )
+}
+
+// ============ BROWSE STOCKS COMPONENT ============
+const STOCK_CATEGORIES = [
+  {
+    name: 'Tech Giants',
+    color: 'text-blue-400',
+    stocks: ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NVDA', 'TSLA']
+  },
+  {
+    name: 'Finance',
+    color: 'text-yellow-400',
+    stocks: ['JPM', 'BAC', 'GS', 'V', 'MA', 'BRK-B']
+  },
+  {
+    name: 'Healthcare',
+    color: 'text-green-400',
+    stocks: ['JNJ', 'UNH', 'PFE', 'ABBV', 'MRK']
+  },
+  {
+    name: 'Consumer',
+    color: 'text-pink-400',
+    stocks: ['WMT', 'COST', 'MCD', 'NKE', 'SBUX', 'DIS']
+  },
+  {
+    name: 'Energy',
+    color: 'text-orange-400',
+    stocks: ['XOM', 'CVX', 'COP']
+  }
+]
+
+function BrowseStocks({ onSelectStock, allQuotes }) {
+  const [browseData, setBrowseData] = useState({})
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchBrowseStocks = async () => {
+      setLoading(true)
+      const allSymbols = STOCK_CATEGORIES.flatMap(c => c.stocks)
+      const toFetch = allSymbols.filter(s => !allQuotes[s])
+
+      if (toFetch.length > 0) {
+        const results = await Promise.allSettled(
+          toFetch.map(symbol => yahooFetch(symbol))
+        )
+        const newData = { ...allQuotes }
+        results.forEach((result, i) => {
+          if (result.status === 'fulfilled' && result.value) {
+            const normalized = normalizeYahooQuote(result.value)
+            if (normalized && normalized.c > 0) {
+              newData[toFetch[i]] = normalized
+            }
+          }
+        })
+        setBrowseData(newData)
+      } else {
+        setBrowseData(allQuotes)
+      }
+      setLoading(false)
+    }
+    fetchBrowseStocks()
+  }, [allQuotes])
+
+  return (
+    <div className="space-y-4">
+      <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+        <Grid3X3 className="w-5 h-5 text-purple-400" />
+        Browse Stocks
+      </h3>
+
+      {STOCK_CATEGORIES.map(category => (
+        <div key={category.name} className="space-y-2">
+          <h4 className={`text-sm font-medium ${category.color}`}>{category.name}</h4>
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-7 gap-2">
+            {category.stocks.map(symbol => {
+              const quote = browseData[symbol]
+              const change = quote?.pc ? ((quote.c - quote.pc) / quote.pc * 100) : 0
+              const positive = change >= 0
+              return (
+                <button
+                  key={symbol}
+                  onClick={() => onSelectStock(symbol)}
+                  className={`p-2 rounded-lg border transition-all hover:scale-105 cursor-pointer ${
+                    positive ? 'bg-green-900/20 border-green-500/30 hover:border-green-500' : 'bg-red-900/20 border-red-500/30 hover:border-red-500'
+                  }`}
+                >
+                  <div className="text-xs font-bold text-white">{symbol}</div>
+                  {loading ? (
+                    <div className="h-4 bg-gray-700 rounded animate-pulse mt-1" />
+                  ) : (
+                    <>
+                      <div className="text-xs text-gray-300">${quote?.c?.toFixed(2) || '—'}</div>
+                      <div className={`text-xs font-medium ${positive ? 'text-green-400' : 'text-red-400'}`}>
+                        {positive ? '+' : ''}{change.toFixed(1)}%
+                      </div>
+                    </>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
@@ -2809,16 +2924,18 @@ function NewsPage({ darkMode, watchlist }) {
   const [cacheAge, setCacheAge] = useState(null)
   const [loadedStocks, setLoadedStocks] = useState([])
   const [hasMore, setHasMore] = useState(true)
+  const [moversStocks, setMoversStocks] = useState([])
 
-  // Initial stocks (reduced to prevent rate limit)
-  const INITIAL_MOVERS = ['AAPL', 'MSFT', 'NVDA']
-  const MORE_MOVERS = ['GOOGL', 'AMZN', 'TSLA', 'META', 'SPY', 'QQQ']
-  const MAX_WATCHLIST_STOCKS = 3
+  // Index ETFs for market news
+  const INDICES = ['SPY', 'QQQ', 'DIA']
+  // Popular stocks for movers (will be sorted by actual price change)
+  const POPULAR_FOR_MOVERS = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'TSLA', 'META', 'AMD', 'JPM', 'V']
+  const MAX_WATCHLIST_STOCKS = 5
 
   const tabs = [
     { id: 'movers', label: 'Market Movers', icon: TrendingUp },
-    { id: 'watchlist', label: 'Your Watchlist', icon: Star },
-    { id: 'trending', label: 'Trending', icon: Zap }
+    { id: 'feed', label: 'Your Feed', icon: Star },
+    { id: 'indices', label: 'Indices', icon: BarChart3 }
   ]
 
   // Helper: delay between requests
@@ -2878,10 +2995,29 @@ function NewsPage({ darkMode, watchlist }) {
     return { articles: unique, fromCache: anyFromCache }
   }, [fetchSingleStockNews])
 
+  // Fetch actual top movers first
+  const fetchTopMovers = useCallback(async () => {
+    const results = await Promise.allSettled(
+      POPULAR_FOR_MOVERS.map(s => yahooFetch(s))
+    )
+    const stockData = []
+    results.forEach((result, i) => {
+      if (result.status === 'fulfilled' && result.value) {
+        const normalized = normalizeYahooQuote(result.value)
+        if (normalized && normalized.c > 0 && normalized.pc > 0) {
+          const change = Math.abs((normalized.c - normalized.pc) / normalized.pc * 100)
+          stockData.push({ symbol: POPULAR_FOR_MOVERS[i], change })
+        }
+      }
+    })
+    // Sort by absolute change to get biggest movers
+    return stockData.sort((a, b) => b.change - a.change).slice(0, 5).map(s => s.symbol)
+  }, [])
+
   // Initial fetch
   const fetchNews = useCallback(async (forceRefresh = false) => {
     setLoading(true)
-    setHasMore(true)
+    setHasMore(false)
 
     // Clear cache on force refresh
     if (forceRefresh) {
@@ -2890,21 +3026,22 @@ function NewsPage({ darkMode, watchlist }) {
     }
 
     let stocksToFetch = []
-    let moreAvailable = false
 
     if (tab === 'movers') {
-      stocksToFetch = INITIAL_MOVERS
-      moreAvailable = true
-    } else if (tab === 'watchlist') {
+      // Fetch actual top movers first
+      const topMovers = await fetchTopMovers()
+      setMoversStocks(topMovers)
+      stocksToFetch = topMovers.slice(0, 3)
+      setHasMore(topMovers.length > 3)
+    } else if (tab === 'feed') {
+      // Watchlist stocks only
       stocksToFetch = (watchlist || []).slice(0, MAX_WATCHLIST_STOCKS)
-      moreAvailable = false
-    } else if (tab === 'trending') {
-      stocksToFetch = INITIAL_MOVERS // Use same as movers for trending
-      moreAvailable = true
+    } else if (tab === 'indices') {
+      // Index ETFs for market-wide news
+      stocksToFetch = INDICES
     }
 
     setLoadedStocks(stocksToFetch)
-    setHasMore(moreAvailable)
 
     if (stocksToFetch.length === 0) {
       setNews([])
@@ -2920,15 +3057,15 @@ function NewsPage({ darkMode, watchlist }) {
     setCacheAge(firstStockCache)
 
     setLoading(false)
-  }, [tab, watchlist, fetchMultipleStockNews])
+  }, [tab, watchlist, fetchMultipleStockNews, fetchTopMovers])
 
   // Load more news
   const loadMoreNews = useCallback(async () => {
-    if (loadingMore || !hasMore) return
+    if (loadingMore || !hasMore || tab !== 'movers') return
 
     setLoadingMore(true)
 
-    const additionalStocks = MORE_MOVERS.filter(s => !loadedStocks.includes(s)).slice(0, 3)
+    const additionalStocks = moversStocks.filter(s => !loadedStocks.includes(s)).slice(0, 2)
 
     if (additionalStocks.length === 0) {
       setHasMore(false)
@@ -2942,11 +3079,11 @@ function NewsPage({ darkMode, watchlist }) {
 
     // Check if more stocks available
     const allLoaded = [...loadedStocks, ...additionalStocks]
-    const remaining = MORE_MOVERS.filter(s => !allLoaded.includes(s))
+    const remaining = moversStocks.filter(s => !allLoaded.includes(s))
     setHasMore(remaining.length > 0)
 
     setLoadingMore(false)
-  }, [loadingMore, hasMore, loadedStocks, news, fetchMultipleStockNews])
+  }, [loadingMore, hasMore, loadedStocks, news, fetchMultipleStockNews, moversStocks, tab])
 
   // Fetch on tab change
   useEffect(() => {
@@ -3023,12 +3160,30 @@ function NewsPage({ darkMode, watchlist }) {
         </div>
       )}
 
+      {/* Empty watchlist prompt for Your Feed */}
+      {!loading && tab === 'feed' && (!watchlist || watchlist.length === 0) && (
+        <div className="rounded-xl p-12 border text-center bg-gray-800/50 border-gray-700">
+          <Star className="w-12 h-12 mx-auto mb-4 text-yellow-400/50" />
+          <h3 className="text-lg font-medium mb-2 text-gray-300">No watchlist stocks</h3>
+          <p className="text-gray-400">Add stocks to your watchlist on the Dashboard to see personalized news here</p>
+        </div>
+      )}
+
       {/* No news state */}
-      {!loading && news.length === 0 && (tab !== 'watchlist' || (watchlist && watchlist.length > 0)) && (
+      {!loading && news.length === 0 && tab !== 'feed' && (
         <div className="rounded-xl p-12 border text-center bg-gray-800/50 border-gray-700">
           <Newspaper className="w-12 h-12 mx-auto mb-4 text-gray-600" />
           <h3 className="text-lg font-medium mb-2 text-gray-300">No news found</h3>
           <p className="text-gray-400">Try refreshing or check back later</p>
+        </div>
+      )}
+
+      {/* No news state for feed with watchlist */}
+      {!loading && news.length === 0 && tab === 'feed' && watchlist && watchlist.length > 0 && (
+        <div className="rounded-xl p-12 border text-center bg-gray-800/50 border-gray-700">
+          <Newspaper className="w-12 h-12 mx-auto mb-4 text-gray-600" />
+          <h3 className="text-lg font-medium mb-2 text-gray-300">No recent news</h3>
+          <p className="text-gray-400">No news found for your watchlist stocks</p>
         </div>
       )}
 
