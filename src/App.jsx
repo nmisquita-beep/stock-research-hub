@@ -4,7 +4,9 @@ import {
   Home, Clock, RefreshCw, Star, Trash2, AlertCircle, CheckCircle,
   Activity, Search, Moon, Sun, Zap, Calendar,
   AlertTriangle, ChevronRight, HelpCircle, Sparkles,
-  Cloud, CloudOff, LogIn, LogOut, User, Brain
+  Cloud, CloudOff, LogIn, LogOut, User, Brain,
+  Filter, Grid3X3, PieChart, Target, DollarSign, Award, Layers,
+  ArrowUpRight, ArrowDownRight, Info, Building, ChevronDown, Eye
 } from 'lucide-react'
 import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip as RechartsTooltip, CartesianGrid, BarChart, Bar, ComposedChart, Line } from 'recharts'
 import AIInsights from './components/AIInsights'
@@ -24,6 +26,48 @@ const CRYPTO_KEYWORDS = ['bitcoin', 'btc', 'ethereum', 'eth', 'crypto', 'cryptoc
 // ============ API HELPERS ============
 const FINNHUB_PROXY_URL = 'https://stock-api-proxy-seven.vercel.app/api/finnhub'
 const YAHOO_PROXY_URL = 'https://stock-api-proxy-seven.vercel.app/api/yahoo'
+const GROQ_PROXY_URL = 'https://stock-api-proxy-seven.vercel.app/api/groq'
+
+// ============ AI CACHE SYSTEM ============
+const aiCache = {
+  data: {},
+  timestamps: {},
+  durations: {
+    marketPulse: 60 * 60 * 1000,      // 1 hour
+    stockAnalysis: 30 * 60 * 1000,    // 30 minutes
+    earnings: 6 * 60 * 60 * 1000,     // 6 hours
+    screener: 2 * 60 * 60 * 1000,     // 2 hours
+    sectors: 60 * 60 * 1000,          // 1 hour
+    chartAnnotation: 60 * 60 * 1000   // 1 hour
+  },
+  get(key, type = 'stockAnalysis') {
+    const cached = this.data[key]
+    const timestamp = this.timestamps[key]
+    const duration = this.durations[type] || this.durations.stockAnalysis
+    if (cached && timestamp && (Date.now() - timestamp < duration)) {
+      return cached
+    }
+    return null
+  },
+  set(key, value) {
+    this.data[key] = value
+    this.timestamps[key] = Date.now()
+  }
+}
+
+// Groq AI API helper
+const groqFetch = async (prompt, stockData = {}) => {
+  const response = await fetch(GROQ_PROXY_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt, stockData })
+  })
+  if (!response.ok) {
+    throw new Error('AI request failed')
+  }
+  const data = await response.json()
+  return data.insight || data.response || ''
+}
 
 // Yahoo Finance API (no rate limits!)
 const yahooFetch = async (symbol, type = 'quote', options = {}, timeout = 15000) => {
@@ -972,10 +1016,11 @@ function StockNewsModal({ symbol, onClose }) {
 // ============ MOBILE BOTTOM NAV ============
 function MobileBottomNav({ activePage, setActivePage, darkMode }) {
   const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: Home },
+    { id: 'dashboard', label: 'Home', icon: Home },
     { id: 'insights', label: 'AI', icon: Brain },
-    { id: 'news', label: 'News', icon: Newspaper },
-    { id: 'settings', label: 'Settings', icon: Settings }
+    { id: 'screener', label: 'Screener', icon: Filter },
+    { id: 'sectors', label: 'Sectors', icon: PieChart },
+    { id: 'settings', label: 'More', icon: Grid3X3 }
   ]
 
   return (
@@ -983,11 +1028,11 @@ function MobileBottomNav({ activePage, setActivePage, darkMode }) {
       <div className="flex items-center justify-around py-2">
         {navItems.map(item => (
           <button key={item.id} onClick={() => setActivePage(item.id)}
-            className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-all ${
+            className={`flex flex-col items-center gap-1 px-2 py-2 rounded-lg transition-all ${
               activePage === item.id ? 'text-blue-500' : 'text-gray-400'
             }`}>
             <item.icon className="w-5 h-5" />
-            <span className="text-xs">{item.label}</span>
+            <span className="text-[10px]">{item.label}</span>
           </button>
         ))}
       </div>
@@ -1003,6 +1048,9 @@ function DesktopNav({ activePage, setActivePage, onSearchOpen, darkMode, toggleD
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: Home, tour: 'dashboard' },
     { id: 'insights', label: 'AI Insights', icon: Brain, tour: 'insights' },
+    { id: 'screener', label: 'Screener', icon: Filter },
+    { id: 'earnings', label: 'Earnings', icon: Calendar },
+    { id: 'sectors', label: 'Sectors', icon: PieChart },
     { id: 'news', label: 'News', icon: Newspaper, tour: 'news' },
     { id: 'settings', label: 'Settings', icon: Settings }
   ]
@@ -1094,7 +1142,618 @@ function DesktopNav({ activePage, setActivePage, onSearchOpen, darkMode, toggleD
   )
 }
 
-// ============ MARKET OVERVIEW ============
+// ============ AI MARKET PULSE ============
+function AIMarketPulse({ marketData, moversData }) {
+  const [pulse, setPulse] = useState(null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    const fetchPulse = async () => {
+      if (!marketData || Object.keys(marketData).length === 0) return
+
+      // Check cache
+      const cached = aiCache.get('marketPulse', 'marketPulse')
+      if (cached) {
+        setPulse(cached)
+        return
+      }
+
+      setLoading(true)
+      try {
+        const indices = Object.entries(marketData).map(([sym, data]) => {
+          const change = data.pc ? ((data.c - data.pc) / data.pc * 100).toFixed(2) : 0
+          return `${sym}: ${change >= 0 ? '+' : ''}${change}%`
+        }).join(', ')
+
+        const gainers = moversData?.gainers?.slice(0, 3).map(s => `${s.symbol} +${s.change.toFixed(1)}%`).join(', ') || 'N/A'
+        const losers = moversData?.losers?.slice(0, 3).map(s => `${s.symbol} ${s.change.toFixed(1)}%`).join(', ') || 'N/A'
+
+        const prompt = `You are a market analyst giving a brief morning briefing. Based on today's market data:
+
+Indices: ${indices}
+Top Gainers: ${gainers}
+Top Losers: ${losers}
+
+Give a 2-3 sentence market pulse summary. Be specific about what's driving the market. Start with the overall mood (bullish/bearish/mixed), then highlight the key story. No disclaimers.`
+
+        const insight = await groqFetch(prompt)
+        setPulse(insight)
+        aiCache.set('marketPulse', insight)
+      } catch (err) {
+        console.error('Market pulse error:', err)
+      }
+      setLoading(false)
+    }
+
+    fetchPulse()
+  }, [marketData, moversData])
+
+  if (loading) {
+    return (
+      <div className="bg-gradient-to-r from-purple-900/30 to-blue-900/30 rounded-xl p-4 border border-purple-500/20 animate-pulse">
+        <div className="flex items-center gap-2 mb-2">
+          <Brain className="w-5 h-5 text-purple-400" />
+          <span className="text-sm font-medium text-purple-300">AI Market Pulse</span>
+        </div>
+        <div className="h-12 bg-gray-700/50 rounded" />
+      </div>
+    )
+  }
+
+  if (!pulse) return null
+
+  return (
+    <div className="bg-gradient-to-r from-purple-900/30 to-blue-900/30 rounded-xl p-4 border border-purple-500/20">
+      <div className="flex items-center gap-2 mb-2">
+        <Brain className="w-5 h-5 text-purple-400" />
+        <span className="text-sm font-medium text-purple-300">AI Market Pulse</span>
+        <Sparkles className="w-4 h-4 text-purple-400" />
+      </div>
+      <p className="text-gray-200 text-sm leading-relaxed">{pulse}</p>
+    </div>
+  )
+}
+
+// ============ SECTORS TAB ============
+const SECTORS = [
+  { name: 'Technology', symbol: 'XLK', color: 'from-blue-500 to-cyan-500' },
+  { name: 'Healthcare', symbol: 'XLV', color: 'from-green-500 to-emerald-500' },
+  { name: 'Financials', symbol: 'XLF', color: 'from-yellow-500 to-amber-500' },
+  { name: 'Consumer Disc.', symbol: 'XLY', color: 'from-pink-500 to-rose-500' },
+  { name: 'Communication', symbol: 'XLC', color: 'from-purple-500 to-violet-500' },
+  { name: 'Industrials', symbol: 'XLI', color: 'from-gray-500 to-slate-500' },
+  { name: 'Consumer Staples', symbol: 'XLP', color: 'from-orange-500 to-amber-500' },
+  { name: 'Energy', symbol: 'XLE', color: 'from-red-500 to-orange-500' },
+  { name: 'Utilities', symbol: 'XLU', color: 'from-teal-500 to-cyan-500' },
+  { name: 'Real Estate', symbol: 'XLRE', color: 'from-indigo-500 to-blue-500' },
+  { name: 'Materials', symbol: 'XLB', color: 'from-lime-500 to-green-500' }
+]
+
+function SectorsTab({ onSelectStock, darkMode }) {
+  const [sectorData, setSectorData] = useState({})
+  const [loading, setLoading] = useState(true)
+  const [selectedSector, setSelectedSector] = useState(null)
+  const [sectorAnalysis, setSectorAnalysis] = useState(null)
+  const [analysisLoading, setAnalysisLoading] = useState(false)
+
+  useEffect(() => {
+    const fetchSectors = async () => {
+      setLoading(true)
+      const data = {}
+      const results = await Promise.allSettled(
+        SECTORS.map(s => yahooFetch(s.symbol))
+      )
+      results.forEach((result, i) => {
+        if (result.status === 'fulfilled' && result.value) {
+          const normalized = normalizeYahooQuote(result.value)
+          if (normalized) {
+            data[SECTORS[i].symbol] = normalized
+          }
+        }
+      })
+      setSectorData(data)
+      setLoading(false)
+    }
+    fetchSectors()
+  }, [])
+
+  const analyzeSector = async (sector) => {
+    setSelectedSector(sector)
+    setSectorAnalysis(null)
+
+    const cacheKey = `sector_${sector.symbol}`
+    const cached = aiCache.get(cacheKey, 'sectors')
+    if (cached) {
+      setSectorAnalysis(cached)
+      return
+    }
+
+    setAnalysisLoading(true)
+    try {
+      const data = sectorData[sector.symbol]
+      const change = data?.pc ? ((data.c - data.pc) / data.pc * 100).toFixed(2) : 0
+
+      const prompt = `Analyze the ${sector.name} sector (${sector.symbol}):
+- Current change: ${change >= 0 ? '+' : ''}${change}%
+- Price: $${data?.c?.toFixed(2)}
+
+In 2-3 sentences: Is this sector bullish or bearish right now? What's driving performance? What should investors watch for? Be specific and opinionated.`
+
+      const insight = await groqFetch(prompt)
+      setSectorAnalysis(insight)
+      aiCache.set(cacheKey, insight)
+    } catch (err) {
+      setSectorAnalysis('Analysis unavailable')
+    }
+    setAnalysisLoading(false)
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+          <PieChart className="w-7 h-7 text-blue-400" />
+          Sector Performance
+        </h2>
+        <p className="text-gray-400 mt-1">S&P 500 sector breakdown with AI analysis</p>
+      </div>
+
+      {/* Sector Heat Map */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+        {SECTORS.map(sector => {
+          const data = sectorData[sector.symbol]
+          const change = data?.pc ? ((data.c - data.pc) / data.pc * 100) : 0
+          const isPositive = change >= 0
+          return (
+            <button
+              key={sector.symbol}
+              onClick={() => analyzeSector(sector)}
+              className={`rounded-xl p-4 text-left transition-all hover:scale-105 border ${
+                selectedSector?.symbol === sector.symbol
+                  ? 'border-blue-500 ring-2 ring-blue-500/30'
+                  : 'border-gray-700 hover:border-gray-600'
+              } ${isPositive ? 'bg-green-900/20' : 'bg-red-900/20'}`}
+            >
+              <div className="text-xs text-gray-400 mb-1">{sector.symbol}</div>
+              <div className="font-medium text-white text-sm truncate">{sector.name}</div>
+              {loading ? (
+                <div className="h-5 bg-gray-700 rounded animate-pulse mt-2" />
+              ) : (
+                <div className={`text-lg font-bold mt-1 ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
+                  {isPositive ? '+' : ''}{change.toFixed(2)}%
+                </div>
+              )}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Selected Sector Analysis */}
+      {selectedSector && (
+        <div className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
+          <div className="flex items-center gap-3 mb-4">
+            <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${selectedSector.color} flex items-center justify-center`}>
+              <Layers className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h3 className="font-bold text-white">{selectedSector.name}</h3>
+              <p className="text-gray-400 text-sm">{selectedSector.symbol}</p>
+            </div>
+          </div>
+
+          {analysisLoading ? (
+            <div className="space-y-2">
+              <div className="h-4 bg-gray-700 rounded animate-pulse w-3/4" />
+              <div className="h-4 bg-gray-700 rounded animate-pulse w-1/2" />
+            </div>
+          ) : sectorAnalysis ? (
+            <div className="bg-purple-900/20 rounded-lg p-4 border border-purple-500/20">
+              <div className="flex items-center gap-2 mb-2">
+                <Brain className="w-4 h-4 text-purple-400" />
+                <span className="text-sm font-medium text-purple-300">AI Analysis</span>
+              </div>
+              <p className="text-gray-200 text-sm">{sectorAnalysis}</p>
+            </div>
+          ) : null}
+
+          <button
+            onClick={() => onSelectStock(selectedSector.symbol)}
+            className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-white text-sm flex items-center gap-2"
+          >
+            <Eye className="w-4 h-4" />
+            View {selectedSector.symbol} Details
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ============ SCREENER TAB ============
+const SCREENS = [
+  {
+    id: 'undervalued',
+    name: 'Undervalued Growth',
+    description: 'Low P/E with strong growth potential',
+    icon: Target,
+    color: 'from-green-500 to-emerald-600',
+    stocks: ['META', 'GOOG', 'INTC', 'T', 'VZ', 'GM', 'F', 'WFC']
+  },
+  {
+    id: 'dividend',
+    name: 'Dividend Champions',
+    description: 'Consistent dividend growers',
+    icon: DollarSign,
+    color: 'from-blue-500 to-indigo-600',
+    stocks: ['JNJ', 'PG', 'KO', 'PEP', 'MMM', 'XOM', 'CVX', 'VZ']
+  },
+  {
+    id: 'momentum',
+    name: 'Momentum Plays',
+    description: 'Strong recent performance',
+    icon: TrendingUp,
+    color: 'from-purple-500 to-pink-600',
+    stocks: ['NVDA', 'META', 'AMZN', 'NFLX', 'AMD', 'AVGO', 'CRM', 'NOW']
+  },
+  {
+    id: 'turnaround',
+    name: 'Turnaround Candidates',
+    description: 'Down but fundamentals improving',
+    icon: RefreshCw,
+    color: 'from-orange-500 to-red-600',
+    stocks: ['INTC', 'BA', 'DIS', 'PYPL', 'NKE', 'SBUX', 'TGT', 'WBD']
+  },
+  {
+    id: 'ai-favorites',
+    name: 'AI Favorites',
+    description: 'Stocks AI is most bullish on',
+    icon: Brain,
+    color: 'from-cyan-500 to-blue-600',
+    stocks: ['NVDA', 'MSFT', 'GOOGL', 'AMZN', 'AAPL', 'META', 'TSM', 'AVGO']
+  }
+]
+
+function ScreenerTab({ onSelectStock, darkMode }) {
+  const [selectedScreen, setSelectedScreen] = useState(null)
+  const [screenResults, setScreenResults] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [aiReasoning, setAiReasoning] = useState(null)
+
+  const runScreen = async (screen) => {
+    setSelectedScreen(screen)
+    setLoading(true)
+    setAiReasoning(null)
+
+    const cacheKey = `screen_${screen.id}`
+    const cached = aiCache.get(cacheKey, 'screener')
+    if (cached) {
+      setScreenResults(cached.results)
+      setAiReasoning(cached.reasoning)
+      setLoading(false)
+      return
+    }
+
+    try {
+      // Fetch data for screen stocks
+      const results = await Promise.allSettled(
+        screen.stocks.map(s => yahooFetch(s))
+      )
+
+      const stockData = []
+      results.forEach((result, i) => {
+        if (result.status === 'fulfilled' && result.value) {
+          const normalized = normalizeYahooQuote(result.value)
+          if (normalized && normalized.c > 0) {
+            const change = normalized.pc ? ((normalized.c - normalized.pc) / normalized.pc * 100) : 0
+            stockData.push({
+              symbol: screen.stocks[i],
+              name: normalized.name,
+              price: normalized.c,
+              change,
+              pe: normalized.peRatio,
+              marketCap: normalized.marketCap
+            })
+          }
+        }
+      })
+
+      setScreenResults(stockData)
+
+      // Get AI reasoning
+      const prompt = `You're presenting a "${screen.name}" stock screen. These stocks fit the criteria: ${stockData.map(s => s.symbol).join(', ')}.
+
+Explain in 2-3 sentences why these stocks fit the "${screen.name}" theme and what makes them attractive right now. Be specific and opinionated.`
+
+      const reasoning = await groqFetch(prompt)
+      setAiReasoning(reasoning)
+
+      aiCache.set(cacheKey, { results: stockData, reasoning })
+    } catch (err) {
+      console.error('Screen error:', err)
+    }
+    setLoading(false)
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+          <Filter className="w-7 h-7 text-green-400" />
+          AI Stock Screener
+        </h2>
+        <p className="text-gray-400 mt-1">AI-curated stock screens for different strategies</p>
+      </div>
+
+      {/* Screen Buttons */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {SCREENS.map(screen => (
+          <button
+            key={screen.id}
+            onClick={() => runScreen(screen)}
+            className={`p-4 rounded-xl text-left transition-all hover:scale-[1.02] border ${
+              selectedScreen?.id === screen.id
+                ? 'border-blue-500 ring-2 ring-blue-500/30 bg-gray-800'
+                : 'border-gray-700 hover:border-gray-600 bg-gray-800/50'
+            }`}
+          >
+            <div className="flex items-center gap-3 mb-2">
+              <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${screen.color} flex items-center justify-center`}>
+                <screen.icon className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h3 className="font-medium text-white">{screen.name}</h3>
+                <p className="text-xs text-gray-400">{screen.description}</p>
+              </div>
+            </div>
+          </button>
+        ))}
+      </div>
+
+      {/* Screen Results */}
+      {selectedScreen && (
+        <div className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
+          <h3 className="font-bold text-white mb-4 flex items-center gap-2">
+            <selectedScreen.icon className="w-5 h-5" />
+            {selectedScreen.name} Results
+          </h3>
+
+          {aiReasoning && (
+            <div className="bg-purple-900/20 rounded-lg p-4 border border-purple-500/20 mb-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Brain className="w-4 h-4 text-purple-400" />
+                <span className="text-sm font-medium text-purple-300">AI Reasoning</span>
+              </div>
+              <p className="text-gray-200 text-sm">{aiReasoning}</p>
+            </div>
+          )}
+
+          {loading ? (
+            <div className="space-y-3">
+              {[1,2,3,4,5].map(i => <div key={i} className="h-16 bg-gray-700 rounded-lg animate-pulse" />)}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {screenResults.map(stock => (
+                <button
+                  key={stock.symbol}
+                  onClick={() => onSelectStock(stock.symbol)}
+                  className="w-full flex items-center justify-between p-4 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-gray-700 flex items-center justify-center">
+                      <span className="text-white font-bold">{stock.symbol.charAt(0)}</span>
+                    </div>
+                    <div className="text-left">
+                      <div className="font-medium text-white">{stock.symbol}</div>
+                      <div className="text-xs text-gray-400 truncate max-w-[150px]">{stock.name}</div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-white font-medium">{formatCurrency(stock.price)}</div>
+                    <div className={`text-sm ${stock.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {stock.change >= 0 ? '+' : ''}{stock.change.toFixed(2)}%
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ============ EARNINGS TAB ============
+const EARNINGS_STOCKS = [
+  { symbol: 'AAPL', date: '2025-01-30', expectedEps: 2.35, prevEps: 2.18 },
+  { symbol: 'MSFT', date: '2025-01-29', expectedEps: 3.12, prevEps: 2.93 },
+  { symbol: 'GOOGL', date: '2025-02-04', expectedEps: 1.95, prevEps: 1.64 },
+  { symbol: 'AMZN', date: '2025-02-06', expectedEps: 1.48, prevEps: 1.29 },
+  { symbol: 'META', date: '2025-02-05', expectedEps: 6.75, prevEps: 5.33 },
+  { symbol: 'NVDA', date: '2025-02-26', expectedEps: 0.84, prevEps: 0.78 },
+  { symbol: 'TSLA', date: '2025-01-29', expectedEps: 0.72, prevEps: 0.71 },
+  { symbol: 'JPM', date: '2025-01-15', expectedEps: 4.02, prevEps: 3.97 },
+  { symbol: 'V', date: '2025-01-30', expectedEps: 2.68, prevEps: 2.41 },
+  { symbol: 'UNH', date: '2025-01-16', expectedEps: 6.68, prevEps: 6.16 }
+]
+
+function EarningsTab({ onSelectStock, watchlist, darkMode }) {
+  const [earnings, setEarnings] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [filter, setFilter] = useState('all')
+  const [predictions, setPredictions] = useState({})
+  const [loadingPrediction, setLoadingPrediction] = useState(null)
+
+  useEffect(() => {
+    const fetchEarnings = async () => {
+      setLoading(true)
+      const enriched = []
+
+      const results = await Promise.allSettled(
+        EARNINGS_STOCKS.map(e => yahooFetch(e.symbol))
+      )
+
+      results.forEach((result, i) => {
+        const stock = EARNINGS_STOCKS[i]
+        if (result.status === 'fulfilled' && result.value) {
+          const normalized = normalizeYahooQuote(result.value)
+          enriched.push({
+            ...stock,
+            name: normalized?.name || stock.symbol,
+            price: normalized?.c,
+            change: normalized?.changePercent
+          })
+        } else {
+          enriched.push(stock)
+        }
+      })
+
+      setEarnings(enriched)
+      setLoading(false)
+    }
+    fetchEarnings()
+  }, [])
+
+  const getPrediction = async (stock) => {
+    const cacheKey = `earnings_${stock.symbol}`
+    const cached = aiCache.get(cacheKey, 'earnings')
+    if (cached) {
+      setPredictions(prev => ({ ...prev, [stock.symbol]: cached }))
+      return
+    }
+
+    setLoadingPrediction(stock.symbol)
+    try {
+      const prompt = `${stock.symbol} reports earnings on ${stock.date}. Expected EPS: $${stock.expectedEps}, Previous EPS: $${stock.prevEps}.
+
+Will they BEAT, MISS, or MEET expectations? Give your prediction with a confidence percentage (e.g., "BEAT - 70% confidence") and one sentence explaining why. Be decisive.`
+
+      const prediction = await groqFetch(prompt)
+      setPredictions(prev => ({ ...prev, [stock.symbol]: prediction }))
+      aiCache.set(cacheKey, prediction)
+    } catch {
+      setPredictions(prev => ({ ...prev, [stock.symbol]: 'Prediction unavailable' }))
+    }
+    setLoadingPrediction(null)
+  }
+
+  const filteredEarnings = filter === 'watchlist'
+    ? earnings.filter(e => watchlist?.includes(e.symbol))
+    : earnings
+
+  const sortedEarnings = [...filteredEarnings].sort((a, b) => new Date(a.date) - new Date(b.date))
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+            <Calendar className="w-7 h-7 text-yellow-400" />
+            Earnings Calendar
+          </h2>
+          <p className="text-gray-400 mt-1">Upcoming earnings with AI predictions</p>
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            onClick={() => setFilter('all')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              filter === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+            }`}
+          >
+            All
+          </button>
+          <button
+            onClick={() => setFilter('watchlist')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              filter === 'watchlist' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+            }`}
+          >
+            Watchlist
+          </button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="space-y-3">
+          {[1,2,3,4,5].map(i => <div key={i} className="h-24 bg-gray-800 rounded-xl animate-pulse" />)}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {sortedEarnings.map(stock => {
+            const isThisWeek = new Date(stock.date) <= new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+            return (
+              <div
+                key={stock.symbol}
+                className={`rounded-xl p-4 border transition-all ${
+                  isThisWeek ? 'bg-yellow-900/20 border-yellow-500/30' : 'bg-gray-800/50 border-gray-700'
+                }`}
+              >
+                <div className="flex items-center justify-between flex-wrap gap-4">
+                  <div className="flex items-center gap-4">
+                    <button onClick={() => onSelectStock(stock.symbol)} className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                        <span className="text-white font-bold">{stock.symbol.charAt(0)}</span>
+                      </div>
+                      <div>
+                        <div className="font-bold text-white">{stock.symbol}</div>
+                        <div className="text-sm text-gray-400">{stock.name}</div>
+                      </div>
+                    </button>
+                    {isThisWeek && (
+                      <span className="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-medium rounded">
+                        This Week
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-6">
+                    <div className="text-center">
+                      <div className="text-xs text-gray-400">Report Date</div>
+                      <div className="text-white font-medium">{new Date(stock.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-xs text-gray-400">Expected EPS</div>
+                      <div className="text-white font-medium">${stock.expectedEps}</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-xs text-gray-400">Previous EPS</div>
+                      <div className="text-white font-medium">${stock.prevEps}</div>
+                    </div>
+                    <button
+                      onClick={() => getPrediction(stock)}
+                      disabled={loadingPrediction === stock.symbol}
+                      className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-white text-sm flex items-center gap-2 disabled:opacity-50"
+                    >
+                      {loadingPrediction === stock.symbol ? (
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Brain className="w-4 h-4" />
+                      )}
+                      Predict
+                    </button>
+                  </div>
+                </div>
+
+                {predictions[stock.symbol] && (
+                  <div className="mt-4 p-3 bg-purple-900/20 rounded-lg border border-purple-500/20">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Sparkles className="w-4 h-4 text-purple-400" />
+                      <span className="text-sm font-medium text-purple-300">AI Prediction</span>
+                    </div>
+                    <p className="text-gray-200 text-sm">{predictions[stock.symbol]}</p>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ============ COMBINED DASHBOARD ============
 function Dashboard({ watchlist, setWatchlist, onSelectStock, darkMode }) {
   const [marketData, setMarketData] = useState({})
@@ -1223,6 +1882,9 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock, darkMode }) {
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
         </button>
       </div>
+
+      {/* AI Market Pulse */}
+      <AIMarketPulse marketData={marketData} moversData={moversData} />
 
       {/* Market Indices Row */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
@@ -1626,6 +2288,8 @@ function StockDetail({ symbol, onClose, darkMode }) {
   const [loading, setLoading] = useState(true)
   const [showNews, setShowNews] = useState(false)
   const [chartRange, setChartRange] = useState('1mo')
+  const [aiSummary, setAiSummary] = useState(null)
+  const [aiLoading, setAiLoading] = useState(false)
 
   const rangeOptions = [
     { value: '1d', label: '1D', interval: '5m' },
@@ -1654,6 +2318,35 @@ function StockDetail({ symbol, onClose, darkMode }) {
     }
     fetchData()
   }, [symbol])
+
+  // Fetch AI summary
+  useEffect(() => {
+    const fetchAiSummary = async () => {
+      if (!quote) return
+
+      const cacheKey = `stock_summary_${symbol}`
+      const cached = aiCache.get(cacheKey, 'stockAnalysis')
+      if (cached) {
+        setAiSummary(cached)
+        return
+      }
+
+      setAiLoading(true)
+      try {
+        const change = quote.changePercent || 0
+        const prompt = `In 2 sentences, answer: "Why is ${symbol} ${change >= 0 ? 'up' : 'down'} ${Math.abs(change).toFixed(1)}% today?" Be specific about likely catalysts (earnings, news, sector rotation, etc). No disclaimers.`
+
+        const summary = await groqFetch(prompt, { symbol, price: quote.c, change })
+        setAiSummary(summary)
+        aiCache.set(cacheKey, summary)
+      } catch (err) {
+        console.error('AI summary error:', err)
+      }
+      setAiLoading(false)
+    }
+
+    fetchAiSummary()
+  }, [quote, symbol])
 
   const change = quote?.change || 0
   const pctChange = quote?.changePercent || 0
@@ -1695,6 +2388,21 @@ function StockDetail({ symbol, onClose, darkMode }) {
               <span className={`text-sm ${positive ? 'text-green-400' : 'text-red-400'}`}>
                 {positive ? '+' : ''}{formatCurrency(change)}
               </span>
+            </div>
+
+            {/* AI Quick Summary */}
+            <div className="bg-purple-900/20 rounded-xl p-4 border border-purple-500/20">
+              <div className="flex items-center gap-2 mb-2">
+                <Brain className="w-4 h-4 text-purple-400" />
+                <span className="text-sm font-medium text-purple-300">Why is {symbol} moving?</span>
+              </div>
+              {aiLoading ? (
+                <div className="h-10 bg-gray-700/50 rounded animate-pulse" />
+              ) : aiSummary ? (
+                <p className="text-gray-200 text-sm">{aiSummary}</p>
+              ) : (
+                <p className="text-gray-400 text-sm">Loading AI analysis...</p>
+              )}
             </div>
 
             {/* Chart with Range Selector */}
@@ -2539,6 +3247,9 @@ function AppContent() {
       <main className="max-w-7xl mx-auto px-4 py-6">
         {activePage === 'dashboard' && <Dashboard watchlist={watchlist} setWatchlist={setWatchlist} onSelectStock={setSelectedStock} darkMode={darkMode} />}
         {activePage === 'insights' && <AIInsights darkMode={darkMode} finnhubFetch={finnhubFetch} />}
+        {activePage === 'screener' && <ScreenerTab onSelectStock={setSelectedStock} darkMode={darkMode} />}
+        {activePage === 'earnings' && <EarningsTab onSelectStock={setSelectedStock} watchlist={watchlist} darkMode={darkMode} />}
+        {activePage === 'sectors' && <SectorsTab onSelectStock={setSelectedStock} darkMode={darkMode} />}
         {activePage === 'news' && <NewsPage darkMode={darkMode} watchlist={watchlist} />}
         {activePage === 'settings' && <SettingsPage darkMode={darkMode} syncStatus={syncStatus} onShowTour={() => setShowTour(true)} />}
       </main>
