@@ -1211,10 +1211,14 @@ function AIMarketPulse({ marketData, moversData }) {
         const gainers = moversData?.gainers?.slice(0, 3).map(s => `${s.symbol} +${s.change.toFixed(1)}%`).join(', ') || 'N/A'
         const losers = moversData?.losers?.slice(0, 3).map(s => `${s.symbol} ${s.change.toFixed(1)}%`).join(', ') || 'N/A'
 
-        const prompt = `Market data - Indices: ${indices} | Top Gainers: ${gainers} | Top Losers: ${losers}
+        const prompt = `Today's Market:
+Indices: ${indices}
+Top Gainers: ${gainers}
+Top Losers: ${losers}
 
-Give a 2-3 sentence market pulse. Start with mood (Bullish/Bearish/Mixed), then the key driver. Example: "Bullish mood today as tech leads the rally. NVDA surging on AI chip demand while energy lags on oil weakness." Be specific, no fluff.`
+2-3 sentence market pulse. Start with mood (Bullish/Bearish/Mixed), then explain WHY with specific stocks/sectors.`
 
+        console.log('AI Prompt (Market Pulse):', prompt)
         const insight = await groqFetch(prompt, {}, false)
         setPulse(insight)
         aiCache.set('marketPulse', insight)
@@ -1312,10 +1316,13 @@ function SectorsTab({ onSelectStock, darkMode }) {
       const data = sectorData[sector.symbol]
       const change = data?.pc ? ((data.c - data.pc) / data.pc * 100).toFixed(2) : 0
 
-      const prompt = `${sector.name} sector (${sector.symbol}): ${change >= 0 ? '+' : ''}${change}% today.
+      const prompt = `Sector: ${sector.name} (ETF: ${sector.symbol})
+Performance: ${change >= 0 ? '+' : ''}${change}% today
+Price: $${data?.c?.toFixed(2) || 'N/A'}
 
-2 sentences: Is it bullish or bearish? What's the key driver? Example: "Technology is bullish - AI demand driving chip stocks higher. Watch for Fed rate decisions which could impact growth valuations."`
+Is ${sector.name} sector bullish or bearish? What's driving it? 2 sentences, be specific.`
 
+      console.log('AI Prompt (Sector):', prompt)
       const insight = await groqFetch(prompt, {}, false)
       setSectorAnalysis(insight)
       aiCache.set(cacheKey, insight)
@@ -1497,10 +1504,13 @@ function ScreenerTab({ onSelectStock, darkMode }) {
       setScreenResults(stockData)
 
       // Get AI reasoning
-      const prompt = `"${screen.name}" screen stocks: ${stockData.map(s => `${s.symbol} (${s.change >= 0 ? '+' : ''}${s.change.toFixed(1)}%)`).join(', ')}.
+      const prompt = `Screen: "${screen.name}" - ${screen.description}
+Stocks in this screen:
+${stockData.map(s => `- ${s.symbol}: $${s.price?.toFixed(2) || 'N/A'}, ${s.change >= 0 ? '+' : ''}${s.change.toFixed(1)}% today, P/E: ${s.pe?.toFixed(1) || 'N/A'}`).join('\n')}
 
-In 2 sentences: Why do these fit "${screen.name}" and what makes them attractive now? Be specific. Example: "These tech giants show strong earnings growth at reasonable valuations. META and GOOG trade below historical P/E despite AI tailwinds."`
+Explain in 2 sentences why these specific stocks (${stockData.map(s => s.symbol).join(', ')}) fit the "${screen.name}" criteria. Be specific about each company.`
 
+      console.log('AI Prompt (Screener):', prompt)
       const reasoning = await groqFetch(prompt, {}, false)
       setAiReasoning(reasoning)
 
@@ -1662,10 +1672,16 @@ function EarningsTab({ onSelectStock, watchlist, darkMode }) {
 
     setLoadingPrediction(stock.symbol)
     try {
-      const prompt = `${stock.symbol} earnings on ${stock.date}. Expected: $${stock.expectedEps}, Previous: $${stock.prevEps}.
+      const prompt = `Company: ${stock.name || stock.symbol} (${stock.symbol})
+Report Date: ${stock.date}
+Expected EPS: $${stock.expectedEps}
+Previous EPS: $${stock.prevEps}
+Current Price: $${stock.price?.toFixed(2) || 'N/A'}
 
-Respond with JSON only: {"prediction": "BEAT" or "MISS" or "MEET", "confidence": "HIGH" or "MEDIUM" or "LOW", "reason": "one sentence why"}`
+Will ${stock.symbol} BEAT, MISS, or MEET earnings expectations?
+Respond with JSON only: {"prediction": "BEAT" or "MISS" or "MEET", "confidence": "HIGH" or "MEDIUM" or "LOW", "reason": "one sentence specific to ${stock.symbol}'s business"}`
 
+      console.log('AI Prompt (Earnings):', prompt)
       const rawPrediction = await groqFetch(prompt, {}, true)
       const parsed = parseAiJson(rawPrediction)
 
@@ -2513,10 +2529,16 @@ function StockDetail({ symbol, onClose, darkMode }) {
       setAiLoading(true)
       try {
         const change = quote.changePercent || 0
-        const prompt = `${symbol} is ${change >= 0 ? 'up' : 'down'} ${Math.abs(change).toFixed(1)}% today at $${quote.c?.toFixed(2)}.
+        const prompt = `Stock: ${symbol} (${quote.name || symbol})
+Current Price: $${quote.c?.toFixed(2) || 'N/A'}
+Change Today: ${change >= 0 ? '+' : ''}${change.toFixed(2)}%
+52-Week High: $${quote.weekHigh52?.toFixed(2) || 'N/A'}
+52-Week Low: $${quote.weekLow52?.toFixed(2) || 'N/A'}
+P/E Ratio: ${quote.peRatio?.toFixed(1) || 'N/A'}
 
-In 2 sentences: What's driving this move? Be specific - mention earnings, news, sector trends, or market catalysts. Example: "Tech rally lifting all boats as Fed signals rate cuts. Company's AI initiatives also getting investor attention after competitor announcements."`
+Explain why ${symbol} is ${change >= 0 ? 'up' : 'down'} ${Math.abs(change).toFixed(1)}% today. Be specific to THIS company - mention earnings, news, sector trends, or catalysts. 2 sentences max.`
 
+        console.log('AI Prompt (Stock Summary):', prompt)
         const summary = await groqFetch(prompt, {}, false)
         setAiSummary(summary)
         aiCache.set(cacheKey, summary)
@@ -2926,16 +2948,13 @@ function NewsPage({ darkMode, watchlist }) {
   const [hasMore, setHasMore] = useState(true)
   const [moversStocks, setMoversStocks] = useState([])
 
-  // Index ETFs for market news
-  const INDICES = ['SPY', 'QQQ', 'DIA']
   // Popular stocks for movers (will be sorted by actual price change)
   const POPULAR_FOR_MOVERS = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'TSLA', 'META', 'AMD', 'JPM', 'V']
   const MAX_WATCHLIST_STOCKS = 5
 
   const tabs = [
     { id: 'movers', label: 'Market Movers', icon: TrendingUp },
-    { id: 'feed', label: 'Your Feed', icon: Star },
-    { id: 'indices', label: 'Indices', icon: BarChart3 }
+    { id: 'feed', label: 'Your Watchlist', icon: Star }
   ]
 
   // Helper: delay between requests
@@ -3036,9 +3055,6 @@ function NewsPage({ darkMode, watchlist }) {
     } else if (tab === 'feed') {
       // Watchlist stocks only
       stocksToFetch = (watchlist || []).slice(0, MAX_WATCHLIST_STOCKS)
-    } else if (tab === 'indices') {
-      // Index ETFs for market-wide news
-      stocksToFetch = INDICES
     }
 
     setLoadedStocks(stocksToFetch)
