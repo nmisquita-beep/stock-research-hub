@@ -1421,108 +1421,125 @@ const parseNewsResponse = (data) => {
   return []
 }
 
-// ============ STRICT STOCK MARKET WHITELIST ============
-// ONLY articles containing these terms will be shown
-const STOCK_WHITELIST = [
-  // Must-have stock terms
-  'stock', 'stocks', 'shares', 'share price', 'shareholder',
-  // Indices
-  's&p 500', 's&p', 'nasdaq', 'dow jones', 'dow', 'nyse', 'russell 2000',
-  // Earnings & financials
-  'earnings', 'quarterly', 'revenue', 'profit', 'eps', 'guidance',
-  'beat estimates', 'miss estimates', 'earnings report', 'quarterly results',
-  // Trading
-  'trading', 'traders', 'investors', 'wall street',
-  // Fed & rates
-  'fed', 'federal reserve', 'interest rate', 'rate cut', 'rate hike', 'fomc',
-  'inflation', 'cpi', 'ppi',
-  // Corporate actions
-  'ipo', 'merger', 'acquisition', 'buyout', 'takeover',
-  // Market movements
-  'rally', 'selloff', 'sell-off', 'market cap', 'valuation',
-  'bullish', 'bearish', 'bull market', 'bear market',
-  '52-week high', '52-week low', 'all-time high',
-  // Financial instruments
-  'etf', 'hedge fund', 'dividend', 'buyback',
-  // Major tickers (exact)
-  ' aapl', ' msft', ' googl', ' goog', ' amzn', ' nvda', ' tsla', ' meta',
-  ' jpm', ' v', ' ma', ' dis', ' nflx', ' amd', ' intc', ' crm',
-  '(aapl)', '(msft)', '(googl)', '(amzn)', '(nvda)', '(tsla)', '(meta)',
-  // Major company names in stock context
-  'apple stock', 'apple shares', 'apple earnings',
-  'microsoft stock', 'microsoft shares', 'microsoft earnings',
-  'google stock', 'alphabet stock', 'alphabet shares',
-  'amazon stock', 'amazon shares', 'amazon earnings',
-  'nvidia stock', 'nvidia shares', 'nvidia earnings',
-  'tesla stock', 'tesla shares', 'tesla earnings',
-  'meta stock', 'meta shares', 'meta earnings'
-]
-
-// ============ NEWS PAGE ============
-function NewsPage({ darkMode }) {
+// ============ NEWS PAGE - STOCK-SPECIFIC NEWS ============
+function NewsPage({ darkMode, watchlist }) {
   const [news, setNews] = useState([])
   const [loading, setLoading] = useState(true)
-  const [category, setCategory] = useState('general')
-  const categories = [
-    { id: 'general', label: 'Market News' },
-    { id: 'merger', label: 'M&A' },
-    { id: 'technology', label: 'Tech Stocks' }
+  const [tab, setTab] = useState('movers')
+  const [trendingStocks, setTrendingStocks] = useState([])
+
+  // Major market-moving stocks for "Market Movers" tab
+  const MARKET_MOVERS = ['SPY', 'QQQ', 'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'TSLA', 'META']
+
+  const tabs = [
+    { id: 'movers', label: 'Market Movers', icon: TrendingUp },
+    { id: 'watchlist', label: 'Your Watchlist', icon: Star },
+    { id: 'trending', label: 'Trending', icon: Zap }
   ]
 
-  const isCryptoRelated = (article) => {
-    if (!article) return false
-    const text = `${article.headline || ''} ${article.summary || ''}`.toLowerCase()
-    return CRYPTO_KEYWORDS.some(keyword => text.includes(keyword))
-  }
+  // Fetch trending stocks (today's biggest movers)
+  const fetchTrendingStocks = useCallback(async () => {
+    const popularStocks = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'AMD', 'JPM', 'V', 'NFLX', 'DIS']
+    const stockData = []
 
-  // STRICT whitelist check - article MUST contain at least one whitelist term
-  const isStockMarketNews = (article) => {
-    if (!article || !article.headline) return false
-    const text = `${article.headline || ''} ${article.summary || ''}`.toLowerCase()
+    for (const symbol of popularStocks) {
+      try {
+        const data = await finnhubFetch(`/quote?symbol=${symbol}`)
+        if (data && typeof data.c === 'number' && data.pc) {
+          const change = Math.abs(((data.c - data.pc) / data.pc) * 100)
+          stockData.push({ symbol, change })
+        }
+      } catch {}
+    }
 
-    // Must contain at least one whitelist term
-    const hasWhitelistTerm = STOCK_WHITELIST.some(term => text.includes(term))
-    if (!hasWhitelistTerm) return false
+    // Get top 5 by absolute change (biggest movers)
+    const sorted = stockData.sort((a, b) => b.change - a.change)
+    setTrendingStocks(sorted.slice(0, 5).map(s => s.symbol))
+  }, [])
 
-    // Reject crypto
-    if (isCryptoRelated(article)) return false
+  // Fetch company-specific news for a list of symbols
+  const fetchCompanyNews = useCallback(async (symbols) => {
+    if (!symbols || symbols.length === 0) return []
 
-    return true
-  }
+    const today = new Date()
+    const weekAgo = new Date(today.getTime() - 5 * 24 * 60 * 60 * 1000)
+    const to = today.toISOString().split('T')[0]
+    const from = weekAgo.toISOString().split('T')[0]
+
+    const allArticles = []
+
+    // Fetch news for each symbol (limit concurrent requests)
+    for (const symbol of symbols.slice(0, 8)) {
+      try {
+        const data = await finnhubFetch(`/company-news?symbol=${symbol}&from=${from}&to=${to}`)
+        const articles = parseNewsResponse(data)
+
+        // Add ticker to each article and take top 3 per stock
+        articles.slice(0, 3).forEach(article => {
+          allArticles.push({ ...article, ticker: symbol })
+        })
+      } catch (err) {
+        console.log(`Failed to fetch news for ${symbol}:`, err)
+      }
+    }
+
+    // Sort by datetime (newest first) and deduplicate by headline
+    const seen = new Set()
+    const unique = allArticles
+      .sort((a, b) => (b.datetime || 0) - (a.datetime || 0))
+      .filter(article => {
+        if (seen.has(article.headline)) return false
+        seen.add(article.headline)
+        return true
+      })
+
+    return unique.slice(0, 20)
+  }, [])
 
   const fetchNews = useCallback(async () => {
     setLoading(true)
+    let articles = []
+
     try {
-      console.log('Fetching news for category:', category)
-      const data = await finnhubFetch(`/news?category=${category}`)
+      if (tab === 'movers') {
+        articles = await fetchCompanyNews(MARKET_MOVERS)
+      } else if (tab === 'watchlist') {
+        if (watchlist && watchlist.length > 0) {
+          articles = await fetchCompanyNews(watchlist)
+        }
+      } else if (tab === 'trending') {
+        // First fetch trending stocks if we don't have them
+        if (trendingStocks.length === 0) {
+          await fetchTrendingStocks()
+        }
+        if (trendingStocks.length > 0) {
+          articles = await fetchCompanyNews(trendingStocks)
+        }
+      }
 
-      // Convert proxy response (object with numeric keys) to array
-      let articles = parseNewsResponse(data)
-      console.log('Parsed articles count:', articles.length)
-
-      // STRICT filter - only show true stock market news
-      articles = articles.filter(article => isStockMarketNews(article))
-      console.log('After strict whitelist filter:', articles.length)
-
-      // Sort by datetime (newest first)
-      articles.sort((a, b) => (b.datetime || 0) - (a.datetime || 0))
-
-      setNews(articles.slice(0, 25))
+      setNews(articles)
     } catch (error) {
       console.error('News fetch error:', error)
       setNews([])
     }
-    finally { setLoading(false) }
-  }, [category])
+    setLoading(false)
+  }, [tab, watchlist, trendingStocks, fetchCompanyNews, fetchTrendingStocks])
 
-  useEffect(() => { fetchNews() }, [fetchNews])
+  // Fetch trending stocks on mount
+  useEffect(() => {
+    fetchTrendingStocks()
+  }, [fetchTrendingStocks])
+
+  useEffect(() => {
+    fetchNews()
+  }, [tab, watchlist, trendingStocks])
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-white">Market News</h2>
-          <p className="text-sm text-gray-400">Latest financial news and updates</p>
+          <h2 className="text-2xl font-bold text-white">Stock News</h2>
+          <p className="text-sm text-gray-400">Real stock market news - no fluff</p>
         </div>
         <button onClick={fetchNews} disabled={loading}
           className="flex items-center gap-2 px-4 py-2 rounded-xl transition-colors bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300">
@@ -1531,38 +1548,56 @@ function NewsPage({ darkMode }) {
         </button>
       </div>
 
+      {/* Tab Navigation */}
       <div className="flex gap-2 overflow-x-auto pb-1">
-        {categories.map(cat => (
-          <button key={cat.id} onClick={() => setCategory(cat.id)}
-            className={`px-4 py-2 rounded-xl whitespace-nowrap transition-all font-medium ${
-              category === cat.id
+        {tabs.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl whitespace-nowrap transition-all font-medium ${
+              tab === t.id
                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25'
                 : 'bg-gray-800 text-gray-300 hover:bg-gray-700 border border-gray-700'
             }`}>
-            {cat.label}
+            <t.icon className="w-4 h-4" />
+            {t.label}
           </button>
         ))}
       </div>
 
-      {loading ? (
+      {/* Watchlist empty state */}
+      {tab === 'watchlist' && (!watchlist || watchlist.length === 0) && !loading && (
+        <div className="rounded-xl p-12 border text-center bg-gray-800/50 border-gray-700">
+          <Star className="w-12 h-12 mx-auto mb-4 text-gray-600" />
+          <h3 className="text-lg font-medium mb-2 text-gray-300">Add stocks to your watchlist</h3>
+          <p className="text-gray-400">News from your watchlist stocks will appear here</p>
+        </div>
+      )}
+
+      {/* Loading state */}
+      {loading && (
         <div className="space-y-4">
           {[1, 2, 3, 4, 5].map(i => (
             <div key={i} className="h-32 rounded-xl animate-pulse bg-gray-800" />
           ))}
         </div>
-      ) : news.length === 0 ? (
+      )}
+
+      {/* No news state */}
+      {!loading && news.length === 0 && (tab !== 'watchlist' || (watchlist && watchlist.length > 0)) && (
         <div className="rounded-xl p-12 border text-center bg-gray-800/50 border-gray-700">
           <Newspaper className="w-12 h-12 mx-auto mb-4 text-gray-600" />
           <h3 className="text-lg font-medium mb-2 text-gray-300">No news found</h3>
-          <p className="text-gray-400">Try a different category or refresh</p>
+          <p className="text-gray-400">Try refreshing or check back later</p>
         </div>
-      ) : (
+      )}
+
+      {/* News articles */}
+      {!loading && news.length > 0 && (
         <div className="space-y-3">
           {news.map((article, i) => {
             const hasImage = article.image && article.image.length > 10
             const summary = article.summary || ''
             return (
-              <a key={i} href={article.url} target="_blank" rel="noopener noreferrer"
+              <a key={`${article.ticker}-${i}`} href={article.url} target="_blank" rel="noopener noreferrer"
                 className="block rounded-xl border transition-all hover:scale-[1.002] bg-gray-800/50 border-gray-700 hover:border-gray-600 hover:bg-gray-800 overflow-hidden group">
                 <div className="flex">
                   {/* Thumbnail */}
@@ -1578,11 +1613,19 @@ function NewsPage({ darkMode }) {
                   )}
                   {/* Content */}
                   <div className="flex-1 p-4">
-                    <h3 className="font-medium mb-1.5 line-clamp-2 text-white group-hover:text-blue-400 transition-colors">
-                      {article.headline}
-                    </h3>
+                    <div className="flex items-start gap-2 mb-1.5">
+                      {/* Ticker Badge */}
+                      {article.ticker && (
+                        <span className="flex-shrink-0 px-2 py-0.5 bg-blue-600/20 text-blue-400 text-xs font-bold rounded">
+                          {article.ticker}
+                        </span>
+                      )}
+                      <h3 className="font-medium line-clamp-2 text-white group-hover:text-blue-400 transition-colors">
+                        {article.headline}
+                      </h3>
+                    </div>
                     {summary && (
-                      <p className="text-sm text-gray-400 line-clamp-2 mb-2">
+                      <p className="text-sm text-gray-400 line-clamp-1 mb-2">
                         {summary}
                       </p>
                     )}
@@ -1826,7 +1869,7 @@ function AppContent() {
         {activePage === 'watchlist' && <Watchlist watchlist={watchlist} setWatchlist={setWatchlist} onSelectStock={setSelectedStock} darkMode={darkMode} />}
         {activePage === 'explore' && <MarketMovers onSelectStock={setSelectedStock} darkMode={darkMode} />}
         {activePage === 'insights' && <AIInsights darkMode={darkMode} finnhubFetch={finnhubFetch} />}
-        {activePage === 'news' && <NewsPage darkMode={darkMode} />}
+        {activePage === 'news' && <NewsPage darkMode={darkMode} watchlist={watchlist} />}
         {activePage === 'settings' && <SettingsPage darkMode={darkMode} syncStatus={syncStatus} onShowTour={() => setShowTour(true)} />}
       </main>
 
