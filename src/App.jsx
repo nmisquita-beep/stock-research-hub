@@ -232,31 +232,14 @@ function useCloudSync(key, localValue, setLocalValue, user) {
   const [syncing, setSyncing] = useState(false)
   const isInitialMount = useRef(true)
   const unsubscribeRef = useRef(null)
+  const localValueRef = useRef(localValue)
 
-  // Migrate localStorage data to Firestore on first sign-in
-  const migrateToCloud = useCallback(async () => {
-    if (!user) return
-    setSyncing(true)
-    try {
-      const docRef = doc(db, `users/${user.uid}/${key}`, 'data')
-      const docSnap = await getDoc(docRef)
+  // Keep ref updated
+  useEffect(() => {
+    localValueRef.current = localValue
+  }, [localValue])
 
-      if (!docSnap.exists()) {
-        // No cloud data - migrate local data
-        await setDoc(docRef, { value: localValue, updatedAt: new Date().toISOString() })
-      } else {
-        // Cloud data exists - use it
-        const cloudData = docSnap.data()
-        setLocalValue(cloudData.value)
-      }
-      setSynced(true)
-    } catch (error) {
-      console.error('Migration error:', error)
-    }
-    setSyncing(false)
-  }, [user, key, localValue, setLocalValue])
-
-  // Set up real-time listener
+  // Set up real-time listener and migrate on first connect
   useEffect(() => {
     if (!user) {
       setSynced(false)
@@ -269,10 +252,31 @@ function useCloudSync(key, localValue, setLocalValue, user) {
 
     const docRef = doc(db, `users/${user.uid}/${key}`, 'data')
 
+    // First, check if we need to migrate
+    const initializeSync = async () => {
+      setSyncing(true)
+      try {
+        const docSnap = await getDoc(docRef)
+        if (!docSnap.exists()) {
+          // No cloud data - migrate local data
+          await setDoc(docRef, { value: localValueRef.current, updatedAt: new Date().toISOString() })
+        }
+      } catch (error) {
+        console.error('Migration error:', error)
+      }
+      setSyncing(false)
+    }
+
+    initializeSync()
+
+    // Set up real-time listener
     unsubscribeRef.current = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
         const cloudData = docSnap.data()
-        setLocalValue(cloudData.value)
+        // Only update if value exists and is valid
+        if (cloudData && cloudData.value !== undefined && cloudData.value !== null) {
+          setLocalValue(cloudData.value)
+        }
         setSynced(true)
       }
     }, (error) => {
@@ -287,11 +291,10 @@ function useCloudSync(key, localValue, setLocalValue, user) {
     }
   }, [user, key, setLocalValue])
 
-  // Sync local changes to cloud
+  // Sync local changes to cloud (debounced)
   useEffect(() => {
     if (isInitialMount.current) {
       isInitialMount.current = false
-      if (user) migrateToCloud()
       return
     }
 
@@ -315,7 +318,7 @@ function useCloudSync(key, localValue, setLocalValue, user) {
     }, 1000)
 
     return () => clearTimeout(timeout)
-  }, [localValue, user, key, migrateToCloud])
+  }, [localValue, user, key])
 
   return { synced, syncing }
 }
@@ -1755,7 +1758,7 @@ function AppContent() {
     if (settings.apiKey && settings.apiKey !== apiKey) {
       setApiKey(settings.apiKey)
     }
-  }, [settings.apiKey])
+  }, [settings.apiKey, apiKey])
 
   const handleChangeApiKey = (newKey) => {
     setApiKey(newKey)
