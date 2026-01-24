@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Brain, Sparkles, Search, RefreshCw, TrendingUp, TrendingDown, Minus, X, Clock, AlertTriangle } from 'lucide-react'
 
-const GEMINI_PROXY_URL = 'https://stock-api-proxy-seven.vercel.app/api/gemini'
+const GROQ_PROXY_URL = 'https://stock-api-proxy-seven.vercel.app/api/groq'
 
 export default function AIInsights({ darkMode, finnhubFetch }) {
   const [symbol, setSymbol] = useState('')
@@ -81,7 +81,7 @@ export default function AIInsights({ darkMode, finnhubFetch }) {
       console.log('Calling Gemini with:', stockData)
 
       // Call Gemini API
-      const response = await fetch(GEMINI_PROXY_URL, {
+      const response = await fetch(GROQ_PROXY_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
