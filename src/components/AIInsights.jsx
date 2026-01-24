@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Brain, Sparkles, AlertTriangle, TrendingUp, TrendingDown, RefreshCw, Key, Lightbulb, Shield, Eye, BarChart3, HelpCircle, X } from 'lucide-react'
+import { Brain, Sparkles, AlertTriangle, TrendingUp, TrendingDown, RefreshCw, Lightbulb, Shield, Eye, BarChart3, HelpCircle, X, Zap } from 'lucide-react'
 
 // Sentiment analysis helper
 const POSITIVE_WORDS = ['surge', 'jump', 'gain', 'rise', 'rally', 'soar', 'boom', 'growth', 'profit', 'beat', 'exceed', 'bullish', 'upgrade', 'buy', 'outperform', 'strong', 'positive', 'record', 'high', 'breakout', 'momentum', 'optimistic', 'success']
@@ -58,8 +58,6 @@ function SectionExplainer({ title, description, darkMode }) {
 }
 
 export default function AIInsights({ watchlist = [], darkMode, finnhubFetch }) {
-  const [anthropicKey, setAnthropicKey] = useState(() => localStorage.getItem('anthropic_api_key') || '')
-  const [showApiKeyInput, setShowApiKeyInput] = useState(false)
   const [marketMood, setMarketMood] = useState(50)
   const [insights, setInsights] = useState([])
   const [watchlistSummary, setWatchlistSummary] = useState(null)
@@ -69,6 +67,7 @@ export default function AIInsights({ watchlist = [], darkMode, finnhubFetch }) {
   const [analyzing, setAnalyzing] = useState(null)
   const [aiAnalysis, setAiAnalysis] = useState(null)
   const [error, setError] = useState(null)
+  const [stockDataCache, setStockDataCache] = useState({})
 
   // Safe watchlist
   const safeWatchlist = Array.isArray(watchlist) ? watchlist : []
@@ -99,6 +98,9 @@ export default function AIInsights({ watchlist = [], darkMode, finnhubFetch }) {
           console.warn(`Failed to fetch ${symbol}:`, err)
         }
       }
+
+      // Cache stock data for AI analysis
+      setStockDataCache(stockData)
 
       // Analyze each stock
       for (const [symbol, data] of Object.entries(stockData)) {
@@ -183,86 +185,71 @@ export default function AIInsights({ watchlist = [], darkMode, finnhubFetch }) {
     generateInsights()
   }, [generateInsights])
 
-  // AI Analysis with Claude (if API key provided)
+  // AI Analysis with Gemini (free, no API key required)
   const analyzeWithAI = async (symbol) => {
-    if (!anthropicKey) {
-      setShowApiKeyInput(true)
-      return
-    }
-
     setAnalyzing(symbol)
     setAiAnalysis(null)
 
     try {
-      // Fetch stock data
-      const [quote, news, profile] = await Promise.all([
-        finnhubFetch(`/quote?symbol=${symbol}`),
+      // Get cached quote data or fetch fresh
+      let quote = stockDataCache[symbol]
+      if (!quote) {
+        quote = await finnhubFetch(`/quote?symbol=${symbol}`)
+      }
+
+      // Fetch additional data for analysis
+      const [news, profile] = await Promise.all([
         finnhubFetch(`/company-news?symbol=${symbol}&from=${new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}&to=${new Date().toISOString().split('T')[0]}`).catch(() => []),
         finnhubFetch(`/stock/profile2?symbol=${symbol}`).catch(() => ({}))
       ])
 
-      const newsHeadlines = (news || []).slice(0, 5).map(n => n.headline).join('\n')
+      const newsHeadlines = (news || []).slice(0, 5).map(n => n.headline)
       const change = quote?.pc ? ((quote.c - quote.pc) / quote.pc * 100).toFixed(2) : 0
 
-      const prompt = `Analyze ${symbol} (${profile?.name || symbol}) stock briefly:
+      // Prepare stock data for Gemini
+      const stockData = {
+        symbol,
+        name: profile?.name || symbol,
+        industry: profile?.finnhubIndustry || 'Unknown',
+        currentPrice: quote?.c,
+        previousClose: quote?.pc,
+        dayHigh: quote?.h,
+        dayLow: quote?.l,
+        changePercent: change,
+        recentNews: newsHeadlines
+      }
 
-Current Price: $${quote?.c || 'N/A'}
-Today's Change: ${change}%
-Day Range: $${quote?.l || 'N/A'} - $${quote?.h || 'N/A'}
-
-Recent Headlines:
-${newsHeadlines || 'No recent news'}
-
-Provide a brief analysis (3-4 sentences) covering:
-1. What's happening with this stock
-2. Key things to watch
-3. Overall sentiment (bullish/bearish/neutral)
-
-Be concise and direct. Do not give financial advice.`
-
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
+      // Call Gemini proxy
+      const response = await fetch('/api/gemini', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': anthropicKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 300,
-          messages: [{ role: 'user', content: prompt }]
+          prompt: `Analyze ${symbol} stock. What are the key things investors should know right now?`,
+          stockData
         })
       })
 
-      if (!response.ok) throw new Error('AI API error')
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'AI analysis failed')
+      }
 
       const data = await response.json()
       setAiAnalysis({
         symbol,
-        analysis: data.content[0].text,
+        analysis: data.insight,
         timestamp: new Date().toISOString()
       })
     } catch (err) {
       console.error('AI analysis error:', err)
       setAiAnalysis({
         symbol,
-        error: 'Failed to generate AI analysis. Check your API key.',
+        error: err.message || 'Failed to generate AI analysis. Please try again.',
         timestamp: new Date().toISOString()
       })
     }
 
     setAnalyzing(null)
-  }
-
-  const saveAnthropicKey = () => {
-    localStorage.setItem('anthropic_api_key', anthropicKey)
-    setShowApiKeyInput(false)
-  }
-
-  const clearAnthropicKey = () => {
-    localStorage.removeItem('anthropic_api_key')
-    setAnthropicKey('')
   }
 
   const getMoodLabel = (mood) => {
@@ -301,36 +288,6 @@ Be concise and direct. Do not give financial advice.`
       {error && (
         <div className={`p-3 rounded-lg ${darkMode ? 'bg-red-900/20 border border-red-500/30' : 'bg-red-50 border border-red-200'}`}>
           <p className={`text-sm ${darkMode ? 'text-red-300' : 'text-red-700'}`}>{error}</p>
-        </div>
-      )}
-
-      {/* API Key Setup */}
-      {showApiKeyInput && (
-        <div className={`rounded-xl p-4 border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Key className="w-5 h-5 text-purple-400" />
-              <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Anthropic API Key (Optional)</h3>
-            </div>
-            <button onClick={() => setShowApiKeyInput(false)} className={`p-1 rounded-lg ${darkMode ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}>
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-          <p className={`text-sm mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-            Add your Anthropic API key to enable AI-powered stock analysis. Your key is stored locally and never sent to our servers.
-          </p>
-          <div className="flex gap-2">
-            <input
-              type="password"
-              value={anthropicKey}
-              onChange={(e) => setAnthropicKey(e.target.value)}
-              placeholder="sk-ant-..."
-              className={`flex-1 px-4 py-2.5 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'bg-gray-50 border-gray-200 placeholder-gray-400'}`}
-            />
-            <button onClick={saveAnthropicKey} className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 rounded-lg text-white font-medium transition-colors">
-              Save
-            </button>
-          </div>
         </div>
       )}
 
@@ -409,48 +366,35 @@ Be concise and direct. Do not give financial advice.`
               )}
             </div>
 
-            {/* AI Analysis Button */}
+            {/* AI Analysis - Now Free! */}
             <div className={`rounded-xl p-4 border ${darkMode ? 'bg-gradient-to-br from-purple-900/20 to-gray-800 border-purple-500/30' : 'bg-purple-50 border-purple-100'}`}>
               <div className="flex items-center gap-2 mb-4">
                 <Sparkles className="w-5 h-5 text-purple-400" />
                 <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>AI Stock Analysis</h3>
+                <span className="px-2 py-0.5 text-xs bg-green-500/20 text-green-400 rounded-full flex items-center gap-1">
+                  <Zap className="w-3 h-3" /> Free
+                </span>
               </div>
               <p className={`text-sm mb-4 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                Get AI-powered analysis of any stock using Claude.
+                Get instant AI-powered analysis of any stock in your watchlist.
               </p>
-              {anthropicKey ? (
-                <div className="space-y-2">
-                  {safeWatchlist.slice(0, 3).map(symbol => (
-                    <button
-                      key={symbol}
-                      onClick={() => analyzeWithAI(symbol)}
-                      disabled={analyzing === symbol}
-                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition-colors ${darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-white hover:bg-gray-50 border border-gray-200'}`}
-                    >
-                      <span className={darkMode ? 'text-white' : 'text-gray-900'}>{symbol}</span>
-                      {analyzing === symbol ? (
-                        <RefreshCw className="w-4 h-4 animate-spin text-purple-400" />
-                      ) : (
-                        <span className="text-purple-400 text-sm font-medium">Analyze</span>
-                      )}
-                    </button>
-                  ))}
+              <div className="space-y-2">
+                {safeWatchlist.slice(0, 4).map(symbol => (
                   <button
-                    onClick={clearAnthropicKey}
-                    className={`w-full text-xs py-2 ${darkMode ? 'text-gray-500 hover:text-gray-400' : 'text-gray-400 hover:text-gray-500'}`}
+                    key={symbol}
+                    onClick={() => analyzeWithAI(symbol)}
+                    disabled={analyzing === symbol}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition-colors ${darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-white hover:bg-gray-50 border border-gray-200'}`}
                   >
-                    Remove API Key
+                    <span className={darkMode ? 'text-white' : 'text-gray-900'}>{symbol}</span>
+                    {analyzing === symbol ? (
+                      <RefreshCw className="w-4 h-4 animate-spin text-purple-400" />
+                    ) : (
+                      <span className="text-purple-400 text-sm font-medium">Analyze</span>
+                    )}
                   </button>
-                </div>
-              ) : (
-                <button
-                  onClick={() => setShowApiKeyInput(true)}
-                  className="w-full px-4 py-2.5 bg-purple-600 hover:bg-purple-700 rounded-lg text-white flex items-center justify-center gap-2 font-medium transition-colors"
-                >
-                  <Key className="w-4 h-4" />
-                  Add API Key
-                </button>
-              )}
+                ))}
+              </div>
             </div>
           </div>
 
@@ -469,7 +413,7 @@ Be concise and direct. Do not give financial advice.`
               {aiAnalysis.error ? (
                 <p className="text-red-400 text-sm">{aiAnalysis.error}</p>
               ) : (
-                <p className={`text-sm leading-relaxed ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
+                <p className={`text-sm leading-relaxed whitespace-pre-wrap ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
                   {aiAnalysis.analysis}
                 </p>
               )}
