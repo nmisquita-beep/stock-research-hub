@@ -1,89 +1,18 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Brain, Sparkles, Search, RefreshCw, TrendingUp, TrendingDown, Minus, X, Clock, AlertTriangle, BarChart3, CheckCircle, Target, Lightbulb, ChevronRight } from 'lucide-react'
+import { Brain, Sparkles, Search, RefreshCw, TrendingUp, TrendingDown, Minus, X, Clock, AlertTriangle, BarChart3, CheckCircle, Target, Lightbulb, ChevronRight, Newspaper, DollarSign } from 'lucide-react'
 
 const GROQ_PROXY_URL = 'https://stock-api-proxy-seven.vercel.app/api/groq'
 
 // Parse markdown-style formatting to JSX
 const parseMarkdown = (text) => {
   if (!text) return null
-
-  // Split by double asterisks for bold
   const parts = text.split(/\*\*([^*]+)\*\*/g)
-
   return parts.map((part, i) => {
-    // Odd indices are the bold parts (content between **)
     if (i % 2 === 1) {
       return <strong key={i} className="font-semibold text-white">{part}</strong>
     }
-    // Clean up any remaining single asterisks
     return part.replace(/\*/g, '')
   })
-}
-
-// Extract sections from AI response
-const parseAnalysisSections = (text) => {
-  if (!text) return { summary: '', opportunities: [], risks: [], priceAction: '', keyPoints: [] }
-
-  const lines = text.split('\n').filter(l => l.trim())
-  const sections = {
-    summary: '',
-    opportunities: [],
-    risks: [],
-    priceAction: '',
-    keyPoints: []
-  }
-
-  let currentSection = 'summary'
-
-  lines.forEach(line => {
-    const lower = line.toLowerCase()
-    const cleanLine = line.replace(/^\*+\s*/, '').replace(/\*+$/, '').replace(/^[-•]\s*/, '').trim()
-
-    // Detect section headers
-    if (lower.includes('opportunit') || lower.includes('bullish') || lower.includes('positive')) {
-      currentSection = 'opportunities'
-      if (!lower.includes(':') && cleanLine.length > 20) {
-        sections.opportunities.push(cleanLine)
-      }
-    } else if (lower.includes('risk') || lower.includes('bearish') || lower.includes('concern') || lower.includes('negative')) {
-      currentSection = 'risks'
-      if (!lower.includes(':') && cleanLine.length > 20) {
-        sections.risks.push(cleanLine)
-      }
-    } else if (lower.includes('price action') || lower.includes('current price') || lower.includes('trading at')) {
-      currentSection = 'priceAction'
-      sections.priceAction = cleanLine
-    } else if (lower.includes('summary') || lower.includes('conclusion') || lower.includes('overall')) {
-      currentSection = 'summary'
-      if (!lower.includes(':') && cleanLine.length > 20) {
-        sections.summary = cleanLine
-      }
-    } else if (cleanLine.length > 10) {
-      // Add to current section
-      if (line.trim().startsWith('-') || line.trim().startsWith('•') || line.trim().startsWith('*')) {
-        if (currentSection === 'opportunities') {
-          sections.opportunities.push(cleanLine)
-        } else if (currentSection === 'risks') {
-          sections.risks.push(cleanLine)
-        } else {
-          sections.keyPoints.push(cleanLine)
-        }
-      } else if (currentSection === 'priceAction' && !sections.priceAction) {
-        sections.priceAction = cleanLine
-      } else if (currentSection === 'summary' && !sections.summary) {
-        sections.summary = cleanLine
-      } else if (!sections.summary && cleanLine.length > 50) {
-        sections.summary = cleanLine
-      }
-    }
-  })
-
-  // If no structured content found, use first paragraph as summary
-  if (!sections.summary && lines.length > 0) {
-    sections.summary = lines[0].replace(/\*+/g, '').trim()
-  }
-
-  return sections
 }
 
 // Debounce helper
@@ -115,12 +44,10 @@ export default function AIInsights({ darkMode, finnhubFetch }) {
   const inputRef = useRef(null)
   const dropdownRef = useRef(null)
 
-  // Save history to localStorage
   useEffect(() => {
     localStorage.setItem('ai_analysis_history', JSON.stringify(history.slice(0, 5)))
   }, [history])
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
@@ -131,7 +58,6 @@ export default function AIInsights({ darkMode, finnhubFetch }) {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  // Search stocks as user types
   const searchStocks = useCallback(debounce(async (q) => {
     if (!q.trim() || q.length < 1) {
       setSearchResults([])
@@ -191,7 +117,6 @@ export default function AIInsights({ darkMode, finnhubFetch }) {
     setSymbol(sym)
     setShowDropdown(false)
     setSearchResults([])
-    // Auto-analyze after selection
     setTimeout(() => analyzeStock(sym), 100)
   }
 
@@ -205,14 +130,23 @@ export default function AIInsights({ darkMode, finnhubFetch }) {
     setShowDropdown(false)
 
     try {
+      // Fetch quote data
       const quote = await finnhubFetch(`/quote?symbol=${sym}`)
-
       if (!quote || (quote.c === 0 && quote.h === 0 && quote.l === 0)) {
         throw new Error(`Invalid symbol: ${sym}`)
       }
 
+      // Fetch company profile
       const profile = await finnhubFetch(`/stock/profile2?symbol=${sym}`).catch(() => ({}))
 
+      // Fetch basic financials (includes 52-week high/low, PE ratio, etc.)
+      let metrics = {}
+      try {
+        const financials = await finnhubFetch(`/stock/metric?symbol=${sym}&metric=all`)
+        metrics = financials?.metric || {}
+      } catch {}
+
+      // Fetch company news
       const today = new Date()
       const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)
       const fromDate = weekAgo.toISOString().split('T')[0]
@@ -221,11 +155,30 @@ export default function AIInsights({ darkMode, finnhubFetch }) {
       let news = []
       try {
         const newsData = await finnhubFetch(`/company-news?symbol=${sym}&from=${fromDate}&to=${toDate}`)
-        news = Array.isArray(newsData) ? newsData.slice(0, 5) : []
+        if (Array.isArray(newsData)) {
+          news = newsData.slice(0, 5)
+        } else if (newsData && typeof newsData === 'object') {
+          news = Object.values(newsData).filter(n => n && n.headline).slice(0, 5)
+        }
       } catch {}
 
       const change = quote.pc ? ((quote.c - quote.pc) / quote.pc * 100) : 0
+      const weekHigh52 = metrics['52WeekHigh'] || null
+      const weekLow52 = metrics['52WeekLow'] || null
+      const peRatio = metrics['peBasicExclExtraTTM'] || metrics['peTTM'] || null
+      const eps = metrics['epsBasicExclExtraItemsTTM'] || null
+      const marketCap = profile?.marketCapitalization || null
 
+      // Calculate position in 52-week range
+      let pricePosition = null
+      if (weekHigh52 && weekLow52 && quote.c) {
+        const range = weekHigh52 - weekLow52
+        if (range > 0) {
+          pricePosition = ((quote.c - weekLow52) / range * 100).toFixed(0)
+        }
+      }
+
+      // Build comprehensive stock data for AI
       const stockData = {
         symbol: sym,
         name: profile?.name || sym,
@@ -236,23 +189,50 @@ export default function AIInsights({ darkMode, finnhubFetch }) {
         dayLow: quote.l,
         openPrice: quote.o,
         changePercent: change.toFixed(2),
-        recentNews: news.map(n => n.headline).filter(Boolean)
+        weekHigh52,
+        weekLow52,
+        pricePositionIn52WeekRange: pricePosition ? `${pricePosition}%` : 'N/A',
+        peRatio: peRatio ? peRatio.toFixed(1) : 'N/A',
+        eps: eps ? eps.toFixed(2) : 'N/A',
+        marketCapBillions: marketCap ? (marketCap / 1000).toFixed(1) : 'N/A',
+        recentNewsHeadlines: news.map(n => n.headline).filter(Boolean)
       }
+
+      // Opinionated AI prompt
+      const prompt = `You are an opinionated stock analyst. Be decisive and give clear recommendations. Based on this data for ${sym}:
+
+PRICE DATA:
+- Current: $${quote.c?.toFixed(2)} (${change >= 0 ? '+' : ''}${change.toFixed(2)}% today)
+- 52-Week High: $${weekHigh52?.toFixed(2) || 'N/A'} | 52-Week Low: $${weekLow52?.toFixed(2) || 'N/A'}
+- Position in 52-week range: ${pricePosition ? pricePosition + '%' : 'N/A'} (0%=at low, 100%=at high)
+
+FUNDAMENTALS:
+- P/E Ratio: ${peRatio ? peRatio.toFixed(1) : 'N/A'}
+- EPS: $${eps ? eps.toFixed(2) : 'N/A'}
+- Market Cap: $${marketCap ? (marketCap / 1000).toFixed(1) + 'B' : 'N/A'}
+- Industry: ${profile?.finnhubIndustry || 'Unknown'}
+
+RECENT NEWS:
+${news.length > 0 ? news.map(n => '- ' + n.headline).join('\n') : '- No recent news'}
+
+Give your analysis in this EXACT format:
+
+RATING: [BULLISH/BEARISH/NEUTRAL] - Pick ONE, be decisive!
+
+PRICE ASSESSMENT: Is the current price attractive? Compare to 52-week range. One sentence.
+
+RECENT CATALYSTS: What's driving the stock based on news? One sentence.
+
+KEY RISK: The #1 thing that could go wrong. One sentence.
+
+KEY OPPORTUNITY: The #1 reason to be optimistic. One sentence.
+
+BOTTOM LINE: Would you BUY, HOLD, or AVOID? One decisive sentence.`
 
       const response = await fetch(GROQ_PROXY_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: `Analyze ${sym} stock concisely. Structure your response with:
-
-1. PRICE ACTION: One sentence on current price movement
-2. OPPORTUNITIES: 2-3 bullet points on bullish factors
-3. RISKS: 2-3 bullet points on bearish factors
-4. SUMMARY: One sentence overall outlook with sentiment (Bullish/Neutral/Bearish)
-
-Keep each point brief and actionable. No disclaimers needed.`,
-          stockData
-        })
+        body: JSON.stringify({ prompt, stockData })
       })
 
       if (!response.ok) {
@@ -268,17 +248,20 @@ Keep each point brief and actionable. No disclaimers needed.`,
       }
 
       const data = await response.json()
-
       if (!data || !data.insight) {
         throw new Error('No analysis generated')
       }
 
-      const analysisLower = data.insight.toLowerCase()
+      // Extract rating from response
+      const analysisText = data.insight
+      const ratingMatch = analysisText.match(/RATING:\s*(BULLISH|BEARISH|NEUTRAL)/i)
       let sentiment = 'neutral'
-      if (analysisLower.includes('bullish') || analysisLower.includes('buy') || analysisLower.includes('positive outlook') || analysisLower.includes('upside')) {
-        sentiment = 'bullish'
-      } else if (analysisLower.includes('bearish') || analysisLower.includes('sell') || analysisLower.includes('negative outlook') || analysisLower.includes('downside')) {
-        sentiment = 'bearish'
+      if (ratingMatch) {
+        sentiment = ratingMatch[1].toLowerCase()
+      } else {
+        const lower = analysisText.toLowerCase()
+        if (lower.includes('bullish') || lower.includes('buy')) sentiment = 'bullish'
+        else if (lower.includes('bearish') || lower.includes('avoid') || lower.includes('sell')) sentiment = 'bearish'
       }
 
       const analysis = {
@@ -289,20 +272,24 @@ Keep each point brief and actionable. No disclaimers needed.`,
         previousClose: quote.pc,
         dayHigh: quote.h,
         dayLow: quote.l,
-        change: change,
-        analysis: data.insight,
-        sections: parseAnalysisSections(data.insight),
+        change,
+        weekHigh52,
+        weekLow52,
+        pricePosition,
+        peRatio,
+        eps,
+        marketCap,
+        news: news.slice(0, 3),
+        analysis: analysisText,
         sentiment,
         timestamp: new Date().toISOString()
       }
 
       setCurrentAnalysis(analysis)
-
       setHistory(prev => {
         const filtered = prev.filter(h => h.symbol !== sym)
         return [analysis, ...filtered].slice(0, 5)
       })
-
       setSymbol('')
 
     } catch (err) {
@@ -316,15 +303,22 @@ Keep each point brief and actionable. No disclaimers needed.`,
   const getSentimentDisplay = (sentiment) => {
     switch (sentiment) {
       case 'bullish':
-        return { icon: TrendingUp, color: 'text-green-400', bg: 'bg-green-500/20', border: 'border-green-500/30', label: 'Bullish' }
+        return { icon: TrendingUp, color: 'text-green-400', bg: 'bg-green-500/20', border: 'border-green-500/30', label: 'BULLISH', bgSolid: 'bg-green-600' }
       case 'bearish':
-        return { icon: TrendingDown, color: 'text-red-400', bg: 'bg-red-500/20', border: 'border-red-500/30', label: 'Bearish' }
+        return { icon: TrendingDown, color: 'text-red-400', bg: 'bg-red-500/20', border: 'border-red-500/30', label: 'BEARISH', bgSolid: 'bg-red-600' }
       default:
-        return { icon: Minus, color: 'text-yellow-400', bg: 'bg-yellow-500/20', border: 'border-yellow-500/30', label: 'Neutral' }
+        return { icon: Minus, color: 'text-yellow-400', bg: 'bg-yellow-500/20', border: 'border-yellow-500/30', label: 'NEUTRAL', bgSolid: 'bg-yellow-600' }
     }
   }
 
   const s = currentAnalysis ? getSentimentDisplay(currentAnalysis.sentiment) : null
+
+  // Parse sections from analysis
+  const parseSection = (text, header) => {
+    const regex = new RegExp(`${header}:?\\s*(.+?)(?=\\n[A-Z]+:|$)`, 'is')
+    const match = text.match(regex)
+    return match ? match[1].trim().replace(/\*\*/g, '') : null
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -334,10 +328,10 @@ Keep each point brief and actionable. No disclaimers needed.`,
           <Brain className="w-7 h-7 text-purple-400" />
           AI Stock Analysis
         </h2>
-        <p className="text-gray-400 mt-1">Get instant AI-powered insights on any stock</p>
+        <p className="text-gray-400 mt-1">Get opinionated, actionable insights on any stock</p>
       </div>
 
-      {/* Search Bar with Autocomplete */}
+      {/* Search Bar */}
       <div className="relative" ref={dropdownRef}>
         <div className={`flex items-center gap-3 p-4 rounded-xl border transition-all ${
           darkMode
@@ -383,7 +377,7 @@ Keep each point brief and actionable. No disclaimers needed.`,
           </button>
         </div>
 
-        {/* Autocomplete Dropdown */}
+        {/* Autocomplete */}
         {showDropdown && searchResults.length > 0 && (
           <div className="absolute top-full left-0 right-0 mt-2 bg-gray-800 rounded-xl border border-gray-700 shadow-2xl z-50 overflow-hidden">
             {searchResults.map((item, i) => (
@@ -405,7 +399,7 @@ Keep each point brief and actionable. No disclaimers needed.`,
         )}
       </div>
 
-      {/* Error Display */}
+      {/* Error */}
       {error && (
         <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 flex items-start gap-3">
           <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
@@ -416,26 +410,25 @@ Keep each point brief and actionable. No disclaimers needed.`,
         </div>
       )}
 
-      {/* Loading State */}
+      {/* Loading */}
       {loading && (
         <div className="p-8 rounded-xl border bg-gray-800/50 border-gray-700 text-center">
           <RefreshCw className="w-12 h-12 text-purple-400 animate-spin mx-auto mb-4" />
           <p className="text-white font-medium">Analyzing {symbol}...</p>
-          <p className="text-gray-400 text-sm mt-1">Gathering data and generating insights</p>
+          <p className="text-gray-400 text-sm mt-1">Fetching financials, news, and generating insights</p>
         </div>
       )}
 
-      {/* Current Analysis Result - Redesigned */}
+      {/* Analysis Result */}
       {currentAnalysis && !loading && (
         <div className="space-y-4">
-          {/* Top Card - Stock Info + Sentiment */}
+          {/* Header Card with Rating */}
           <div className={`rounded-xl border ${s.border} ${s.bg} p-5`}>
-            <div className="flex items-start justify-between">
+            <div className="flex items-start justify-between mb-4">
               <div>
-                <div className="flex items-center gap-3 mb-2">
+                <div className="flex items-center gap-3 mb-1">
                   <h3 className="text-2xl font-bold text-white">{currentAnalysis.symbol}</h3>
-                  <span className={`px-3 py-1 rounded-full text-sm font-semibold flex items-center gap-1.5 ${s.bg} ${s.color} border ${s.border}`}>
-                    <s.icon className="w-4 h-4" />
+                  <span className={`px-4 py-1.5 rounded-lg text-sm font-bold text-white ${s.bgSolid}`}>
                     {s.label}
                   </span>
                 </div>
@@ -444,113 +437,135 @@ Keep each point brief and actionable. No disclaimers needed.`,
                   <p className="text-gray-500 text-sm">{currentAnalysis.industry}</p>
                 )}
               </div>
-              <button
-                onClick={() => setCurrentAnalysis(null)}
-                className="p-2 rounded-lg hover:bg-gray-700/50 text-gray-400"
-              >
+              <button onClick={() => setCurrentAnalysis(null)} className="p-2 rounded-lg hover:bg-gray-700/50 text-gray-400">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Price Info */}
-            <div className="flex items-baseline gap-4 mt-4">
-              <span className="text-3xl font-bold text-white">${currentAnalysis.price?.toFixed(2)}</span>
-              <span className={`text-lg font-semibold ${currentAnalysis.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                {currentAnalysis.change >= 0 ? '+' : ''}{currentAnalysis.change?.toFixed(2)}%
-              </span>
-            </div>
-            <div className="flex gap-6 mt-2 text-sm text-gray-400">
-              <span>Open: ${currentAnalysis.previousClose?.toFixed(2)}</span>
-              <span>High: ${currentAnalysis.dayHigh?.toFixed(2)}</span>
-              <span>Low: ${currentAnalysis.dayLow?.toFixed(2)}</span>
+            {/* Price & Metrics */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div>
+                <div className="text-sm text-gray-400">Current Price</div>
+                <div className="text-2xl font-bold text-white">${currentAnalysis.price?.toFixed(2)}</div>
+                <div className={`text-sm font-medium ${currentAnalysis.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  {currentAnalysis.change >= 0 ? '+' : ''}{currentAnalysis.change?.toFixed(2)}%
+                </div>
+              </div>
+              <div>
+                <div className="text-sm text-gray-400">52-Week Range</div>
+                <div className="text-white font-medium">
+                  ${currentAnalysis.weekLow52?.toFixed(2) || 'N/A'} - ${currentAnalysis.weekHigh52?.toFixed(2) || 'N/A'}
+                </div>
+                {currentAnalysis.pricePosition && (
+                  <div className="text-sm text-gray-400">{currentAnalysis.pricePosition}% of range</div>
+                )}
+              </div>
+              <div>
+                <div className="text-sm text-gray-400">P/E Ratio</div>
+                <div className="text-white font-medium">{currentAnalysis.peRatio?.toFixed(1) || 'N/A'}</div>
+              </div>
+              <div>
+                <div className="text-sm text-gray-400">Market Cap</div>
+                <div className="text-white font-medium">
+                  {currentAnalysis.marketCap ? `$${(currentAnalysis.marketCap / 1000).toFixed(1)}B` : 'N/A'}
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Analysis Cards Grid */}
+          {/* Analysis Sections */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Price Action Card */}
-            {currentAnalysis.sections.priceAction && (
+            {/* Price Assessment */}
+            {parseSection(currentAnalysis.analysis, 'PRICE ASSESSMENT') && (
               <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4">
                 <div className="flex items-center gap-2 mb-3">
-                  <BarChart3 className="w-5 h-5 text-blue-400" />
-                  <h4 className="font-semibold text-white">Price Action</h4>
+                  <DollarSign className="w-5 h-5 text-blue-400" />
+                  <h4 className="font-semibold text-white">Price Assessment</h4>
                 </div>
                 <p className="text-gray-300 text-sm leading-relaxed">
-                  {parseMarkdown(currentAnalysis.sections.priceAction)}
+                  {parseMarkdown(parseSection(currentAnalysis.analysis, 'PRICE ASSESSMENT'))}
                 </p>
               </div>
             )}
 
-            {/* Summary Card */}
-            {currentAnalysis.sections.summary && (
+            {/* Recent Catalysts */}
+            {parseSection(currentAnalysis.analysis, 'RECENT CATALYSTS') && (
               <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4">
                 <div className="flex items-center gap-2 mb-3">
-                  <Lightbulb className="w-5 h-5 text-yellow-400" />
-                  <h4 className="font-semibold text-white">Key Takeaway</h4>
+                  <Newspaper className="w-5 h-5 text-purple-400" />
+                  <h4 className="font-semibold text-white">Recent Catalysts</h4>
                 </div>
                 <p className="text-gray-300 text-sm leading-relaxed">
-                  {parseMarkdown(currentAnalysis.sections.summary)}
+                  {parseMarkdown(parseSection(currentAnalysis.analysis, 'RECENT CATALYSTS'))}
                 </p>
               </div>
             )}
 
-            {/* Opportunities Card */}
-            {currentAnalysis.sections.opportunities.length > 0 && (
+            {/* Key Opportunity */}
+            {parseSection(currentAnalysis.analysis, 'KEY OPPORTUNITY') && (
               <div className="rounded-xl border border-green-500/30 bg-green-500/5 p-4">
                 <div className="flex items-center gap-2 mb-3">
                   <CheckCircle className="w-5 h-5 text-green-400" />
-                  <h4 className="font-semibold text-green-400">Opportunities</h4>
+                  <h4 className="font-semibold text-green-400">Key Opportunity</h4>
                 </div>
-                <ul className="space-y-2">
-                  {currentAnalysis.sections.opportunities.slice(0, 4).map((opp, i) => (
-                    <li key={i} className="flex items-start gap-2 text-sm text-gray-300">
-                      <span className="text-green-400 mt-1">•</span>
-                      <span>{parseMarkdown(opp)}</span>
-                    </li>
-                  ))}
-                </ul>
+                <p className="text-gray-300 text-sm leading-relaxed">
+                  {parseMarkdown(parseSection(currentAnalysis.analysis, 'KEY OPPORTUNITY'))}
+                </p>
               </div>
             )}
 
-            {/* Risks Card */}
-            {currentAnalysis.sections.risks.length > 0 && (
+            {/* Key Risk */}
+            {parseSection(currentAnalysis.analysis, 'KEY RISK') && (
               <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-4">
                 <div className="flex items-center gap-2 mb-3">
                   <AlertTriangle className="w-5 h-5 text-red-400" />
-                  <h4 className="font-semibold text-red-400">Risks</h4>
+                  <h4 className="font-semibold text-red-400">Key Risk</h4>
                 </div>
-                <ul className="space-y-2">
-                  {currentAnalysis.sections.risks.slice(0, 4).map((risk, i) => (
-                    <li key={i} className="flex items-start gap-2 text-sm text-gray-300">
-                      <span className="text-red-400 mt-1">•</span>
-                      <span>{parseMarkdown(risk)}</span>
-                    </li>
-                  ))}
-                </ul>
+                <p className="text-gray-300 text-sm leading-relaxed">
+                  {parseMarkdown(parseSection(currentAnalysis.analysis, 'KEY RISK'))}
+                </p>
               </div>
             )}
           </div>
 
-          {/* Full Analysis (if sections didn't parse well) */}
-          {currentAnalysis.sections.opportunities.length === 0 && currentAnalysis.sections.risks.length === 0 && (
-            <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <Target className="w-5 h-5 text-purple-400" />
-                <h4 className="font-semibold text-white">Analysis</h4>
+          {/* Bottom Line */}
+          {parseSection(currentAnalysis.analysis, 'BOTTOM LINE') && (
+            <div className={`rounded-xl border ${s.border} ${s.bg} p-4`}>
+              <div className="flex items-center gap-2 mb-2">
+                <Target className="w-5 h-5" style={{ color: s.color.replace('text-', '') }} />
+                <h4 className="font-semibold text-white">Bottom Line</h4>
               </div>
-              <div className="text-gray-300 text-sm leading-relaxed space-y-2">
-                {currentAnalysis.analysis.split('\n').filter(l => l.trim()).map((line, i) => (
-                  <p key={i}>{parseMarkdown(line)}</p>
+              <p className="text-white font-medium">
+                {parseMarkdown(parseSection(currentAnalysis.analysis, 'BOTTOM LINE'))}
+              </p>
+            </div>
+          )}
+
+          {/* News Headlines Used */}
+          {currentAnalysis.news && currentAnalysis.news.length > 0 && (
+            <div className="rounded-xl border border-gray-700 bg-gray-800/30 p-4">
+              <h4 className="text-sm font-medium text-gray-400 mb-3">Recent News Analyzed</h4>
+              <div className="space-y-2">
+                {currentAnalysis.news.map((article, i) => (
+                  <a
+                    key={i}
+                    href={article.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block text-sm text-gray-300 hover:text-blue-400 truncate"
+                  >
+                    • {article.headline}
+                  </a>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Footer */}
+          {/* Disclaimer */}
           <div className="flex items-center justify-between text-xs text-gray-500 px-1">
             <div className="flex items-center gap-1">
               <AlertTriangle className="w-3 h-3" />
-              <span>AI-generated analysis, not financial advice</span>
+              <span>AI-generated analysis, not financial advice. Do your own research.</span>
             </div>
             <div className="flex items-center gap-1">
               <Clock className="w-3 h-3" />
@@ -560,7 +575,7 @@ Keep each point brief and actionable. No disclaimers needed.`,
         </div>
       )}
 
-      {/* Recent Analyses History */}
+      {/* History */}
       {history.length > 0 && !loading && !currentAnalysis && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
@@ -569,7 +584,7 @@ Keep each point brief and actionable. No disclaimers needed.`,
               onClick={() => { setHistory([]); localStorage.removeItem('ai_analysis_history') }}
               className="text-xs text-gray-500 hover:text-gray-400"
             >
-              Clear history
+              Clear
             </button>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -583,19 +598,16 @@ Keep each point brief and actionable. No disclaimers needed.`,
                 >
                   <div className="flex items-center justify-between mb-2">
                     <span className="font-bold text-white text-lg">{item.symbol}</span>
-                    <div className={`px-2 py-0.5 rounded-full text-xs font-medium ${hs.bg} ${hs.color}`}>
+                    <span className={`px-2 py-0.5 rounded text-xs font-bold text-white ${hs.bgSolid}`}>
                       {hs.label}
-                    </div>
+                    </span>
                   </div>
-                  <div className="flex items-center gap-2 text-sm mb-2">
+                  <div className="flex items-center gap-2 text-sm">
                     <span className="text-gray-300">${item.price?.toFixed(2)}</span>
                     <span className={item.change >= 0 ? 'text-green-400' : 'text-red-400'}>
                       {item.change >= 0 ? '+' : ''}{item.change?.toFixed(2)}%
                     </span>
                   </div>
-                  <p className="text-xs text-gray-500">
-                    {new Date(item.timestamp).toLocaleDateString()}
-                  </p>
                 </button>
               )
             })}
@@ -609,8 +621,7 @@ Keep each point brief and actionable. No disclaimers needed.`,
           <Brain className="w-16 h-16 mx-auto mb-4 text-gray-600" />
           <h3 className="text-lg font-medium mb-2 text-gray-300">No analyses yet</h3>
           <p className="text-gray-500 max-w-md mx-auto">
-            Search for any stock symbol above to get AI-powered analysis including
-            opportunities, risks, and actionable insights.
+            Search for any stock to get opinionated AI analysis with clear buy/hold/avoid recommendations.
           </p>
         </div>
       )}

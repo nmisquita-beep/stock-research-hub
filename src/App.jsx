@@ -422,39 +422,81 @@ function FearGreedIndicator({ value }) {
   )
 }
 
-// ============ ONBOARDING TOUR ============
+// ============ INTERACTIVE GUIDED TOUR ============
 function OnboardingTour({ onComplete }) {
   const [step, setStep] = useState(0)
+  const [highlightRect, setHighlightRect] = useState(null)
 
   const steps = [
     {
-      title: 'Welcome to Stock Research Hub!',
-      description: 'Your free tool for tracking stocks, getting AI insights, and staying updated with market news.',
-      icon: Sparkles
+      target: '[data-tour="overview"]',
+      title: 'Market Overview',
+      description: 'See market indices and trending stocks at a glance. Track the overall market mood.',
+      position: 'bottom'
     },
     {
-      title: 'Track Your Watchlist',
-      description: 'Add your favorite stocks to your watchlist to monitor prices and changes at a glance.',
-      icon: Star
+      target: '[data-tour="watchlist"]',
+      title: 'Your Watchlist',
+      description: 'Track your favorite stocks here. Add any stock and monitor prices in real-time.',
+      position: 'bottom'
     },
     {
-      title: 'See Market Movers',
-      description: 'Quickly see which stocks are gaining or losing the most today.',
-      icon: TrendingUp
+      target: '[data-tour="movers"]',
+      title: 'Market Movers',
+      description: "Discover today's biggest gainers and losers. Spot trending opportunities.",
+      position: 'bottom'
     },
     {
-      title: 'Get AI-Powered Analysis',
-      description: 'Enter any stock symbol to get instant AI analysis with opportunities, risks, and sentiment.',
-      icon: Brain
+      target: '[data-tour="insights"]',
+      title: 'AI Stock Analysis',
+      description: 'Get AI-powered analysis on any stock. See opportunities, risks, and actionable insights.',
+      position: 'bottom'
     },
     {
-      title: 'Stay Informed',
-      description: 'Read curated market news filtered for relevance. No fluff, just financial news that matters.',
-      icon: Newspaper
+      target: '[data-tour="news"]',
+      title: 'Market News',
+      description: 'Stay updated with curated market news. Only real stock market news, no fluff.',
+      position: 'bottom'
+    },
+    {
+      target: '[data-tour="search"]',
+      title: 'Quick Search',
+      description: 'Search for any stock instantly. Press "/" for keyboard shortcut.',
+      position: 'bottom'
+    },
+    {
+      target: '[data-tour="signin"]',
+      title: 'Sync Your Data',
+      description: 'Sign in to sync your watchlist across all your devices.',
+      position: 'left'
     }
   ]
 
+  useEffect(() => {
+    const updateHighlight = () => {
+      const currentStep = steps[step]
+      const element = document.querySelector(currentStep.target)
+      if (element) {
+        const rect = element.getBoundingClientRect()
+        setHighlightRect({
+          top: rect.top - 4,
+          left: rect.left - 4,
+          width: rect.width + 8,
+          height: rect.height + 8,
+          position: currentStep.position
+        })
+      } else {
+        setHighlightRect(null)
+      }
+    }
+
+    updateHighlight()
+    window.addEventListener('resize', updateHighlight)
+    return () => window.removeEventListener('resize', updateHighlight)
+  }, [step])
+
   const currentStep = steps[step]
+  const isFirst = step === 0
   const isLast = step === steps.length - 1
 
   const handleNext = () => {
@@ -466,49 +508,119 @@ function OnboardingTour({ onComplete }) {
     }
   }
 
+  const handleBack = () => {
+    if (!isFirst) setStep(step - 1)
+  }
+
   const handleSkip = () => {
     localStorage.setItem('tour_completed', 'true')
     onComplete()
   }
 
+  // Calculate tooltip position
+  const getTooltipStyle = () => {
+    if (!highlightRect) return { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }
+
+    const padding = 16
+    const tooltipWidth = 320
+    const tooltipHeight = 180
+
+    let top, left, transform = ''
+
+    switch (currentStep.position) {
+      case 'bottom':
+        top = highlightRect.top + highlightRect.height + padding
+        left = highlightRect.left + highlightRect.width / 2
+        transform = 'translateX(-50%)'
+        // Keep within viewport
+        if (left - tooltipWidth / 2 < padding) left = tooltipWidth / 2 + padding
+        if (left + tooltipWidth / 2 > window.innerWidth - padding) left = window.innerWidth - tooltipWidth / 2 - padding
+        break
+      case 'left':
+        top = highlightRect.top + highlightRect.height / 2
+        left = highlightRect.left - tooltipWidth - padding
+        transform = 'translateY(-50%)'
+        if (left < padding) {
+          left = highlightRect.left + highlightRect.width + padding
+        }
+        break
+      default:
+        top = highlightRect.top + highlightRect.height + padding
+        left = highlightRect.left + highlightRect.width / 2
+        transform = 'translateX(-50%)'
+    }
+
+    return { top: `${top}px`, left: `${left}px`, transform }
+  }
+
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
-      <div className="bg-gray-800 rounded-2xl max-w-md w-full border border-gray-700 shadow-2xl overflow-hidden">
-        {/* Progress dots */}
-        <div className="flex justify-center gap-2 pt-6">
+    <div className="fixed inset-0 z-[200]">
+      {/* Dark overlay with cutout */}
+      <div className="absolute inset-0 bg-black/80" />
+
+      {/* Highlight box */}
+      {highlightRect && (
+        <div
+          className="absolute rounded-xl transition-all duration-300 ease-out"
+          style={{
+            top: highlightRect.top,
+            left: highlightRect.left,
+            width: highlightRect.width,
+            height: highlightRect.height,
+            boxShadow: '0 0 0 4000px rgba(0, 0, 0, 0.8), 0 0 20px 4px rgba(59, 130, 246, 0.5)',
+            border: '2px solid rgba(59, 130, 246, 0.8)',
+            pointerEvents: 'none'
+          }}
+        />
+      )}
+
+      {/* Tooltip */}
+      <div
+        className="absolute w-80 bg-gray-800 rounded-2xl border border-gray-700 shadow-2xl overflow-hidden transition-all duration-300"
+        style={getTooltipStyle()}
+      >
+        {/* Progress */}
+        <div className="flex justify-center gap-1.5 pt-4">
           {steps.map((_, i) => (
             <div
               key={i}
-              className={`w-2 h-2 rounded-full transition-all ${
-                i === step ? 'bg-blue-500 w-6' : i < step ? 'bg-blue-500' : 'bg-gray-600'
+              className={`h-1.5 rounded-full transition-all ${
+                i === step ? 'bg-blue-500 w-6' : i < step ? 'bg-blue-500 w-1.5' : 'bg-gray-600 w-1.5'
               }`}
             />
           ))}
         </div>
 
         {/* Content */}
-        <div className="p-8 text-center">
-          <div className="w-16 h-16 rounded-2xl bg-blue-500/20 flex items-center justify-center mx-auto mb-6">
-            <currentStep.icon className="w-8 h-8 text-blue-400" />
-          </div>
-          <h2 className="text-xl font-bold text-white mb-3">{currentStep.title}</h2>
-          <p className="text-gray-400 leading-relaxed">{currentStep.description}</p>
+        <div className="p-5">
+          <h3 className="text-lg font-bold text-white mb-2">{currentStep.title}</h3>
+          <p className="text-gray-400 text-sm leading-relaxed">{currentStep.description}</p>
         </div>
 
         {/* Actions */}
-        <div className="flex items-center justify-between p-6 border-t border-gray-700">
+        <div className="flex items-center justify-between px-5 pb-5">
           <button
             onClick={handleSkip}
-            className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
+            className="text-sm text-gray-500 hover:text-gray-300 transition-colors"
           >
-            Skip tour
+            Skip
           </button>
-          <button
-            onClick={handleNext}
-            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition-colors"
-          >
-            {isLast ? 'Get Started' : 'Next'}
-          </button>
+          <div className="flex gap-2">
+            {!isFirst && (
+              <button
+                onClick={handleBack}
+                className="px-4 py-2 text-sm text-gray-300 hover:text-white transition-colors"
+              >
+                Back
+              </button>
+            )}
+            <button
+              onClick={handleNext}
+              className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+            >
+              {isLast ? 'Get Started' : 'Next'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -800,16 +912,16 @@ function DesktopNav({ activePage, setActivePage, rateLimitStatus, onSearchOpen, 
   const [showUserMenu, setShowUserMenu] = useState(false)
 
   const navItems = [
-    { id: 'overview', label: 'Overview', icon: Home },
-    { id: 'watchlist', label: 'Watchlist', icon: Star },
-    { id: 'explore', label: 'Movers', icon: TrendingUp },
-    { id: 'insights', label: 'AI Insights', icon: Brain },
-    { id: 'news', label: 'News', icon: Newspaper },
+    { id: 'overview', label: 'Overview', icon: Home, tour: 'overview' },
+    { id: 'watchlist', label: 'Watchlist', icon: Star, tour: 'watchlist' },
+    { id: 'explore', label: 'Movers', icon: TrendingUp, tour: 'movers' },
+    { id: 'insights', label: 'AI Insights', icon: Brain, tour: 'insights' },
+    { id: 'news', label: 'News', icon: Newspaper, tour: 'news' },
     { id: 'settings', label: 'Settings', icon: Settings }
   ]
 
   return (
-    <nav className="bg-gray-800/80 backdrop-blur-lg border-b border-gray-700 sticky top-0 z-40">
+    <nav className="bg-gray-800/80 backdrop-blur-lg border-b border-gray-700 sticky top-0 z-40 overflow-visible">
       <div className="max-w-7xl mx-auto px-4">
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center gap-3">
@@ -821,6 +933,7 @@ function DesktopNav({ activePage, setActivePage, rateLimitStatus, onSearchOpen, 
           <div className="hidden md:flex items-center gap-1">
             {navItems.map(item => (
               <button key={item.id} onClick={() => setActivePage(item.id)}
+                data-tour={item.tour}
                 className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all ${
                   activePage === item.id ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25' : 'text-gray-300 hover:bg-gray-700'
                 }`}>
@@ -829,7 +942,7 @@ function DesktopNav({ activePage, setActivePage, rateLimitStatus, onSearchOpen, 
               </button>
             ))}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 overflow-visible">
             {user && (
               <Tooltip content={syncStatus.synced ? 'Synced to cloud' : syncStatus.syncing ? 'Syncing...' : 'Not synced'}>
                 <div className={`hidden sm:flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full ${
@@ -841,7 +954,7 @@ function DesktopNav({ activePage, setActivePage, rateLimitStatus, onSearchOpen, 
               </Tooltip>
             )}
             <Tooltip content="Search (/)">
-              <button onClick={onSearchOpen} className="p-2 rounded-lg transition-colors hover:bg-gray-700 text-gray-300">
+              <button data-tour="search" onClick={onSearchOpen} className="p-2 rounded-lg transition-colors hover:bg-gray-700 text-gray-300">
                 <Search className="w-5 h-5" />
               </button>
             </Tooltip>
@@ -885,7 +998,7 @@ function DesktopNav({ activePage, setActivePage, rateLimitStatus, onSearchOpen, 
                 )}
               </div>
             ) : (
-              <button onClick={signIn}
+              <button onClick={signIn} data-tour="signin"
                 className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg text-white text-sm transition-colors">
                 <LogIn className="w-4 h-4" />
                 <span className="hidden sm:inline">Sign in</span>
@@ -1308,47 +1421,41 @@ const parseNewsResponse = (data) => {
   return []
 }
 
-// ============ MARKET-RELEVANT KEYWORDS ============
-const MARKET_KEYWORDS = [
-  // Stock market terms
-  'stock', 'stocks', 'market', 'markets', 'trading', 'wall street',
-  'earnings', 'shares', 'share price', 'investor', 'investors',
-  's&p 500', 's&p', 'nasdaq', 'dow jones', 'dow', 'nyse', 'russell',
-  // Fed & economy
-  'fed', 'federal reserve', 'interest rate', 'rate cut', 'rate hike',
-  'inflation', 'gdp', 'jobs report', 'unemployment', 'recession',
-  // Corporate
-  'ipo', 'merger', 'acquisition', 'takeover', 'buyout',
-  'ceo', 'earnings report', 'quarterly results', 'guidance',
-  'revenue', 'profit', 'eps', 'beat estimates', 'miss estimates',
+// ============ STRICT STOCK MARKET WHITELIST ============
+// ONLY articles containing these terms will be shown
+const STOCK_WHITELIST = [
+  // Must-have stock terms
+  'stock', 'stocks', 'shares', 'share price', 'shareholder',
+  // Indices
+  's&p 500', 's&p', 'nasdaq', 'dow jones', 'dow', 'nyse', 'russell 2000',
+  // Earnings & financials
+  'earnings', 'quarterly', 'revenue', 'profit', 'eps', 'guidance',
+  'beat estimates', 'miss estimates', 'earnings report', 'quarterly results',
+  // Trading
+  'trading', 'traders', 'investors', 'wall street',
+  // Fed & rates
+  'fed', 'federal reserve', 'interest rate', 'rate cut', 'rate hike', 'fomc',
+  'inflation', 'cpi', 'ppi',
+  // Corporate actions
+  'ipo', 'merger', 'acquisition', 'buyout', 'takeover',
   // Market movements
-  'rally', 'surge', 'plunge', 'crash', 'selloff', 'sell-off',
-  'bullish', 'bearish', 'all-time high', 'record high',
-  // Financial terms
-  'hedge fund', 'etf', 'mutual fund', 'dividend', 'buyback',
-  'valuation', 'market cap', 'pe ratio', 'yield',
-  // Major companies (by ticker or name)
-  'apple', 'microsoft', 'google', 'alphabet', 'amazon', 'nvidia', 'tesla', 'meta',
-  'aapl', 'msft', 'googl', 'amzn', 'nvda', 'tsla',
-  'jpmorgan', 'goldman', 'berkshire', 'netflix', 'disney'
-]
-
-// Blocklist - articles containing these are NOT market relevant
-const NEWS_BLOCKLIST = [
-  'social security', 'medicare', 'medicaid', 'retirement tips',
-  'porta-potty', 'bathroom', 'twins', 'birthday', 'wedding',
-  'recipe', 'cooking', 'diet', 'weight loss', 'fitness',
-  'celebrity', 'kardashian', 'royal family', 'prince harry',
-  'horoscope', 'zodiac', 'astrology',
-  'weather forecast', 'hurricane warning',
-  'travel tips', 'vacation', 'hotel review',
-  'dating', 'relationship advice', 'marriage',
-  'pet', 'dog', 'cat', 'puppy', 'kitten',
-  'home improvement', 'diy', 'gardening',
-  'lottery', 'powerball', 'mega millions',
-  'sports score', 'nfl', 'nba', 'mlb', 'nhl', 'super bowl',
-  'movie review', 'tv show', 'netflix series', 'streaming',
-  'video game', 'gaming', 'playstation', 'xbox'
+  'rally', 'selloff', 'sell-off', 'market cap', 'valuation',
+  'bullish', 'bearish', 'bull market', 'bear market',
+  '52-week high', '52-week low', 'all-time high',
+  // Financial instruments
+  'etf', 'hedge fund', 'dividend', 'buyback',
+  // Major tickers (exact)
+  ' aapl', ' msft', ' googl', ' goog', ' amzn', ' nvda', ' tsla', ' meta',
+  ' jpm', ' v', ' ma', ' dis', ' nflx', ' amd', ' intc', ' crm',
+  '(aapl)', '(msft)', '(googl)', '(amzn)', '(nvda)', '(tsla)', '(meta)',
+  // Major company names in stock context
+  'apple stock', 'apple shares', 'apple earnings',
+  'microsoft stock', 'microsoft shares', 'microsoft earnings',
+  'google stock', 'alphabet stock', 'alphabet shares',
+  'amazon stock', 'amazon shares', 'amazon earnings',
+  'nvidia stock', 'nvidia shares', 'nvidia earnings',
+  'tesla stock', 'tesla shares', 'tesla earnings',
+  'meta stock', 'meta shares', 'meta earnings'
 ]
 
 // ============ NEWS PAGE ============
@@ -1359,7 +1466,7 @@ function NewsPage({ darkMode }) {
   const categories = [
     { id: 'general', label: 'Market News' },
     { id: 'merger', label: 'M&A' },
-    { id: 'technology', label: 'Technology' }
+    { id: 'technology', label: 'Tech Stocks' }
   ]
 
   const isCryptoRelated = (article) => {
@@ -1368,18 +1475,19 @@ function NewsPage({ darkMode }) {
     return CRYPTO_KEYWORDS.some(keyword => text.includes(keyword))
   }
 
-  const isBlocklisted = (article) => {
-    if (!article) return true
+  // STRICT whitelist check - article MUST contain at least one whitelist term
+  const isStockMarketNews = (article) => {
+    if (!article || !article.headline) return false
     const text = `${article.headline || ''} ${article.summary || ''}`.toLowerCase()
-    return NEWS_BLOCKLIST.some(keyword => text.includes(keyword))
-  }
 
-  const isMarketRelevant = (article) => {
-    if (!article) return false
-    // First check blocklist
-    if (isBlocklisted(article)) return false
-    const text = `${article.headline || ''} ${article.summary || ''}`.toLowerCase()
-    return MARKET_KEYWORDS.some(keyword => text.includes(keyword))
+    // Must contain at least one whitelist term
+    const hasWhitelistTerm = STOCK_WHITELIST.some(term => text.includes(term))
+    if (!hasWhitelistTerm) return false
+
+    // Reject crypto
+    if (isCryptoRelated(article)) return false
+
+    return true
   }
 
   const fetchNews = useCallback(async () => {
@@ -1387,18 +1495,14 @@ function NewsPage({ darkMode }) {
     try {
       console.log('Fetching news for category:', category)
       const data = await finnhubFetch(`/news?category=${category}`)
-      console.log('News API raw response:', data)
 
       // Convert proxy response (object with numeric keys) to array
       let articles = parseNewsResponse(data)
       console.log('Parsed articles count:', articles.length)
 
-      // Filter out crypto
-      articles = articles.filter(article => !isCryptoRelated(article))
-
-      // Filter for market-relevant news only
-      articles = articles.filter(article => isMarketRelevant(article))
-      console.log('After market filter:', articles.length)
+      // STRICT filter - only show true stock market news
+      articles = articles.filter(article => isStockMarketNews(article))
+      console.log('After strict whitelist filter:', articles.length)
 
       // Sort by datetime (newest first)
       articles.sort((a, b) => (b.datetime || 0) - (a.datetime || 0))
