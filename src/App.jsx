@@ -1060,10 +1060,10 @@ function StockNewsModal({ symbol, onClose }) {
 function MobileBottomNav({ activePage, setActivePage, darkMode }) {
   const navItems = [
     { id: 'dashboard', label: 'Home', icon: Home },
+    { id: 'explore', label: 'Explore', icon: Grid3X3 },
     { id: 'insights', label: 'AI', icon: Brain },
-    { id: 'screener', label: 'Screener', icon: Filter },
-    { id: 'sectors', label: 'Sectors', icon: PieChart },
-    { id: 'settings', label: 'More', icon: Grid3X3 }
+    { id: 'earnings', label: 'Earnings', icon: Calendar },
+    { id: 'settings', label: 'More', icon: Settings }
   ]
 
   return (
@@ -1090,10 +1090,10 @@ function DesktopNav({ activePage, setActivePage, onSearchOpen, darkMode, toggleD
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: Home, tour: 'dashboard' },
+    { id: 'explore', label: 'Explore', icon: Grid3X3, tour: 'explore' },
     { id: 'insights', label: 'AI Insights', icon: Brain, tour: 'insights' },
     { id: 'screener', label: 'Screener', icon: Filter },
     { id: 'earnings', label: 'Earnings', icon: Calendar },
-    { id: 'sectors', label: 'Sectors', icon: PieChart },
     { id: 'news', label: 'News', icon: Newspaper, tour: 'news' },
     { id: 'settings', label: 'Settings', icon: Settings }
   ]
@@ -1186,58 +1186,30 @@ function DesktopNav({ activePage, setActivePage, onSearchOpen, darkMode, toggleD
 }
 
 // ============ AI MARKET PULSE ============
-// ============ SECTORS TAB ============
+// ============ SECTORS DATA ============
 const SECTORS = [
-  { name: 'Technology', symbol: 'XLK', color: 'from-blue-500 to-cyan-500' },
-  { name: 'Healthcare', symbol: 'XLV', color: 'from-green-500 to-emerald-500' },
-  { name: 'Financials', symbol: 'XLF', color: 'from-yellow-500 to-amber-500' },
-  { name: 'Consumer Disc.', symbol: 'XLY', color: 'from-pink-500 to-rose-500' },
-  { name: 'Communication', symbol: 'XLC', color: 'from-purple-500 to-violet-500' },
-  { name: 'Industrials', symbol: 'XLI', color: 'from-gray-500 to-slate-500' },
-  { name: 'Consumer Staples', symbol: 'XLP', color: 'from-orange-500 to-amber-500' },
-  { name: 'Energy', symbol: 'XLE', color: 'from-red-500 to-orange-500' },
-  { name: 'Utilities', symbol: 'XLU', color: 'from-teal-500 to-cyan-500' },
-  { name: 'Real Estate', symbol: 'XLRE', color: 'from-indigo-500 to-blue-500' },
-  { name: 'Materials', symbol: 'XLB', color: 'from-lime-500 to-green-500' }
+  { name: 'Technology', symbol: 'XLK' },
+  { name: 'Healthcare', symbol: 'XLV' },
+  { name: 'Financials', symbol: 'XLF' },
+  { name: 'Consumer Disc.', symbol: 'XLY' },
+  { name: 'Communication', symbol: 'XLC' },
+  { name: 'Industrials', symbol: 'XLI' },
+  { name: 'Staples', symbol: 'XLP' },
+  { name: 'Energy', symbol: 'XLE' },
+  { name: 'Utilities', symbol: 'XLU' },
+  { name: 'Real Estate', symbol: 'XLRE' },
+  { name: 'Materials', symbol: 'XLB' }
 ]
 
-function SectorsTab({ onSelectStock, darkMode }) {
-  const [sectorData, setSectorData] = useState({})
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    const fetchSectors = async () => {
-      setLoading(true)
-      const data = {}
-      const results = await Promise.allSettled(
-        SECTORS.map(s => yahooFetch(s.symbol))
-      )
-      results.forEach((result, i) => {
-        if (result.status === 'fulfilled' && result.value) {
-          const normalized = normalizeYahooQuote(result.value)
-          if (normalized) {
-            data[SECTORS[i].symbol] = normalized
-          }
-        }
-      })
-      setSectorData(data)
-      setLoading(false)
-    }
-    fetchSectors()
-  }, [])
-
+// ============ COMPACT SECTOR PERFORMANCE (for Dashboard) ============
+function SectorPerformance({ onSelectStock, sectorData, loading }) {
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-          <PieChart className="w-7 h-7 text-blue-400" />
-          Sector Performance
-        </h2>
-        <p className="text-gray-400 mt-1">Click any sector to view chart & details</p>
-      </div>
-
-      {/* Sector Heat Map */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+    <div className="space-y-3">
+      <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+        <PieChart className="w-5 h-5 text-blue-400" />
+        Sector Performance
+      </h3>
+      <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-11 gap-2">
         {SECTORS.map(sector => {
           const data = sectorData[sector.symbol]
           const change = data?.pc ? ((data.c - data.pc) / data.pc * 100) : 0
@@ -1246,26 +1218,238 @@ function SectorsTab({ onSelectStock, darkMode }) {
             <button
               key={sector.symbol}
               onClick={() => onSelectStock(sector.symbol)}
-              className={`rounded-xl p-4 text-left transition-all hover:scale-105 border border-gray-700 hover:border-gray-500 ${isPositive ? 'bg-green-900/20' : 'bg-red-900/20'}`}
+              className={`rounded-lg p-2 text-center transition-all hover:scale-105 border border-gray-700 hover:border-gray-500 ${isPositive ? 'bg-green-900/20' : 'bg-red-900/20'}`}
             >
-              <div className="text-xs text-gray-400 mb-1">{sector.symbol}</div>
-              <div className="font-medium text-white text-sm truncate">{sector.name}</div>
+              <div className="text-[10px] text-gray-400">{sector.symbol}</div>
               {loading ? (
-                <div className="h-5 bg-gray-700 rounded animate-pulse mt-2" />
+                <div className="h-4 bg-gray-700 rounded animate-pulse mt-1" />
               ) : (
-                <>
-                  <div className={`text-lg font-bold mt-1 ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
-                    {isPositive ? '+' : ''}{change.toFixed(2)}%
-                  </div>
-                  <div className="text-xs text-gray-400 mt-1">
-                    ${data?.c?.toFixed(2) || '—'}
-                  </div>
-                </>
+                <div className={`text-sm font-bold ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
+                  {isPositive ? '+' : ''}{change.toFixed(1)}%
+                </div>
               )}
             </button>
           )
         })}
       </div>
+    </div>
+  )
+}
+
+// ============ EXPLORE PAGE ============
+const EXPLORE_STOCKS = {
+  Technology: ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NVDA', 'TSLA', 'AMD', 'INTC', 'CRM', 'ORCL', 'ADBE', 'CSCO', 'IBM', 'QCOM', 'TXN', 'AVGO', 'NOW', 'SNOW', 'PLTR', 'NET', 'SHOP', 'SQ', 'PYPL', 'UBER', 'ABNB'],
+  Finance: ['JPM', 'BAC', 'GS', 'MS', 'WFC', 'C', 'USB', 'PNC', 'SCHW', 'BLK', 'AXP', 'V', 'MA', 'COF', 'SPGI'],
+  Healthcare: ['JNJ', 'UNH', 'PFE', 'ABBV', 'MRK', 'LLY', 'TMO', 'ABT', 'DHR', 'BMY', 'AMGN', 'GILD', 'CVS', 'CI', 'HUM'],
+  Consumer: ['WMT', 'COST', 'HD', 'LOW', 'TGT', 'MCD', 'SBUX', 'NKE', 'DIS', 'NFLX', 'CMG', 'YUM', 'DG', 'DLTR', 'ROST'],
+  Energy: ['XOM', 'CVX', 'COP', 'SLB', 'EOG', 'PXD', 'MPC', 'VLO', 'PSX', 'OXY'],
+  Industrials: ['CAT', 'DE', 'BA', 'HON', 'UPS', 'FDX', 'LMT', 'RTX', 'GE', 'MMM'],
+  Communication: ['GOOG', 'T', 'VZ', 'TMUS', 'CHTR', 'CMCSA', 'EA', 'TTWO'],
+  'Real Estate': ['AMT', 'PLD', 'CCI', 'EQIX', 'PSA', 'SPG', 'O', 'WELL'],
+  Utilities: ['NEE', 'DUK', 'SO', 'D', 'AEP', 'XEL']
+}
+
+const SECTOR_COLORS = {
+  Technology: 'text-blue-400',
+  Finance: 'text-yellow-400',
+  Healthcare: 'text-green-400',
+  Consumer: 'text-pink-400',
+  Energy: 'text-orange-400',
+  Industrials: 'text-gray-400',
+  Communication: 'text-purple-400',
+  'Real Estate': 'text-indigo-400',
+  Utilities: 'text-teal-400'
+}
+
+function ExplorePage({ onSelectStock, darkMode }) {
+  const [stockData, setStockData] = useState({})
+  const [loading, setLoading] = useState(true)
+  const [activeSector, setActiveSector] = useState('All')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [lastUpdated, setLastUpdated] = useState(null)
+  const lastFetchRef = useRef(0)
+  const isFetchingRef = useRef(false)
+
+  const allStocks = useMemo(() => {
+    const stocks = new Set()
+    Object.values(EXPLORE_STOCKS).forEach(arr => arr.forEach(s => stocks.add(s)))
+    return Array.from(stocks)
+  }, [])
+
+  const fetchStocks = useCallback(async (force = false) => {
+    const now = Date.now()
+    if (!force && (now - lastFetchRef.current < 60000 || isFetchingRef.current)) return
+
+    isFetchingRef.current = true
+    if (lastFetchRef.current === 0) setLoading(true)
+
+    try {
+      // Fetch in batches of 20
+      const batchSize = 20
+      const newData = { ...stockData }
+
+      for (let i = 0; i < allStocks.length; i += batchSize) {
+        const batch = allStocks.slice(i, i + batchSize)
+        const results = await Promise.allSettled(
+          batch.map(symbol => yahooFetch(symbol))
+        )
+
+        results.forEach((result, idx) => {
+          if (result.status === 'fulfilled' && result.value) {
+            const normalized = normalizeYahooQuote(result.value)
+            if (normalized && normalized.c > 0) {
+              newData[batch[idx]] = normalized
+            }
+          }
+        })
+
+        // Update state after each batch for progressive loading
+        if (i === 0) {
+          setStockData({ ...newData })
+          setLoading(false)
+        }
+      }
+
+      setStockData(newData)
+      lastFetchRef.current = now
+      setLastUpdated(new Date())
+    } catch (err) {
+      console.error('Explore fetch error:', err)
+    } finally {
+      isFetchingRef.current = false
+      setLoading(false)
+    }
+  }, [allStocks, stockData])
+
+  useEffect(() => {
+    fetchStocks(true)
+    const interval = setInterval(() => fetchStocks(), 60000)
+    return () => clearInterval(interval)
+  }, []) // Only run on mount
+
+  const sectors = ['All', ...Object.keys(EXPLORE_STOCKS)]
+
+  const getFilteredStocks = () => {
+    let stocks = activeSector === 'All'
+      ? Object.entries(EXPLORE_STOCKS)
+      : [[activeSector, EXPLORE_STOCKS[activeSector]]]
+
+    if (searchQuery) {
+      const query = searchQuery.toUpperCase()
+      stocks = stocks.map(([sector, symbols]) => [
+        sector,
+        symbols.filter(s => s.includes(query) || (stockData[s]?.name || '').toUpperCase().includes(query))
+      ]).filter(([, symbols]) => symbols.length > 0)
+    }
+
+    return stocks
+  }
+
+  const getTimeAgo = () => {
+    if (!lastUpdated) return ''
+    const mins = Math.floor((Date.now() - lastUpdated.getTime()) / 60000)
+    if (mins < 1) return 'Just now'
+    return `${mins}m ago`
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+            <Grid3X3 className="w-7 h-7 text-purple-400" />
+            Explore Stocks
+          </h2>
+          <p className="text-gray-400 mt-1">Browse 100+ stocks organized by sector</p>
+        </div>
+        {lastUpdated && (
+          <span className="text-xs text-gray-500">{getTimeAgo()}</span>
+        )}
+      </div>
+
+      {/* Search Bar */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search by symbol or name..."
+          className="w-full pl-10 pr-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+        />
+      </div>
+
+      {/* Sector Filter Pills */}
+      <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+        {sectors.map(sector => (
+          <button
+            key={sector}
+            onClick={() => setActiveSector(sector)}
+            className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
+              activeSector === sector
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+            }`}
+          >
+            {sector}
+          </button>
+        ))}
+      </div>
+
+      {/* Stock Grid */}
+      {loading && Object.keys(stockData).length === 0 ? (
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
+          {Array(24).fill(0).map((_, i) => (
+            <div key={i} className="p-3 rounded-lg bg-gray-800 animate-pulse">
+              <div className="h-4 bg-gray-700 rounded mb-2" />
+              <div className="h-3 bg-gray-700 rounded mb-2" />
+              <div className="h-4 bg-gray-700 rounded" />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {getFilteredStocks().map(([sector, symbols]) => (
+            <div key={sector} className="space-y-3">
+              <h3 className={`text-sm font-semibold ${SECTOR_COLORS[sector] || 'text-gray-300'}`}>
+                {sector} ({symbols.length})
+              </h3>
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
+                {symbols.map(symbol => {
+                  const quote = stockData[symbol]
+                  const change = quote?.pc ? ((quote.c - quote.pc) / quote.pc * 100) : 0
+                  const positive = change >= 0
+                  return (
+                    <button
+                      key={symbol}
+                      onClick={() => onSelectStock(symbol)}
+                      className={`p-2 rounded-lg border transition-all hover:scale-105 cursor-pointer text-left ${
+                        positive
+                          ? 'bg-green-900/20 border-green-500/30 hover:border-green-500'
+                          : 'bg-red-900/20 border-red-500/30 hover:border-red-500'
+                      }`}
+                    >
+                      <div className="text-xs font-bold text-white">{symbol}</div>
+                      <div className="text-[10px] text-gray-400 truncate">{quote?.name?.split(' ')[0] || '—'}</div>
+                      {quote ? (
+                        <>
+                          <div className="text-xs text-gray-300">${quote.c?.toFixed(2)}</div>
+                          <div className={`text-xs font-medium ${positive ? 'text-green-400' : 'text-red-400'}`}>
+                            {positive ? '+' : ''}{change.toFixed(1)}%
+                          </div>
+                        </>
+                      ) : (
+                        <div className="h-8 bg-gray-700/50 rounded animate-pulse mt-1" />
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -1596,6 +1780,7 @@ function EarningsTab({ onSelectStock, watchlist, darkMode }) {
 function Dashboard({ watchlist, setWatchlist, onSelectStock, darkMode }) {
   const [marketData, setMarketData] = useState({})
   const [watchlistQuotes, setWatchlistQuotes] = useState({})
+  const [sectorData, setSectorData] = useState({})
   const [moversData, setMoversData] = useState({ gainers: [], losers: [] })
   const [loading, setLoading] = useState(true)
   const [showAddStock, setShowAddStock] = useState(false)
@@ -1610,6 +1795,7 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock, darkMode }) {
   }, [watchlist])
 
   const indices = ['SPY', 'QQQ', 'DIA', 'IWM']
+  const sectorSymbols = SECTORS.map(s => s.symbol)
   const popularStocks = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'AMD', 'JPM', 'V', 'MA', 'DIS', 'NFLX', 'PYPL', 'INTC', 'CRM']
 
   const fetchAllData = useCallback(async () => {
@@ -1622,7 +1808,7 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock, darkMode }) {
     const currentWatchlist = watchlistRef.current || []
 
     // Combine all symbols to fetch (remove duplicates)
-    const allSymbols = [...new Set([...indices, ...currentWatchlist, ...popularStocks])]
+    const allSymbols = [...new Set([...indices, ...currentWatchlist, ...popularStocks, ...sectorSymbols])]
 
     // Fetch all at once - Yahoo has no rate limits
     const results = await Promise.allSettled(
@@ -1648,6 +1834,10 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock, darkMode }) {
     const quotes = {}
     currentWatchlist.forEach(s => { if (allData[s]) quotes[s] = allData[s] })
     setWatchlistQuotes(quotes)
+
+    const sectors = {}
+    sectorSymbols.forEach(s => { if (allData[s]) sectors[s] = allData[s] })
+    setSectorData(sectors)
 
     // Calculate movers from popular stocks
     const stockData = popularStocks
@@ -1875,142 +2065,8 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock, darkMode }) {
         </div>
       </div>
 
-      {/* Browse Stocks Section */}
-      <BrowseStocks onSelectStock={onSelectStock} allQuotes={{ ...marketData, ...watchlistQuotes }} />
-    </div>
-  )
-}
-
-// ============ BROWSE STOCKS COMPONENT ============
-const STOCK_CATEGORIES = [
-  {
-    name: 'Tech Giants',
-    color: 'text-blue-400',
-    stocks: ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NVDA', 'TSLA']
-  },
-  {
-    name: 'Finance',
-    color: 'text-yellow-400',
-    stocks: ['JPM', 'BAC', 'GS', 'V', 'MA', 'BRK-B']
-  },
-  {
-    name: 'Healthcare',
-    color: 'text-green-400',
-    stocks: ['JNJ', 'UNH', 'PFE', 'ABBV', 'MRK']
-  },
-  {
-    name: 'Consumer',
-    color: 'text-pink-400',
-    stocks: ['WMT', 'COST', 'MCD', 'NKE', 'SBUX', 'DIS']
-  },
-  {
-    name: 'Energy',
-    color: 'text-orange-400',
-    stocks: ['XOM', 'CVX', 'COP']
-  }
-]
-
-function BrowseStocks({ onSelectStock, allQuotes }) {
-  const [browseData, setBrowseData] = useState({})
-  const [loading, setLoading] = useState(true)
-  const [lastUpdated, setLastUpdated] = useState(null)
-  const lastFetchRef = useRef(0)
-  const isFetchingRef = useRef(false)
-
-  const fetchBrowseStocks = useCallback(async (force = false) => {
-    const now = Date.now()
-    // Only fetch if 60 seconds have passed or force refresh
-    if (!force && (now - lastFetchRef.current < 60000 || isFetchingRef.current)) return
-
-    isFetchingRef.current = true
-    if (lastFetchRef.current === 0) setLoading(true)
-
-    try {
-      const allSymbols = STOCK_CATEGORIES.flatMap(c => c.stocks)
-      const results = await Promise.allSettled(
-        allSymbols.map(symbol => yahooFetch(symbol))
-      )
-
-      const newData = {}
-      results.forEach((result, i) => {
-        if (result.status === 'fulfilled' && result.value) {
-          const normalized = normalizeYahooQuote(result.value)
-          if (normalized && normalized.c > 0) {
-            newData[allSymbols[i]] = normalized
-          }
-        }
-      })
-
-      setBrowseData(newData)
-      lastFetchRef.current = now
-      setLastUpdated(new Date())
-    } catch (err) {
-      console.error('Browse stocks fetch error:', err)
-    } finally {
-      isFetchingRef.current = false
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    fetchBrowseStocks(true)
-    const interval = setInterval(() => fetchBrowseStocks(), 60000)
-    return () => clearInterval(interval)
-  }, [fetchBrowseStocks])
-
-  // Calculate time since last update
-  const getTimeAgo = () => {
-    if (!lastUpdated) return ''
-    const mins = Math.floor((Date.now() - lastUpdated.getTime()) / 60000)
-    if (mins < 1) return 'Just now'
-    return `${mins}m ago`
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-          <Grid3X3 className="w-5 h-5 text-purple-400" />
-          Browse Stocks
-        </h3>
-        {lastUpdated && (
-          <span className="text-xs text-gray-500">{getTimeAgo()}</span>
-        )}
-      </div>
-
-      {STOCK_CATEGORIES.map(category => (
-        <div key={category.name} className="space-y-2">
-          <h4 className={`text-sm font-medium ${category.color}`}>{category.name}</h4>
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-7 gap-2">
-            {category.stocks.map(symbol => {
-              const quote = browseData[symbol]
-              const change = quote?.pc ? ((quote.c - quote.pc) / quote.pc * 100) : 0
-              const positive = change >= 0
-              return (
-                <button
-                  key={symbol}
-                  onClick={() => onSelectStock(symbol)}
-                  className={`p-2 rounded-lg border transition-all hover:scale-105 cursor-pointer ${
-                    positive ? 'bg-green-900/20 border-green-500/30 hover:border-green-500' : 'bg-red-900/20 border-red-500/30 hover:border-red-500'
-                  }`}
-                >
-                  <div className="text-xs font-bold text-white">{symbol}</div>
-                  {loading ? (
-                    <div className="h-4 bg-gray-700 rounded animate-pulse mt-1" />
-                  ) : (
-                    <>
-                      <div className="text-xs text-gray-300">${quote?.c?.toFixed(2) || '—'}</div>
-                      <div className={`text-xs font-medium ${positive ? 'text-green-400' : 'text-red-400'}`}>
-                        {positive ? '+' : ''}{change.toFixed(1)}%
-                      </div>
-                    </>
-                  )}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      ))}
+      {/* Sector Performance */}
+      <SectorPerformance onSelectStock={onSelectStock} sectorData={sectorData} loading={loading} />
     </div>
   )
 }
@@ -2851,7 +2907,7 @@ function NewsPage({ darkMode, watchlist }) {
         <div>
           <h2 className="text-2xl font-bold text-white">Stock News</h2>
           <div className="flex items-center gap-2">
-            <p className="text-sm text-gray-400">Real stock market news - no fluff</p>
+            <p className="text-sm text-gray-400">Latest market news</p>
             {cacheAge && !loading && (
               <span className="text-xs text-gray-500 flex items-center gap-1">
                 • {formatCacheAge(cacheAge)}
@@ -3213,10 +3269,10 @@ function AppContent() {
 
       <main className="max-w-7xl mx-auto px-4 py-6">
         {activePage === 'dashboard' && <Dashboard watchlist={watchlist} setWatchlist={setWatchlist} onSelectStock={setSelectedStock} darkMode={darkMode} />}
+        {activePage === 'explore' && <ExplorePage onSelectStock={setSelectedStock} darkMode={darkMode} />}
         {activePage === 'insights' && <AIInsights darkMode={darkMode} finnhubFetch={finnhubFetch} />}
         {activePage === 'screener' && <ScreenerTab onSelectStock={setSelectedStock} darkMode={darkMode} />}
         {activePage === 'earnings' && <EarningsTab onSelectStock={setSelectedStock} watchlist={watchlist} darkMode={darkMode} />}
-        {activePage === 'sectors' && <SectorsTab onSelectStock={setSelectedStock} darkMode={darkMode} />}
         {activePage === 'news' && <NewsPage darkMode={darkMode} watchlist={watchlist} />}
         {activePage === 'settings' && <SettingsPage darkMode={darkMode} syncStatus={syncStatus} onShowTour={() => setShowTour(true)} />}
       </main>
