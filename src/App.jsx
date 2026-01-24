@@ -1503,15 +1503,46 @@ const parseNewsResponse = (data) => {
   return []
 }
 
+// ============ NEWS CACHE ============
+const newsCache = {
+  data: {},
+  timestamps: {},
+  CACHE_DURATION: 10 * 60 * 1000, // 10 minutes
+
+  get(key) {
+    const cached = this.data[key]
+    const timestamp = this.timestamps[key]
+    if (cached && timestamp && (Date.now() - timestamp < this.CACHE_DURATION)) {
+      return { articles: cached, age: Date.now() - timestamp }
+    }
+    return null
+  },
+
+  set(key, articles) {
+    this.data[key] = articles
+    this.timestamps[key] = Date.now()
+  },
+
+  getAge(key) {
+    const timestamp = this.timestamps[key]
+    return timestamp ? Date.now() - timestamp : null
+  }
+}
+
 // ============ NEWS PAGE - STOCK-SPECIFIC NEWS ============
 function NewsPage({ darkMode, watchlist }) {
   const [news, setNews] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [tab, setTab] = useState('movers')
-  const [trendingStocks, setTrendingStocks] = useState([])
+  const [cacheAge, setCacheAge] = useState(null)
+  const [loadedStocks, setLoadedStocks] = useState([])
+  const [hasMore, setHasMore] = useState(true)
 
-  // Major market-moving stocks for "Market Movers" tab
-  const MARKET_MOVERS = ['SPY', 'QQQ', 'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'TSLA', 'META']
+  // Initial stocks (reduced to prevent rate limit)
+  const INITIAL_MOVERS = ['AAPL', 'MSFT', 'NVDA']
+  const MORE_MOVERS = ['GOOGL', 'AMZN', 'TSLA', 'META', 'SPY', 'QQQ']
+  const MAX_WATCHLIST_STOCKS = 3
 
   const tabs = [
     { id: 'movers', label: 'Market Movers', icon: TrendingUp },
@@ -1519,53 +1550,51 @@ function NewsPage({ darkMode, watchlist }) {
     { id: 'trending', label: 'Trending', icon: Zap }
   ]
 
-  // Fetch trending stocks (today's biggest movers)
-  const fetchTrendingStocks = useCallback(async () => {
-    const popularStocks = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'AMD', 'JPM', 'V', 'NFLX', 'DIS']
-    const stockData = []
+  // Helper: delay between requests
+  const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
-    for (const symbol of popularStocks) {
-      try {
-        const data = await finnhubFetch(`/quote?symbol=${symbol}`)
-        if (data && typeof data.c === 'number' && data.pc) {
-          const change = Math.abs(((data.c - data.pc) / data.pc) * 100)
-          stockData.push({ symbol, change })
-        }
-      } catch {}
+  // Fetch company news for a single symbol with caching
+  const fetchSingleStockNews = useCallback(async (symbol) => {
+    const cacheKey = `news_${symbol}`
+    const cached = newsCache.get(cacheKey)
+    if (cached) {
+      return { articles: cached.articles, fromCache: true }
     }
-
-    // Get top 5 by absolute change (biggest movers)
-    const sorted = stockData.sort((a, b) => b.change - a.change)
-    setTrendingStocks(sorted.slice(0, 5).map(s => s.symbol))
-  }, [])
-
-  // Fetch company-specific news for a list of symbols
-  const fetchCompanyNews = useCallback(async (symbols) => {
-    if (!symbols || symbols.length === 0) return []
 
     const today = new Date()
     const weekAgo = new Date(today.getTime() - 5 * 24 * 60 * 60 * 1000)
     const to = today.toISOString().split('T')[0]
     const from = weekAgo.toISOString().split('T')[0]
 
-    const allArticles = []
+    try {
+      const data = await finnhubFetch(`/company-news?symbol=${symbol}&from=${from}&to=${to}`)
+      const articles = parseNewsResponse(data).slice(0, 4).map(a => ({ ...a, ticker: symbol }))
+      newsCache.set(cacheKey, articles)
+      return { articles, fromCache: false }
+    } catch (err) {
+      console.log(`Failed to fetch news for ${symbol}:`, err)
+      return { articles: [], fromCache: false }
+    }
+  }, [])
 
-    // Fetch news for each symbol (limit concurrent requests)
-    for (const symbol of symbols.slice(0, 8)) {
-      try {
-        const data = await finnhubFetch(`/company-news?symbol=${symbol}&from=${from}&to=${to}`)
-        const articles = parseNewsResponse(data)
+  // Fetch news for multiple symbols with delays
+  const fetchMultipleStockNews = useCallback(async (symbols, existingNews = []) => {
+    const allArticles = [...existingNews]
+    let anyFromCache = existingNews.length > 0
 
-        // Add ticker to each article and take top 3 per stock
-        articles.slice(0, 3).forEach(article => {
-          allArticles.push({ ...article, ticker: symbol })
-        })
-      } catch (err) {
-        console.log(`Failed to fetch news for ${symbol}:`, err)
+    for (let i = 0; i < symbols.length; i++) {
+      const symbol = symbols[i]
+      const result = await fetchSingleStockNews(symbol)
+      allArticles.push(...result.articles)
+      if (result.fromCache) anyFromCache = true
+
+      // Add delay between non-cached requests to prevent rate limiting
+      if (!result.fromCache && i < symbols.length - 1) {
+        await delay(150)
       }
     }
 
-    // Sort by datetime (newest first) and deduplicate by headline
+    // Deduplicate and sort
     const seen = new Set()
     const unique = allArticles
       .sort((a, b) => (b.datetime || 0) - (a.datetime || 0))
@@ -1575,55 +1604,108 @@ function NewsPage({ darkMode, watchlist }) {
         return true
       })
 
-    return unique.slice(0, 20)
-  }, [])
+    return { articles: unique, fromCache: anyFromCache }
+  }, [fetchSingleStockNews])
 
-  const fetchNews = useCallback(async () => {
+  // Initial fetch
+  const fetchNews = useCallback(async (forceRefresh = false) => {
     setLoading(true)
-    let articles = []
+    setHasMore(true)
 
-    try {
-      if (tab === 'movers') {
-        articles = await fetchCompanyNews(MARKET_MOVERS)
-      } else if (tab === 'watchlist') {
-        if (watchlist && watchlist.length > 0) {
-          articles = await fetchCompanyNews(watchlist)
-        }
-      } else if (tab === 'trending') {
-        // First fetch trending stocks if we don't have them
-        if (trendingStocks.length === 0) {
-          await fetchTrendingStocks()
-        }
-        if (trendingStocks.length > 0) {
-          articles = await fetchCompanyNews(trendingStocks)
-        }
-      }
-
-      setNews(articles)
-    } catch (error) {
-      console.error('News fetch error:', error)
-      setNews([])
+    // Clear cache on force refresh
+    if (forceRefresh) {
+      newsCache.data = {}
+      newsCache.timestamps = {}
     }
+
+    let stocksToFetch = []
+    let moreAvailable = false
+
+    if (tab === 'movers') {
+      stocksToFetch = INITIAL_MOVERS
+      moreAvailable = true
+    } else if (tab === 'watchlist') {
+      stocksToFetch = (watchlist || []).slice(0, MAX_WATCHLIST_STOCKS)
+      moreAvailable = false
+    } else if (tab === 'trending') {
+      stocksToFetch = INITIAL_MOVERS // Use same as movers for trending
+      moreAvailable = true
+    }
+
+    setLoadedStocks(stocksToFetch)
+    setHasMore(moreAvailable)
+
+    if (stocksToFetch.length === 0) {
+      setNews([])
+      setLoading(false)
+      return
+    }
+
+    const result = await fetchMultipleStockNews(stocksToFetch)
+    setNews(result.articles)
+
+    // Set cache age indicator
+    const firstStockCache = newsCache.getAge(`news_${stocksToFetch[0]}`)
+    setCacheAge(firstStockCache)
+
     setLoading(false)
-  }, [tab, watchlist, trendingStocks, fetchCompanyNews, fetchTrendingStocks])
+  }, [tab, watchlist, fetchMultipleStockNews])
 
-  // Fetch trending stocks on mount
-  useEffect(() => {
-    fetchTrendingStocks()
-  }, [fetchTrendingStocks])
+  // Load more news
+  const loadMoreNews = useCallback(async () => {
+    if (loadingMore || !hasMore) return
 
+    setLoadingMore(true)
+
+    const additionalStocks = MORE_MOVERS.filter(s => !loadedStocks.includes(s)).slice(0, 3)
+
+    if (additionalStocks.length === 0) {
+      setHasMore(false)
+      setLoadingMore(false)
+      return
+    }
+
+    const result = await fetchMultipleStockNews(additionalStocks, news)
+    setNews(result.articles)
+    setLoadedStocks([...loadedStocks, ...additionalStocks])
+
+    // Check if more stocks available
+    const allLoaded = [...loadedStocks, ...additionalStocks]
+    const remaining = MORE_MOVERS.filter(s => !allLoaded.includes(s))
+    setHasMore(remaining.length > 0)
+
+    setLoadingMore(false)
+  }, [loadingMore, hasMore, loadedStocks, news, fetchMultipleStockNews])
+
+  // Fetch on tab change
   useEffect(() => {
     fetchNews()
-  }, [tab, watchlist, trendingStocks])
+  }, [tab])
+
+  // Format cache age
+  const formatCacheAge = (ms) => {
+    if (!ms) return null
+    const minutes = Math.floor(ms / 60000)
+    if (minutes < 1) return 'Just updated'
+    if (minutes === 1) return 'Updated 1 min ago'
+    return `Updated ${minutes} min ago`
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h2 className="text-2xl font-bold text-white">Stock News</h2>
-          <p className="text-sm text-gray-400">Real stock market news - no fluff</p>
+          <div className="flex items-center gap-2">
+            <p className="text-sm text-gray-400">Real stock market news - no fluff</p>
+            {cacheAge && !loading && (
+              <span className="text-xs text-gray-500 flex items-center gap-1">
+                • {formatCacheAge(cacheAge)}
+              </span>
+            )}
+          </div>
         </div>
-        <button onClick={fetchNews} disabled={loading}
+        <button onClick={() => fetchNews(true)} disabled={loading}
           className="flex items-center gap-2 px-4 py-2 rounded-xl transition-colors bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300">
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           <span className="hidden sm:inline">Refresh</span>
@@ -1645,6 +1727,13 @@ function NewsPage({ darkMode, watchlist }) {
         ))}
       </div>
 
+      {/* Watchlist info message */}
+      {tab === 'watchlist' && watchlist && watchlist.length > MAX_WATCHLIST_STOCKS && !loading && (
+        <div className="text-sm text-gray-400 bg-gray-800/50 rounded-lg px-4 py-2 border border-gray-700">
+          Showing news for your top {MAX_WATCHLIST_STOCKS} watchlist stocks: {watchlist.slice(0, MAX_WATCHLIST_STOCKS).join(', ')}
+        </div>
+      )}
+
       {/* Watchlist empty state */}
       {tab === 'watchlist' && (!watchlist || watchlist.length === 0) && !loading && (
         <div className="rounded-xl p-12 border text-center bg-gray-800/50 border-gray-700">
@@ -1657,8 +1746,8 @@ function NewsPage({ darkMode, watchlist }) {
       {/* Loading state */}
       {loading && (
         <div className="space-y-4">
-          {[1, 2, 3, 4, 5].map(i => (
-            <div key={i} className="h-32 rounded-xl animate-pulse bg-gray-800" />
+          {[1, 2, 3].map(i => (
+            <div key={i} className="h-28 rounded-xl animate-pulse bg-gray-800" />
           ))}
         </div>
       )}
@@ -1724,6 +1813,27 @@ function NewsPage({ darkMode, watchlist }) {
               </a>
             )
           })}
+
+          {/* Load More button */}
+          {hasMore && tab !== 'watchlist' && (
+            <button
+              onClick={loadMoreNews}
+              disabled={loadingMore}
+              className="w-full py-3 rounded-xl border border-gray-700 bg-gray-800/50 hover:bg-gray-700 text-gray-300 font-medium transition-colors flex items-center justify-center gap-2"
+            >
+              {loadingMore ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  Loading more...
+                </>
+              ) : (
+                <>
+                  <Plus className="w-4 h-4" />
+                  Load more news
+                </>
+              )}
+            </button>
+          )}
         </div>
       )}
     </div>
