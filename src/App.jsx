@@ -6,9 +6,13 @@ import {
   GitCompare, ExternalLink, ChevronDown, ChevronUp, Compass, Calendar,
   PieChart, Briefcase, DollarSign, Percent, TrendingUp as TrendUp,
   AlertTriangle, Layers, BarChart2, Wallet, Play, Pause, ChevronRight,
-  Cloud, CloudOff, LogIn, LogOut, User
+  Cloud, CloudOff, LogIn, LogOut, User, Brain, HelpCircle, Lightbulb
 } from 'lucide-react'
 import { LineChart, Line, ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, Cell } from 'recharts'
+import StockChart from './components/StockChart'
+import AIInsights from './components/AIInsights'
+import EnhancedPortfolio from './components/EnhancedPortfolio'
+import { InfoTooltip, SectionExplainer, MarketStatus, DelayedBadge, HighActivityCard, DisclaimerFooter, FirstTimeTip } from './components/SharedUI'
 import { auth, db, googleProvider } from './firebase'
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth'
 import { doc, setDoc, getDoc, onSnapshot } from 'firebase/firestore'
@@ -990,9 +994,9 @@ function MobileBottomNav({ activePage, setActivePage, darkMode }) {
   const navItems = [
     { id: 'overview', label: 'Home', icon: Home },
     { id: 'watchlist', label: 'Watchlist', icon: Star },
-    { id: 'explore', label: 'Explore', icon: Compass },
+    { id: 'insights', label: 'AI', icon: Brain },
     { id: 'portfolio', label: 'Portfolio', icon: Briefcase },
-    { id: 'settings', label: 'Settings', icon: Settings }
+    { id: 'settings', label: 'More', icon: Settings }
   ]
 
   return (
@@ -1022,6 +1026,7 @@ function DesktopNav({ activePage, setActivePage, rateLimitStatus, onSearchOpen, 
     { id: 'watchlist', label: 'Watchlist', icon: Star },
     { id: 'explore', label: 'Explore', icon: Compass },
     { id: 'portfolio', label: 'Portfolio', icon: Briefcase },
+    { id: 'insights', label: 'AI Insights', icon: Brain },
     { id: 'news', label: 'News', icon: Newspaper },
     { id: 'settings', label: 'Settings', icon: Settings }
   ]
@@ -1284,6 +1289,9 @@ function StockDetail({ symbol, apiKey, onClose, darkMode }) {
                 </div>
               )}
             </div>
+
+            {/* Interactive Chart */}
+            <StockChart symbol={symbol} apiKey={apiKey} darkMode={darkMode} height={300} />
 
             <PriceTargetTracker symbol={symbol} currentPrice={quote?.c} apiKey={apiKey} darkMode={darkMode} />
 
@@ -1815,8 +1823,9 @@ function AppContent() {
       <main className="max-w-7xl mx-auto px-4 py-6">
         {activePage === 'overview' && <MarketOverview apiKey={apiKey} onSelectStock={setSelectedStock} darkMode={darkMode} />}
         {activePage === 'watchlist' && <Watchlist apiKey={apiKey} watchlist={watchlist} setWatchlist={setWatchlist} onSelectStock={setSelectedStock} darkMode={darkMode} />}
-        {activePage === 'explore' && <ExplorePage apiKey={apiKey} onSelectStock={setSelectedStock} darkMode={darkMode} />}
-        {activePage === 'portfolio' && <PortfolioPage apiKey={apiKey} darkMode={darkMode} portfolio={portfolio} setPortfolio={setPortfolio} />}
+        {activePage === 'explore' && <ExplorePage apiKey={apiKey} onSelectStock={setSelectedStock} darkMode={darkMode} finnhubFetch={finnhubFetch} />}
+        {activePage === 'portfolio' && <EnhancedPortfolio apiKey={apiKey} darkMode={darkMode} portfolio={portfolio} setPortfolio={setPortfolio} watchlist={watchlist} finnhubFetch={finnhubFetch} addToast={addToast} />}
+        {activePage === 'insights' && <AIInsights apiKey={apiKey} watchlist={watchlist} darkMode={darkMode} finnhubFetch={finnhubFetch} />}
         {activePage === 'news' && <NewsPage apiKey={apiKey} darkMode={darkMode} />}
         {activePage === 'settings' && <SettingsPage apiKey={apiKey} onChangeApiKey={handleChangeApiKey} darkMode={darkMode} syncStatus={syncStatus} />}
       </main>
