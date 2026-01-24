@@ -1913,41 +1913,70 @@ const STOCK_CATEGORIES = [
 function BrowseStocks({ onSelectStock, allQuotes }) {
   const [browseData, setBrowseData] = useState({})
   const [loading, setLoading] = useState(true)
+  const [lastUpdated, setLastUpdated] = useState(null)
+  const lastFetchRef = useRef(0)
+  const isFetchingRef = useRef(false)
 
-  useEffect(() => {
-    const fetchBrowseStocks = async () => {
-      setLoading(true)
+  const fetchBrowseStocks = useCallback(async (force = false) => {
+    const now = Date.now()
+    // Only fetch if 60 seconds have passed or force refresh
+    if (!force && (now - lastFetchRef.current < 60000 || isFetchingRef.current)) return
+
+    isFetchingRef.current = true
+    if (lastFetchRef.current === 0) setLoading(true)
+
+    try {
       const allSymbols = STOCK_CATEGORIES.flatMap(c => c.stocks)
-      const toFetch = allSymbols.filter(s => !allQuotes[s])
+      const results = await Promise.allSettled(
+        allSymbols.map(symbol => yahooFetch(symbol))
+      )
 
-      if (toFetch.length > 0) {
-        const results = await Promise.allSettled(
-          toFetch.map(symbol => yahooFetch(symbol))
-        )
-        const newData = { ...allQuotes }
-        results.forEach((result, i) => {
-          if (result.status === 'fulfilled' && result.value) {
-            const normalized = normalizeYahooQuote(result.value)
-            if (normalized && normalized.c > 0) {
-              newData[toFetch[i]] = normalized
-            }
+      const newData = {}
+      results.forEach((result, i) => {
+        if (result.status === 'fulfilled' && result.value) {
+          const normalized = normalizeYahooQuote(result.value)
+          if (normalized && normalized.c > 0) {
+            newData[allSymbols[i]] = normalized
           }
-        })
-        setBrowseData(newData)
-      } else {
-        setBrowseData(allQuotes)
-      }
+        }
+      })
+
+      setBrowseData(newData)
+      lastFetchRef.current = now
+      setLastUpdated(new Date())
+    } catch (err) {
+      console.error('Browse stocks fetch error:', err)
+    } finally {
+      isFetchingRef.current = false
       setLoading(false)
     }
-    fetchBrowseStocks()
-  }, [allQuotes])
+  }, [])
+
+  useEffect(() => {
+    fetchBrowseStocks(true)
+    const interval = setInterval(() => fetchBrowseStocks(), 60000)
+    return () => clearInterval(interval)
+  }, [fetchBrowseStocks])
+
+  // Calculate time since last update
+  const getTimeAgo = () => {
+    if (!lastUpdated) return ''
+    const mins = Math.floor((Date.now() - lastUpdated.getTime()) / 60000)
+    if (mins < 1) return 'Just now'
+    return `${mins}m ago`
+  }
 
   return (
     <div className="space-y-4">
-      <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-        <Grid3X3 className="w-5 h-5 text-purple-400" />
-        Browse Stocks
-      </h3>
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+          <Grid3X3 className="w-5 h-5 text-purple-400" />
+          Browse Stocks
+        </h3>
+        {lastUpdated && (
+          <span className="text-xs text-gray-500">{getTimeAgo()}</span>
+        )}
+      </div>
 
       {STOCK_CATEGORIES.map(category => (
         <div key={category.name} className="space-y-2">
