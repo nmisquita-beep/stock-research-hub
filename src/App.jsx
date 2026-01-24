@@ -621,7 +621,8 @@ function StockNewsModal({ symbol, onClose }) {
         const to = new Date().toISOString().split('T')[0]
         const from = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
         const data = await finnhubFetch(`/company-news?symbol=${symbol}&from=${from}&to=${to}`)
-        const articles = Array.isArray(data) ? data.slice(0, 10) : []
+        // Use parseNewsResponse to handle both array and object formats
+        const articles = parseNewsResponse(data).slice(0, 10)
         setNews(articles)
       } catch { setNews([]) }
       finally { setLoading(false) }
@@ -639,13 +640,26 @@ function StockNewsModal({ symbol, onClose }) {
         <div className="overflow-y-auto max-h-[calc(80vh-80px)] p-4 space-y-3">
           {loading ? [1,2,3].map(i => <Skeleton key={i} className="h-20 w-full" />) : news.length > 0 ? news.map((article, i) => {
             const s = analyzeSentiment(article.headline)
+            const hasImage = article.image && article.image.length > 10
             return (
-              <a key={i} href={article.url} target="_blank" rel="noopener noreferrer" className="block p-4 bg-gray-700/30 hover:bg-gray-700/50 rounded-lg transition-all group">
-                <h4 className="text-white font-medium group-hover:text-blue-400 line-clamp-2">{article.headline}</h4>
-                <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
-                  <span>{article.source}</span>
-                  <span>{new Date(article.datetime * 1000).toLocaleDateString()}</span>
-                  <span className={`px-2 py-0.5 rounded-full ${s.label === 'bullish' ? 'bg-green-500/20 text-green-400' : s.label === 'bearish' ? 'bg-red-500/20 text-red-400' : 'bg-gray-500/20 text-gray-400'}`}>{s.label}</span>
+              <a key={i} href={article.url} target="_blank" rel="noopener noreferrer" className="block bg-gray-700/30 hover:bg-gray-700/50 rounded-lg transition-all group overflow-hidden">
+                <div className="flex">
+                  {hasImage && (
+                    <div className="hidden sm:block w-24 h-20 flex-shrink-0">
+                      <img src={article.image} alt="" className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none' }} />
+                    </div>
+                  )}
+                  <div className="flex-1 p-4">
+                    <h4 className="text-white font-medium group-hover:text-blue-400 line-clamp-2">{article.headline}</h4>
+                    <div className="flex items-center gap-3 mt-2 text-xs">
+                      <span className="text-gray-300">{article.source}</span>
+                      <span className="text-gray-400 flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {formatTimeAgo(article.datetime)}
+                      </span>
+                      <span className={`px-2 py-0.5 rounded-full ${s.label === 'bullish' ? 'bg-green-500/20 text-green-400' : s.label === 'bearish' ? 'bg-red-500/20 text-red-400' : 'bg-gray-500/20 text-gray-400'}`}>{s.label}</span>
+                    </div>
+                  </div>
                 </div>
               </a>
             )
@@ -1158,6 +1172,45 @@ function MarketMovers({ onSelectStock, darkMode }) {
   )
 }
 
+// ============ TIME AGO HELPER ============
+const formatTimeAgo = (timestamp) => {
+  const seconds = Math.floor((Date.now() - timestamp * 1000) / 1000)
+  if (seconds < 60) return 'Just now'
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  if (days < 7) return `${days}d ago`
+  return new Date(timestamp * 1000).toLocaleDateString()
+}
+
+// ============ CONVERT PROXY RESPONSE TO ARRAY ============
+const parseNewsResponse = (data) => {
+  // If it's already an array, return it
+  if (Array.isArray(data)) {
+    return data
+  }
+
+  // If it's an object with numeric keys (proxy format), convert to array
+  if (data && typeof data === 'object') {
+    // Filter out non-news properties like "_cached"
+    const articles = Object.entries(data)
+      .filter(([key, value]) => {
+        // Only include numeric keys that have valid article objects
+        return !isNaN(parseInt(key)) &&
+               value &&
+               typeof value === 'object' &&
+               value.headline
+      })
+      .map(([, value]) => value)
+
+    return articles
+  }
+
+  return []
+}
+
 // ============ NEWS PAGE ============
 function NewsPage({ darkMode }) {
   const [news, setNews] = useState([])
@@ -1178,22 +1231,21 @@ function NewsPage({ darkMode }) {
   const fetchNews = useCallback(async () => {
     setLoading(true)
     try {
-      // Debug: log the API call
       console.log('Fetching news for category:', category)
       const data = await finnhubFetch(`/news?category=${category}`)
-      console.log('News API response:', data)
+      console.log('News API raw response:', data)
 
-      let articles = []
-      if (Array.isArray(data)) {
-        articles = data
-      } else if (data && typeof data === 'object') {
-        // Sometimes the API returns an object with a data property
-        articles = Array.isArray(data.data) ? data.data : []
-      }
+      // Convert proxy response (object with numeric keys) to array
+      let articles = parseNewsResponse(data)
+      console.log('Parsed articles count:', articles.length)
 
       // Filter out crypto by default
       articles = articles.filter(article => !isCryptoRelated(article))
-      console.log('Filtered articles:', articles.length)
+      console.log('After crypto filter:', articles.length)
+
+      // Sort by datetime (newest first)
+      articles.sort((a, b) => (b.datetime || 0) - (a.datetime || 0))
+
       setNews(articles.slice(0, 20))
     } catch (error) {
       console.error('News fetch error:', error)
@@ -1212,8 +1264,9 @@ function NewsPage({ darkMode }) {
           <p className="text-sm text-gray-400">Latest financial news and updates</p>
         </div>
         <button onClick={fetchNews} disabled={loading}
-          className="p-2.5 rounded-xl transition-colors bg-gray-800 hover:bg-gray-700 border border-gray-700">
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''} text-gray-300`} />
+          className="flex items-center gap-2 px-4 py-2 rounded-xl transition-colors bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300">
+          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          <span className="hidden sm:inline">Refresh</span>
         </button>
       </div>
 
@@ -1232,8 +1285,8 @@ function NewsPage({ darkMode }) {
 
       {loading ? (
         <div className="space-y-4">
-          {[1, 2, 3].map(i => (
-            <div key={i} className="h-24 rounded-xl animate-pulse bg-gray-800" />
+          {[1, 2, 3, 4, 5].map(i => (
+            <div key={i} className="h-28 rounded-xl animate-pulse bg-gray-800" />
           ))}
         </div>
       ) : news.length === 0 ? (
@@ -1246,20 +1299,42 @@ function NewsPage({ darkMode }) {
         <div className="space-y-3">
           {news.map((article, i) => {
             const sentiment = analyzeSentiment(article.headline)
+            const hasImage = article.image && article.image.length > 10
             return (
               <a key={i} href={article.url} target="_blank" rel="noopener noreferrer"
-                className="block rounded-xl p-4 border transition-all hover:scale-[1.005] bg-gray-800/50 border-gray-700 hover:border-gray-600 hover:bg-gray-800">
-                <h3 className="font-medium mb-2 line-clamp-2 text-white">{article.headline}</h3>
-                <div className="flex items-center gap-3 text-sm flex-wrap">
-                  <span className="text-gray-400">{article.source}</span>
-                  <span className="text-gray-400">{new Date(article.datetime * 1000).toLocaleDateString()}</span>
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                    sentiment.label === 'bullish' ? 'bg-green-500/20 text-green-400' :
-                    sentiment.label === 'bearish' ? 'bg-red-500/20 text-red-400' :
-                    'bg-gray-500/20 text-gray-400'
-                  }`}>
-                    {sentiment.label}
-                  </span>
+                className="block rounded-xl border transition-all hover:scale-[1.005] bg-gray-800/50 border-gray-700 hover:border-gray-600 hover:bg-gray-800 overflow-hidden">
+                <div className="flex">
+                  {/* Thumbnail */}
+                  {hasImage && (
+                    <div className="hidden sm:block w-32 h-24 flex-shrink-0">
+                      <img
+                        src={article.image}
+                        alt=""
+                        className="w-full h-full object-cover"
+                        onError={(e) => { e.target.style.display = 'none' }}
+                      />
+                    </div>
+                  )}
+                  {/* Content */}
+                  <div className="flex-1 p-4">
+                    <h3 className="font-medium mb-2 line-clamp-2 text-white group-hover:text-blue-400">
+                      {article.headline}
+                    </h3>
+                    <div className="flex items-center gap-3 text-sm flex-wrap">
+                      <span className="text-gray-300 font-medium">{article.source}</span>
+                      <span className="text-gray-400 flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {formatTimeAgo(article.datetime)}
+                      </span>
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                        sentiment.label === 'bullish' ? 'bg-green-500/20 text-green-400' :
+                        sentiment.label === 'bearish' ? 'bg-red-500/20 text-red-400' :
+                        'bg-gray-500/20 text-gray-400'
+                      }`}>
+                        {sentiment.label}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </a>
             )
