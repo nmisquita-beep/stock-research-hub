@@ -1186,77 +1186,6 @@ function DesktopNav({ activePage, setActivePage, onSearchOpen, darkMode, toggleD
 }
 
 // ============ AI MARKET PULSE ============
-function AIMarketPulse({ marketData, moversData }) {
-  const [pulse, setPulse] = useState(null)
-  const [loading, setLoading] = useState(false)
-
-  useEffect(() => {
-    const fetchPulse = async () => {
-      if (!marketData || Object.keys(marketData).length === 0) return
-
-      // Check cache
-      const cached = aiCache.get('marketPulse', 'marketPulse')
-      if (cached) {
-        setPulse(cached)
-        return
-      }
-
-      setLoading(true)
-      try {
-        const indices = Object.entries(marketData).map(([sym, data]) => {
-          const change = data.pc ? ((data.c - data.pc) / data.pc * 100).toFixed(2) : 0
-          return `${sym}: ${change >= 0 ? '+' : ''}${change}%`
-        }).join(', ')
-
-        const gainers = moversData?.gainers?.slice(0, 3).map(s => `${s.symbol} +${s.change.toFixed(1)}%`).join(', ') || 'N/A'
-        const losers = moversData?.losers?.slice(0, 3).map(s => `${s.symbol} ${s.change.toFixed(1)}%`).join(', ') || 'N/A'
-
-        const prompt = `Today's Market:
-Indices: ${indices}
-Top Gainers: ${gainers}
-Top Losers: ${losers}
-
-2-3 sentence market pulse. Start with mood (Bullish/Bearish/Mixed), then explain WHY with specific stocks/sectors.`
-
-        console.log('AI Prompt (Market Pulse):', prompt)
-        const insight = await groqFetch(prompt, {}, false)
-        setPulse(insight)
-        aiCache.set('marketPulse', insight)
-      } catch (err) {
-        console.error('Market pulse error:', err)
-      }
-      setLoading(false)
-    }
-
-    fetchPulse()
-  }, [marketData, moversData])
-
-  if (loading) {
-    return (
-      <div className="bg-gradient-to-r from-purple-900/30 to-blue-900/30 rounded-xl p-4 border border-purple-500/20 animate-pulse">
-        <div className="flex items-center gap-2 mb-2">
-          <Brain className="w-5 h-5 text-purple-400" />
-          <span className="text-sm font-medium text-purple-300">AI Market Pulse</span>
-        </div>
-        <div className="h-12 bg-gray-700/50 rounded" />
-      </div>
-    )
-  }
-
-  if (!pulse) return null
-
-  return (
-    <div className="bg-gradient-to-r from-purple-900/30 to-blue-900/30 rounded-xl p-4 border border-purple-500/20">
-      <div className="flex items-center gap-2 mb-2">
-        <Brain className="w-5 h-5 text-purple-400" />
-        <span className="text-sm font-medium text-purple-300">AI Market Pulse</span>
-        <Sparkles className="w-4 h-4 text-purple-400" />
-      </div>
-      <p className="text-gray-200 text-sm leading-relaxed">{pulse}</p>
-    </div>
-  )
-}
-
 // ============ SECTORS TAB ============
 const SECTORS = [
   { name: 'Technology', symbol: 'XLK', color: 'from-blue-500 to-cyan-500' },
@@ -1276,8 +1205,6 @@ function SectorsTab({ onSelectStock, darkMode }) {
   const [sectorData, setSectorData] = useState({})
   const [loading, setLoading] = useState(true)
   const [selectedSector, setSelectedSector] = useState(null)
-  const [sectorAnalysis, setSectorAnalysis] = useState(null)
-  const [analysisLoading, setAnalysisLoading] = useState(false)
 
   useEffect(() => {
     const fetchSectors = async () => {
@@ -1300,38 +1227,6 @@ function SectorsTab({ onSelectStock, darkMode }) {
     fetchSectors()
   }, [])
 
-  const analyzeSector = async (sector) => {
-    setSelectedSector(sector)
-    setSectorAnalysis(null)
-
-    const cacheKey = `sector_${sector.symbol}`
-    const cached = aiCache.get(cacheKey, 'sectors')
-    if (cached) {
-      setSectorAnalysis(cached)
-      return
-    }
-
-    setAnalysisLoading(true)
-    try {
-      const data = sectorData[sector.symbol]
-      const change = data?.pc ? ((data.c - data.pc) / data.pc * 100).toFixed(2) : 0
-
-      const prompt = `Sector: ${sector.name} (ETF: ${sector.symbol})
-Performance: ${change >= 0 ? '+' : ''}${change}% today
-Price: $${data?.c?.toFixed(2) || 'N/A'}
-
-Is ${sector.name} sector bullish or bearish? What's driving it? 2 sentences, be specific.`
-
-      console.log('AI Prompt (Sector):', prompt)
-      const insight = await groqFetch(prompt, {}, false)
-      setSectorAnalysis(insight)
-      aiCache.set(cacheKey, insight)
-    } catch (err) {
-      setSectorAnalysis('Analysis unavailable')
-    }
-    setAnalysisLoading(false)
-  }
-
   return (
     <div className="space-y-6">
       <div>
@@ -1339,7 +1234,7 @@ Is ${sector.name} sector bullish or bearish? What's driving it? 2 sentences, be 
           <PieChart className="w-7 h-7 text-blue-400" />
           Sector Performance
         </h2>
-        <p className="text-gray-400 mt-1">S&P 500 sector breakdown with AI analysis</p>
+        <p className="text-gray-400 mt-1">S&P 500 sector breakdown</p>
       </div>
 
       {/* Sector Heat Map */}
@@ -1351,7 +1246,7 @@ Is ${sector.name} sector bullish or bearish? What's driving it? 2 sentences, be 
           return (
             <button
               key={sector.symbol}
-              onClick={() => analyzeSector(sector)}
+              onClick={() => setSelectedSector(sector)}
               className={`rounded-xl p-4 text-left transition-all hover:scale-105 border ${
                 selectedSector?.symbol === sector.symbol
                   ? 'border-blue-500 ring-2 ring-blue-500/30'
@@ -1372,40 +1267,42 @@ Is ${sector.name} sector bullish or bearish? What's driving it? 2 sentences, be 
         })}
       </div>
 
-      {/* Selected Sector Analysis */}
+      {/* Selected Sector Details */}
       {selectedSector && (
         <div className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
-          <div className="flex items-center gap-3 mb-4">
-            <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${selectedSector.color} flex items-center justify-center`}>
-              <Layers className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <h3 className="font-bold text-white">{selectedSector.name}</h3>
-              <p className="text-gray-400 text-sm">{selectedSector.symbol}</p>
-            </div>
-          </div>
-
-          {analysisLoading ? (
-            <div className="space-y-2">
-              <div className="h-4 bg-gray-700 rounded animate-pulse w-3/4" />
-              <div className="h-4 bg-gray-700 rounded animate-pulse w-1/2" />
-            </div>
-          ) : sectorAnalysis ? (
-            <div className="bg-purple-900/20 rounded-lg p-4 border border-purple-500/20">
-              <div className="flex items-center gap-2 mb-2">
-                <Brain className="w-4 h-4 text-purple-400" />
-                <span className="text-sm font-medium text-purple-300">AI Analysis</span>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${selectedSector.color} flex items-center justify-center`}>
+                <Layers className="w-5 h-5 text-white" />
               </div>
-              <p className="text-gray-200 text-sm">{sectorAnalysis}</p>
+              <div>
+                <h3 className="font-bold text-white">{selectedSector.name}</h3>
+                <p className="text-gray-400 text-sm">{selectedSector.symbol}</p>
+              </div>
             </div>
-          ) : null}
+            {sectorData[selectedSector.symbol] && (
+              <div className="text-right">
+                <div className="text-xl font-bold text-white">
+                  ${sectorData[selectedSector.symbol].c?.toFixed(2)}
+                </div>
+                <div className={`text-sm font-medium ${
+                  ((sectorData[selectedSector.symbol].c - sectorData[selectedSector.symbol].pc) / sectorData[selectedSector.symbol].pc * 100) >= 0
+                    ? 'text-green-400'
+                    : 'text-red-400'
+                }`}>
+                  {((sectorData[selectedSector.symbol].c - sectorData[selectedSector.symbol].pc) / sectorData[selectedSector.symbol].pc * 100) >= 0 ? '+' : ''}
+                  {((sectorData[selectedSector.symbol].c - sectorData[selectedSector.symbol].pc) / sectorData[selectedSector.symbol].pc * 100).toFixed(2)}%
+                </div>
+              </div>
+            )}
+          </div>
 
           <button
             onClick={() => onSelectStock(selectedSector.symbol)}
-            className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-white text-sm flex items-center gap-2"
+            className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg text-white text-sm font-medium flex items-center justify-center gap-2"
           >
             <Eye className="w-4 h-4" />
-            View {selectedSector.symbol} Details
+            View {selectedSector.symbol} Chart & Details
           </button>
         </div>
       )}
@@ -1461,20 +1358,22 @@ function ScreenerTab({ onSelectStock, darkMode }) {
   const [selectedScreen, setSelectedScreen] = useState(null)
   const [screenResults, setScreenResults] = useState([])
   const [loading, setLoading] = useState(false)
-  const [aiReasoning, setAiReasoning] = useState(null)
 
   const runScreen = async (screen) => {
     setSelectedScreen(screen)
     setLoading(true)
-    setAiReasoning(null)
 
     const cacheKey = `screen_${screen.id}`
-    const cached = aiCache.get(cacheKey, 'screener')
+    const cached = localStorage.getItem(cacheKey)
     if (cached) {
-      setScreenResults(cached.results)
-      setAiReasoning(cached.reasoning)
-      setLoading(false)
-      return
+      try {
+        const parsed = JSON.parse(cached)
+        if (Date.now() - parsed.timestamp < 5 * 60 * 1000) { // 5 min cache
+          setScreenResults(parsed.results)
+          setLoading(false)
+          return
+        }
+      } catch {}
     }
 
     try {
@@ -1502,19 +1401,7 @@ function ScreenerTab({ onSelectStock, darkMode }) {
       })
 
       setScreenResults(stockData)
-
-      // Get AI reasoning
-      const prompt = `Screen: "${screen.name}" - ${screen.description}
-Stocks in this screen:
-${stockData.map(s => `- ${s.symbol}: $${s.price?.toFixed(2) || 'N/A'}, ${s.change >= 0 ? '+' : ''}${s.change.toFixed(1)}% today, P/E: ${s.pe?.toFixed(1) || 'N/A'}`).join('\n')}
-
-Explain in 2 sentences why these specific stocks (${stockData.map(s => s.symbol).join(', ')}) fit the "${screen.name}" criteria. Be specific about each company.`
-
-      console.log('AI Prompt (Screener):', prompt)
-      const reasoning = await groqFetch(prompt, {}, false)
-      setAiReasoning(reasoning)
-
-      aiCache.set(cacheKey, { results: stockData, reasoning })
+      localStorage.setItem(cacheKey, JSON.stringify({ results: stockData, timestamp: Date.now() }))
     } catch (err) {
       console.error('Screen error:', err)
     }
@@ -1526,9 +1413,9 @@ Explain in 2 sentences why these specific stocks (${stockData.map(s => s.symbol)
       <div>
         <h2 className="text-2xl font-bold text-white flex items-center gap-2">
           <Filter className="w-7 h-7 text-green-400" />
-          AI Stock Screener
+          Stock Screener
         </h2>
-        <p className="text-gray-400 mt-1">AI-curated stock screens for different strategies</p>
+        <p className="text-gray-400 mt-1">Curated stock screens for different strategies</p>
       </div>
 
       {/* Screen Buttons */}
@@ -1563,16 +1450,6 @@ Explain in 2 sentences why these specific stocks (${stockData.map(s => s.symbol)
             <selectedScreen.icon className="w-5 h-5" />
             {selectedScreen.name} Results
           </h3>
-
-          {aiReasoning && (
-            <div className="bg-purple-900/20 rounded-lg p-4 border border-purple-500/20 mb-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Brain className="w-4 h-4 text-purple-400" />
-                <span className="text-sm font-medium text-purple-300">AI Reasoning</span>
-              </div>
-              <p className="text-gray-200 text-sm">{aiReasoning}</p>
-            </div>
-          )}
 
           {loading ? (
             <div className="space-y-3">
@@ -1962,9 +1839,6 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock, darkMode }) {
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
         </button>
       </div>
-
-      {/* AI Market Pulse */}
-      <AIMarketPulse marketData={marketData} moversData={moversData} />
 
       {/* Market Indices Row */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
@@ -2483,8 +2357,6 @@ function StockDetail({ symbol, onClose, darkMode }) {
   const [loading, setLoading] = useState(true)
   const [showNews, setShowNews] = useState(false)
   const [chartRange, setChartRange] = useState('1mo')
-  const [aiSummary, setAiSummary] = useState(null)
-  const [aiLoading, setAiLoading] = useState(false)
 
   const rangeOptions = [
     { value: '1d', label: '1D', interval: '5m' },
@@ -2513,43 +2385,6 @@ function StockDetail({ symbol, onClose, darkMode }) {
     }
     fetchData()
   }, [symbol])
-
-  // Fetch AI summary
-  useEffect(() => {
-    const fetchAiSummary = async () => {
-      if (!quote) return
-
-      const cacheKey = `stock_summary_${symbol}`
-      const cached = aiCache.get(cacheKey, 'stockAnalysis')
-      if (cached) {
-        setAiSummary(cached)
-        return
-      }
-
-      setAiLoading(true)
-      try {
-        const change = quote.changePercent || 0
-        const prompt = `Stock: ${symbol} (${quote.name || symbol})
-Current Price: $${quote.c?.toFixed(2) || 'N/A'}
-Change Today: ${change >= 0 ? '+' : ''}${change.toFixed(2)}%
-52-Week High: $${quote.weekHigh52?.toFixed(2) || 'N/A'}
-52-Week Low: $${quote.weekLow52?.toFixed(2) || 'N/A'}
-P/E Ratio: ${quote.peRatio?.toFixed(1) || 'N/A'}
-
-Explain why ${symbol} is ${change >= 0 ? 'up' : 'down'} ${Math.abs(change).toFixed(1)}% today. Be specific to THIS company - mention earnings, news, sector trends, or catalysts. 2 sentences max.`
-
-        console.log('AI Prompt (Stock Summary):', prompt)
-        const summary = await groqFetch(prompt, {}, false)
-        setAiSummary(summary)
-        aiCache.set(cacheKey, summary)
-      } catch (err) {
-        console.error('AI summary error:', err)
-      }
-      setAiLoading(false)
-    }
-
-    fetchAiSummary()
-  }, [quote, symbol])
 
   const change = quote?.change || 0
   const pctChange = quote?.changePercent || 0
@@ -2591,21 +2426,6 @@ Explain why ${symbol} is ${change >= 0 ? 'up' : 'down'} ${Math.abs(change).toFix
               <span className={`text-sm ${positive ? 'text-green-400' : 'text-red-400'}`}>
                 {positive ? '+' : ''}{formatCurrency(change)}
               </span>
-            </div>
-
-            {/* AI Quick Summary */}
-            <div className="bg-purple-900/20 rounded-xl p-4 border border-purple-500/20">
-              <div className="flex items-center gap-2 mb-2">
-                <Brain className="w-4 h-4 text-purple-400" />
-                <span className="text-sm font-medium text-purple-300">Why is {symbol} moving?</span>
-              </div>
-              {aiLoading ? (
-                <div className="h-10 bg-gray-700/50 rounded animate-pulse" />
-              ) : aiSummary ? (
-                <p className="text-gray-200 text-sm">{aiSummary}</p>
-              ) : (
-                <p className="text-gray-400 text-sm">Loading AI analysis...</p>
-              )}
             </div>
 
             {/* Chart with Range Selector */}
