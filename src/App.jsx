@@ -422,68 +422,75 @@ function FearGreedIndicator({ value }) {
   )
 }
 
-// ============ INTERACTIVE GUIDED TOUR ============
+// ============ FRIENDLY GUIDED TOUR ============
 function OnboardingTour({ onComplete }) {
   const [step, setStep] = useState(0)
   const [highlightRect, setHighlightRect] = useState(null)
+  const [isAnimating, setIsAnimating] = useState(false)
 
+  // Step 0 = Welcome, Step 5 = Finish (both centered modals)
   const steps = [
     {
+      type: 'welcome',
+      title: 'Welcome to Stock Research Hub!',
+      description: 'Your personal dashboard for stock research, AI-powered insights, and real-time market news.',
+      emoji: '🚀'
+    },
+    {
+      type: 'highlight',
       target: '[data-tour="overview"]',
       title: 'Market Overview',
-      description: 'See market indices and trending stocks at a glance. Track the overall market mood.',
+      description: 'Track major indices like S&P 500 and see trending stocks at a glance.',
       position: 'bottom'
     },
     {
+      type: 'highlight',
       target: '[data-tour="watchlist"]',
       title: 'Your Watchlist',
-      description: 'Track your favorite stocks here. Add any stock and monitor prices in real-time.',
+      description: 'Build and monitor your personal list of stocks. Add any stock you want to track.',
       position: 'bottom'
     },
     {
-      target: '[data-tour="movers"]',
-      title: 'Market Movers',
-      description: "Discover today's biggest gainers and losers. Spot trending opportunities.",
-      position: 'bottom'
-    },
-    {
+      type: 'highlight',
       target: '[data-tour="insights"]',
       title: 'AI Stock Analysis',
-      description: 'Get AI-powered analysis on any stock. See opportunities, risks, and actionable insights.',
+      description: 'Get AI-powered insights on any stock - risks, opportunities, and recommendations.',
       position: 'bottom'
     },
     {
+      type: 'highlight',
       target: '[data-tour="news"]',
-      title: 'Market News',
-      description: 'Stay updated with curated market news. Only real stock market news, no fluff.',
+      title: 'Stock News',
+      description: 'Stay updated with real stock market news from companies you care about.',
       position: 'bottom'
     },
     {
-      target: '[data-tour="search"]',
-      title: 'Quick Search',
-      description: 'Search for any stock instantly. Press "/" for keyboard shortcut.',
-      position: 'bottom'
-    },
-    {
-      target: '[data-tour="signin"]',
-      title: 'Sync Your Data',
-      description: 'Sign in to sync your watchlist across all your devices.',
-      position: 'left'
+      type: 'finish',
+      title: "You're All Set!",
+      description: 'Start exploring the market. Use the search (/) to find any stock instantly.',
+      emoji: '🎉'
     }
   ]
 
+  const currentStep = steps[step]
+  const isModal = currentStep.type === 'welcome' || currentStep.type === 'finish'
+  const totalSteps = steps.length
+
   useEffect(() => {
+    if (isModal) {
+      setHighlightRect(null)
+      return
+    }
+
     const updateHighlight = () => {
-      const currentStep = steps[step]
       const element = document.querySelector(currentStep.target)
       if (element) {
         const rect = element.getBoundingClientRect()
         setHighlightRect({
-          top: rect.top - 4,
-          left: rect.left - 4,
-          width: rect.width + 8,
-          height: rect.height + 8,
-          position: currentStep.position
+          top: rect.top - 6,
+          left: rect.left - 6,
+          width: rect.width + 12,
+          height: rect.height + 12
         })
       } else {
         setHighlightRect(null)
@@ -492,24 +499,34 @@ function OnboardingTour({ onComplete }) {
 
     updateHighlight()
     window.addEventListener('resize', updateHighlight)
-    return () => window.removeEventListener('resize', updateHighlight)
-  }, [step])
-
-  const currentStep = steps[step]
-  const isFirst = step === 0
-  const isLast = step === steps.length - 1
+    window.addEventListener('scroll', updateHighlight)
+    return () => {
+      window.removeEventListener('resize', updateHighlight)
+      window.removeEventListener('scroll', updateHighlight)
+    }
+  }, [step, currentStep])
 
   const handleNext = () => {
-    if (isLast) {
+    if (step === steps.length - 1) {
       localStorage.setItem('tour_completed', 'true')
       onComplete()
     } else {
-      setStep(step + 1)
+      setIsAnimating(true)
+      setTimeout(() => {
+        setStep(step + 1)
+        setIsAnimating(false)
+      }, 150)
     }
   }
 
   const handleBack = () => {
-    if (!isFirst) setStep(step - 1)
+    if (step > 0) {
+      setIsAnimating(true)
+      setTimeout(() => {
+        setStep(step - 1)
+        setIsAnimating(false)
+      }, 150)
+    }
   }
 
   const handleSkip = () => {
@@ -517,112 +534,177 @@ function OnboardingTour({ onComplete }) {
     onComplete()
   }
 
-  // Calculate tooltip position
-  const getTooltipStyle = () => {
-    if (!highlightRect) return { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }
+  // Calculate tooltip position for highlight steps
+  const getTooltipPosition = () => {
+    if (!highlightRect) return {}
 
-    const padding = 16
-    const tooltipWidth = 320
-    const tooltipHeight = 180
+    const padding = 12
+    const tooltipHeight = 160
+    let top = highlightRect.top + highlightRect.height + padding
+    let left = highlightRect.left + highlightRect.width / 2
 
-    let top, left, transform = ''
-
-    switch (currentStep.position) {
-      case 'bottom':
-        top = highlightRect.top + highlightRect.height + padding
-        left = highlightRect.left + highlightRect.width / 2
-        transform = 'translateX(-50%)'
-        // Keep within viewport
-        if (left - tooltipWidth / 2 < padding) left = tooltipWidth / 2 + padding
-        if (left + tooltipWidth / 2 > window.innerWidth - padding) left = window.innerWidth - tooltipWidth / 2 - padding
-        break
-      case 'left':
-        top = highlightRect.top + highlightRect.height / 2
-        left = highlightRect.left - tooltipWidth - padding
-        transform = 'translateY(-50%)'
-        if (left < padding) {
-          left = highlightRect.left + highlightRect.width + padding
-        }
-        break
-      default:
-        top = highlightRect.top + highlightRect.height + padding
-        left = highlightRect.left + highlightRect.width / 2
-        transform = 'translateX(-50%)'
+    // If tooltip would go off bottom, position above
+    if (top + tooltipHeight > window.innerHeight - 20) {
+      top = highlightRect.top - tooltipHeight - padding
     }
 
-    return { top: `${top}px`, left: `${left}px`, transform }
+    // Keep within horizontal bounds
+    const tooltipWidth = 320
+    if (left - tooltipWidth / 2 < 20) left = tooltipWidth / 2 + 20
+    if (left + tooltipWidth / 2 > window.innerWidth - 20) left = window.innerWidth - tooltipWidth / 2 - 20
+
+    const arrowOnTop = top > highlightRect.top
+
+    return { top, left, arrowOnTop }
   }
 
-  return (
-    <div className="fixed inset-0 z-[200]">
-      {/* Dark overlay with cutout */}
-      <div className="absolute inset-0 bg-black/80" />
+  const tooltipPos = getTooltipPosition()
 
-      {/* Highlight box */}
-      {highlightRect && (
-        <div
-          className="absolute rounded-xl transition-all duration-300 ease-out"
-          style={{
-            top: highlightRect.top,
-            left: highlightRect.left,
-            width: highlightRect.width,
-            height: highlightRect.height,
-            boxShadow: '0 0 0 4000px rgba(0, 0, 0, 0.8), 0 0 20px 4px rgba(59, 130, 246, 0.5)',
-            border: '2px solid rgba(59, 130, 246, 0.8)',
-            pointerEvents: 'none'
-          }}
-        />
+  return (
+    <div className={`fixed inset-0 z-[200] transition-opacity duration-300 ${isAnimating ? 'opacity-50' : 'opacity-100'}`}>
+      {/* Semi-transparent overlay - users can still see the site */}
+      <div className="absolute inset-0 bg-black/50" onClick={handleSkip} />
+
+      {/* Highlight cutout for non-modal steps */}
+      {!isModal && highlightRect && (
+        <>
+          {/* Spotlight effect - brighten the highlighted element */}
+          <div
+            className="absolute rounded-xl transition-all duration-300 ease-out pointer-events-none"
+            style={{
+              top: highlightRect.top,
+              left: highlightRect.left,
+              width: highlightRect.width,
+              height: highlightRect.height,
+              boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.5)',
+              background: 'transparent',
+              border: '3px solid #3b82f6',
+              animation: 'pulse-border 2s ease-in-out infinite'
+            }}
+          />
+          {/* Glow effect */}
+          <div
+            className="absolute rounded-xl pointer-events-none"
+            style={{
+              top: highlightRect.top - 4,
+              left: highlightRect.left - 4,
+              width: highlightRect.width + 8,
+              height: highlightRect.height + 8,
+              boxShadow: '0 0 30px 10px rgba(59, 130, 246, 0.4)',
+              transition: 'all 0.3s ease-out'
+            }}
+          />
+        </>
       )}
 
-      {/* Tooltip */}
-      <div
-        className="absolute w-80 bg-gray-800 rounded-2xl border border-gray-700 shadow-2xl overflow-hidden transition-all duration-300"
-        style={getTooltipStyle()}
-      >
-        {/* Progress */}
-        <div className="flex justify-center gap-1.5 pt-4">
-          {steps.map((_, i) => (
-            <div
-              key={i}
-              className={`h-1.5 rounded-full transition-all ${
-                i === step ? 'bg-blue-500 w-6' : i < step ? 'bg-blue-500 w-1.5' : 'bg-gray-600 w-1.5'
-              }`}
-            />
-          ))}
-        </div>
-
-        {/* Content */}
-        <div className="p-5">
-          <h3 className="text-lg font-bold text-white mb-2">{currentStep.title}</h3>
-          <p className="text-gray-400 text-sm leading-relaxed">{currentStep.description}</p>
-        </div>
-
-        {/* Actions */}
-        <div className="flex items-center justify-between px-5 pb-5">
-          <button
-            onClick={handleSkip}
-            className="text-sm text-gray-500 hover:text-gray-300 transition-colors"
-          >
-            Skip
-          </button>
-          <div className="flex gap-2">
-            {!isFirst && (
+      {/* Welcome/Finish Modal (centered) */}
+      {isModal && (
+        <div className="absolute inset-0 flex items-center justify-center p-4">
+          <div className="bg-gray-800 rounded-2xl border border-gray-700 shadow-2xl max-w-md w-full overflow-hidden transform transition-all">
+            <div className="p-8 text-center">
+              <div className="text-5xl mb-4">{currentStep.emoji}</div>
+              <h2 className="text-2xl font-bold text-white mb-3">{currentStep.title}</h2>
+              <p className="text-gray-400 leading-relaxed">{currentStep.description}</p>
+            </div>
+            <div className="px-8 pb-8 flex flex-col gap-3">
               <button
-                onClick={handleBack}
-                className="px-4 py-2 text-sm text-gray-300 hover:text-white transition-colors"
+                onClick={handleNext}
+                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition-colors"
               >
-                Back
+                {currentStep.type === 'welcome' ? "Let's Take a Tour" : 'Start Exploring'}
               </button>
-            )}
-            <button
-              onClick={handleNext}
-              className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
-            >
-              {isLast ? 'Get Started' : 'Next'}
-            </button>
+              {currentStep.type === 'welcome' && (
+                <button
+                  onClick={handleSkip}
+                  className="w-full py-2 text-gray-400 hover:text-gray-300 text-sm transition-colors"
+                >
+                  Skip tour, I'll explore on my own
+                </button>
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
+
+      {/* Tooltip for highlight steps */}
+      {!isModal && highlightRect && (
+        <div
+          className="absolute w-80 transition-all duration-300 ease-out"
+          style={{
+            top: `${tooltipPos.top}px`,
+            left: `${tooltipPos.left}px`,
+            transform: 'translateX(-50%)'
+          }}
+        >
+          {/* Arrow pointing to element */}
+          {!tooltipPos.arrowOnTop && (
+            <div className="flex justify-center -mb-2">
+              <div className="w-4 h-4 bg-gray-800 border-l border-t border-gray-600 transform rotate-45" />
+            </div>
+          )}
+
+          <div className="bg-gray-800 rounded-xl border border-gray-600 shadow-2xl overflow-hidden">
+            {/* Progress dots */}
+            <div className="flex justify-center gap-1.5 pt-4">
+              {steps.map((_, i) => (
+                <div
+                  key={i}
+                  className={`h-2 rounded-full transition-all duration-300 ${
+                    i === step ? 'bg-blue-500 w-6' : i < step ? 'bg-blue-400 w-2' : 'bg-gray-600 w-2'
+                  }`}
+                />
+              ))}
+            </div>
+
+            {/* Content */}
+            <div className="p-5">
+              <h3 className="text-lg font-bold text-white mb-2">{currentStep.title}</h3>
+              <p className="text-gray-400 text-sm leading-relaxed">{currentStep.description}</p>
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center justify-between px-5 pb-5">
+              <button
+                onClick={handleSkip}
+                className="text-sm text-gray-500 hover:text-gray-300 transition-colors"
+              >
+                Skip
+              </button>
+              <div className="flex gap-2">
+                {step > 1 && (
+                  <button
+                    onClick={handleBack}
+                    className="px-4 py-2 text-sm text-gray-300 hover:text-white transition-colors"
+                  >
+                    Back
+                  </button>
+                )}
+                <button
+                  onClick={handleNext}
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  {step === steps.length - 2 ? 'Finish' : 'Next'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Arrow pointing to element (bottom) */}
+          {tooltipPos.arrowOnTop && (
+            <div className="flex justify-center -mt-2">
+              <div className="w-4 h-4 bg-gray-800 border-r border-b border-gray-600 transform rotate-45" />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* CSS for pulse animation */}
+      <style>{`
+        @keyframes pulse-border {
+          0%, 100% { border-color: #3b82f6; }
+          50% { border-color: #60a5fa; }
+        }
+      `}</style>
     </div>
   )
 }
