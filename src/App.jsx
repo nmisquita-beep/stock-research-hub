@@ -1102,16 +1102,30 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock, darkMode }) {
   const [moversData, setMoversData] = useState({ gainers: [], losers: [] })
   const [loading, setLoading] = useState(true)
   const [showAddStock, setShowAddStock] = useState(false)
+  const [lastUpdated, setLastUpdated] = useState(null)
   const { addToast } = useToast()
+  const watchlistRef = useRef(watchlist)
+  const isFetchingRef = useRef(false)
+
+  // Keep ref in sync with prop
+  useEffect(() => {
+    watchlistRef.current = watchlist
+  }, [watchlist])
 
   const indices = ['SPY', 'QQQ', 'DIA', 'IWM']
   const popularStocks = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'AMD', 'JPM', 'V', 'MA', 'DIS', 'NFLX', 'PYPL', 'INTC', 'CRM']
 
   const fetchAllData = useCallback(async () => {
+    // Prevent concurrent fetches
+    if (isFetchingRef.current) return
+    isFetchingRef.current = true
     setLoading(true)
 
+    // Use ref to get current watchlist without causing dependency changes
+    const currentWatchlist = watchlistRef.current || []
+
     // Combine all symbols to fetch (remove duplicates)
-    const allSymbols = [...new Set([...indices, ...watchlist, ...popularStocks])]
+    const allSymbols = [...new Set([...indices, ...currentWatchlist, ...popularStocks])]
 
     // Fetch all at once - Yahoo has no rate limits
     const results = await Promise.allSettled(
@@ -1135,7 +1149,7 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock, darkMode }) {
     setMarketData(market)
 
     const quotes = {}
-    watchlist.forEach(s => { if (allData[s]) quotes[s] = allData[s] })
+    currentWatchlist.forEach(s => { if (allData[s]) quotes[s] = allData[s] })
     setWatchlistQuotes(quotes)
 
     // Calculate movers from popular stocks
@@ -1153,14 +1167,24 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock, darkMode }) {
       losers: stockData.slice(-5).reverse()
     })
 
+    setLastUpdated(new Date())
     setLoading(false)
-  }, [watchlist])
+    isFetchingRef.current = false
+  }, []) // No dependencies - uses refs for watchlist
 
+  // Initial fetch and 60-second interval
   useEffect(() => {
     fetchAllData()
     const interval = setInterval(fetchAllData, 60000)
     return () => clearInterval(interval)
   }, [fetchAllData])
+
+  // Refetch when watchlist changes (but not on every render)
+  useEffect(() => {
+    if (watchlist.length > 0) {
+      fetchAllData()
+    }
+  }, [watchlist.length]) // Only refetch when watchlist length changes
 
   const mood = calculateMarketMood(marketData)
 
@@ -1185,8 +1209,16 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock, darkMode }) {
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-white">Dashboard</h2>
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-white">Dashboard</h2>
+          {lastUpdated && (
+            <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
+              <Clock className="w-3 h-3" />
+              Last updated: {lastUpdated.toLocaleTimeString()}
+            </p>
+          )}
+        </div>
         <button onClick={fetchAllData} disabled={loading} className="flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-gray-700 hover:bg-gray-600 text-gray-200">
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
         </button>
@@ -1448,12 +1480,31 @@ function StockChart({ symbol, range = '1mo', interval = '1d' }) {
       setLoading(true)
       try {
         const data = await yahooFetch(symbol, 'chart', { range, interval })
-        if (data && data.chart && data.chart.result && data.chart.result[0]) {
+        console.log('Chart API response for', symbol, ':', data)
+
+        let formatted = []
+
+        // Format 1: Proxy pre-formatted response { data: [{time, open, high, low, close, volume}] }
+        if (data && Array.isArray(data.data) && data.data.length > 0) {
+          console.log('Using proxy format, data points:', data.data.length)
+          formatted = data.data.map(d => ({
+            time: d.time * 1000,
+            date: new Date(d.time * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+            open: d.open,
+            high: d.high,
+            low: d.low,
+            close: d.close,
+            volume: d.volume
+          })).filter(d => d.close !== null && d.close !== undefined)
+        }
+        // Format 2: Raw Yahoo format { chart: { result: [{ timestamp, indicators }] } }
+        else if (data && data.chart && data.chart.result && data.chart.result[0]) {
+          console.log('Using raw Yahoo format')
           const result = data.chart.result[0]
           const timestamps = result.timestamp || []
           const quotes = result.indicators?.quote?.[0] || {}
 
-          const formatted = timestamps.map((t, i) => ({
+          formatted = timestamps.map((t, i) => ({
             time: t * 1000,
             date: new Date(t * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
             open: quotes.open?.[i],
@@ -1462,9 +1513,23 @@ function StockChart({ symbol, range = '1mo', interval = '1d' }) {
             close: quotes.close?.[i],
             volume: quotes.volume?.[i]
           })).filter(d => d.close !== null && d.close !== undefined)
-
-          setChartData(formatted)
         }
+        // Format 3: Direct array response
+        else if (Array.isArray(data) && data.length > 0) {
+          console.log('Using direct array format')
+          formatted = data.map(d => ({
+            time: (d.time || d.timestamp || d.date) * 1000,
+            date: new Date((d.time || d.timestamp || d.date) * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+            open: d.open,
+            high: d.high,
+            low: d.low,
+            close: d.close,
+            volume: d.volume
+          })).filter(d => d.close !== null && d.close !== undefined)
+        }
+
+        console.log('Formatted chart data points:', formatted.length)
+        setChartData(formatted)
       } catch (err) {
         console.error('Chart fetch error:', err)
         setChartData([])
