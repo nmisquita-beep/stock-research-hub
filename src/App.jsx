@@ -105,18 +105,33 @@ class RateLimiter {
 const rateLimiter = new RateLimiter(60, 60000)
 
 // ============ API HELPERS ============
-const finnhubFetch = async (endpoint, apiKey, timeout = 10000) => {
+const PROXY_BASE_URL = 'https://stock-api-proxy-seven.vercel.app/api/finnhub'
+
+const finnhubFetch = async (endpoint, apiKey = null, timeout = 10000) => {
   await rateLimiter.throttle()
-  const separator = endpoint.includes('?') ? '&' : '?'
 
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), timeout)
 
+  // Convert endpoint to proxy format
+  // e.g., /quote?symbol=AAPL -> ?endpoint=quote&symbol=AAPL
+  const endpointParts = endpoint.startsWith('/') ? endpoint.slice(1) : endpoint
+  const [path, queryString] = endpointParts.split('?')
+
+  let proxyUrl = `${PROXY_BASE_URL}?endpoint=${path}`
+  if (queryString) {
+    proxyUrl += `&${queryString}`
+  }
+
   try {
-    const response = await fetch(`https://finnhub.io/api/v1${endpoint}${separator}token=${apiKey}`, {
+    const response = await fetch(proxyUrl, {
       signal: controller.signal
     })
     clearTimeout(timeoutId)
+
+    if (response.status === 429) {
+      throw new Error('Rate limit exceeded. Please wait a moment and try again.')
+    }
     if (!response.ok) throw new Error(`API Error: ${response.status}`)
     return response.json()
   } catch (error) {
@@ -501,7 +516,7 @@ function FearGreedIndicator({ value }) {
 }
 
 // ============ PREDICTIVE SEARCH ============
-function PredictiveSearch({ apiKey, onSelect, onClose, placeholder = "Search stocks...", inline = false }) {
+function PredictiveSearch({ onSelect, onClose, placeholder = "Search stocks...", inline = false }) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
@@ -514,12 +529,12 @@ function PredictiveSearch({ apiKey, onSelect, onClose, placeholder = "Search sto
     if (!q.trim()) { setResults([]); return }
     setLoading(true)
     try {
-      const data = await finnhubFetch(`/search?q=${encodeURIComponent(q)}`, apiKey)
+      const data = await finnhubFetch(`/search?q=${encodeURIComponent(q)}`)
       setResults((data.result || []).slice(0, 6).map(r => ({ symbol: r.symbol, name: r.description })))
       setSelectedIndex(0)
     } catch { setResults([]) }
     finally { setLoading(false) }
-  }, 250), [apiKey])
+  }, 250), [])
 
   useEffect(() => { searchStocks(query) }, [query, searchStocks])
 
@@ -619,7 +634,7 @@ function UnusualActivityCard({ activities, onSelect, darkMode }) {
 }
 
 // ============ EARNINGS CALENDAR ============
-function EarningsCalendar({ apiKey, onSelect, darkMode }) {
+function EarningsCalendar({ onSelect, darkMode }) {
   const [earnings, setEarnings] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -630,13 +645,13 @@ function EarningsCalendar({ apiKey, onSelect, darkMode }) {
         const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000)
         const from = today.toISOString().split('T')[0]
         const to = nextWeek.toISOString().split('T')[0]
-        const data = await finnhubFetch(`/calendar/earnings?from=${from}&to=${to}`, apiKey)
+        const data = await finnhubFetch(`/calendar/earnings?from=${from}&to=${to}`)
         setEarnings((data.earningsCalendar || []).slice(0, 8))
       } catch { setEarnings([]) }
       finally { setLoading(false) }
     }
     fetchEarnings()
-  }, [apiKey])
+  }, [])
 
   return (
     <div className={`rounded-xl p-4 border ${darkMode ? 'bg-gray-800/50 border-gray-700' : 'bg-white border-gray-200'}`}>
@@ -667,20 +682,20 @@ function EarningsCalendar({ apiKey, onSelect, darkMode }) {
 }
 
 // ============ PRICE TARGET TRACKER ============
-function PriceTargetTracker({ symbol, currentPrice, apiKey, darkMode }) {
+function PriceTargetTracker({ symbol, currentPrice, darkMode }) {
   const [target, setTarget] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const fetchTarget = async () => {
       try {
-        const data = await finnhubFetch(`/stock/price-target?symbol=${symbol}`, apiKey)
+        const data = await finnhubFetch(`/stock/price-target?symbol=${symbol}`)
         setTarget(data)
       } catch { setTarget(null) }
       finally { setLoading(false) }
     }
     if (symbol) fetchTarget()
-  }, [symbol, apiKey])
+  }, [symbol])
 
   if (loading) return <Skeleton className="h-16 w-full" />
   if (!target || !target.targetMean) return null
@@ -710,7 +725,7 @@ function PriceTargetTracker({ symbol, currentPrice, apiKey, darkMode }) {
 }
 
 // ============ PORTFOLIO SIMULATOR ============
-function PortfolioSimulator({ apiKey, darkMode, portfolio, setPortfolio }) {
+function PortfolioSimulator({ darkMode, portfolio, setPortfolio }) {
   const [quotes, setQuotes] = useState({})
   const [showTrade, setShowTrade] = useState(false)
   const [tradeSymbol, setTradeSymbol] = useState('')
@@ -725,14 +740,14 @@ function PortfolioSimulator({ apiKey, darkMode, portfolio, setPortfolio }) {
       const newQuotes = {}
       for (const symbol of symbols) {
         try {
-          const data = await finnhubFetch(`/quote?symbol=${symbol}`, apiKey)
+          const data = await finnhubFetch(`/quote?symbol=${symbol}`)
           newQuotes[symbol] = data
         } catch {}
       }
       setQuotes(newQuotes)
     }
     fetchQuotes()
-  }, [portfolio.positions, apiKey])
+  }, [portfolio.positions])
 
   const totalValue = portfolio.cash + portfolio.positions.reduce((sum, p) => {
     const quote = quotes[p.symbol]
@@ -745,7 +760,7 @@ function PortfolioSimulator({ apiKey, darkMode, portfolio, setPortfolio }) {
   const executeTrade = async () => {
     if (!tradeSymbol || !tradeShares) return
     try {
-      const quote = await finnhubFetch(`/quote?symbol=${tradeSymbol}`, apiKey)
+      const quote = await finnhubFetch(`/quote?symbol=${tradeSymbol}`)
       const price = quote.c
       const shares = parseInt(tradeShares)
       const cost = price * shares
@@ -930,7 +945,7 @@ function WatchlistInsights({ watchlist, quotes, darkMode }) {
 }
 
 // ============ STOCK NEWS MODAL ============
-function StockNewsModal({ symbol, apiKey, onClose }) {
+function StockNewsModal({ symbol, onClose }) {
   const [news, setNews] = useState([])
   const [loading, setLoading] = useState(true)
   const [sentiment, setSentiment] = useState({ score: 50, articles: { bullish: 0, bearish: 0, neutral: 0 } })
@@ -940,7 +955,7 @@ function StockNewsModal({ symbol, apiKey, onClose }) {
       try {
         const to = new Date().toISOString().split('T')[0]
         const from = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-        const data = await finnhubFetch(`/company-news?symbol=${symbol}&from=${from}&to=${to}`, apiKey)
+        const data = await finnhubFetch(`/company-news?symbol=${symbol}&from=${from}&to=${to}`)
         const articles = (data || []).slice(0, 10)
         setNews(articles)
 
@@ -958,7 +973,7 @@ function StockNewsModal({ symbol, apiKey, onClose }) {
       finally { setLoading(false) }
     }
     fetchNews()
-  }, [symbol, apiKey])
+  }, [symbol])
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in" onClick={onClose}>
@@ -997,102 +1012,8 @@ function StockNewsModal({ symbol, apiKey, onClose }) {
   )
 }
 
-// ============ API KEY SETUP ============
-function ApiKeySetup({ onSave }) {
-  const [apiKey, setApiKey] = useState('')
-  const [error, setError] = useState('')
-  const [testing, setTesting] = useState(false)
-
-  const testAndSave = async () => {
-    if (!apiKey.trim()) { setError('Please enter an API key'); return }
-    setTesting(true); setError('')
-    try {
-      const response = await fetch(`https://finnhub.io/api/v1/quote?symbol=AAPL&token=${apiKey}`)
-      const data = await response.json()
-      if (data.error || (data.c === 0 && data.h === 0)) {
-        setError('Invalid API key. Please check and try again.')
-      } else {
-        localStorage.setItem('finnhub_api_key', apiKey)
-        onSave(apiKey)
-      }
-    } catch {
-      setError('Failed to validate. Check your connection and try again.')
-    }
-    finally { setTesting(false) }
-  }
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center p-4">
-      <div className="bg-gray-800/80 backdrop-blur-xl rounded-2xl p-8 max-w-md w-full shadow-2xl border border-gray-700 animate-scale-in">
-        <div className="text-center mb-6">
-          <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-            <BarChart3 className="w-10 h-10 text-white" />
-          </div>
-          <h1 className="text-3xl font-bold text-white mb-2">Stock Research Hub</h1>
-          <p className="text-gray-400">Free real-time stock data and analysis</p>
-        </div>
-
-        {/* Onboarding instructions */}
-        <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 mb-6">
-          <h3 className="text-blue-300 font-medium mb-2 flex items-center gap-2">
-            <Zap className="w-4 h-4" />
-            Get your FREE API key (30 seconds)
-          </h3>
-          <ol className="text-gray-300 text-sm space-y-1.5 list-decimal list-inside">
-            <li>Go to <span className="text-blue-400">finnhub.io/register</span></li>
-            <li>Create a free account</li>
-            <li>Copy your API key from the dashboard</li>
-          </ol>
-          <div className="mt-3 pt-3 border-t border-blue-500/20">
-            <p className="text-gray-400 text-xs">
-              Free tier includes: 60 API calls/minute, 15-min delayed stock data, real-time news
-            </p>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1.5">Your API Key</label>
-            <input
-              type="text"
-              value={apiKey}
-              onChange={e => setApiKey(e.target.value)}
-              placeholder="Paste your API key here..."
-              className="w-full px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-            />
-          </div>
-
-          {error && (
-            <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
-              <div className="text-red-400 text-sm flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                {error}
-              </div>
-            </div>
-          )}
-
-          <button
-            onClick={testAndSave}
-            disabled={testing}
-            className="w-full py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:opacity-50 text-white font-medium rounded-xl flex items-center justify-center gap-2 transition-all"
-          >
-            {testing ? <><RefreshCw className="w-4 h-4 animate-spin" />Validating...</> : 'Get Started'}
-          </button>
-
-          <a
-            href="https://finnhub.io/register"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="w-full py-3 bg-gray-700/50 hover:bg-gray-700 border border-gray-600 text-white font-medium rounded-xl flex items-center justify-center gap-2 transition-all"
-          >
-            <ExternalLink className="w-4 h-4" />
-            Get Free API Key
-          </a>
-        </div>
-      </div>
-    </div>
-  )
-}
+// ============ API KEY SETUP (REMOVED - USING PROXY) ============
+// No longer needed - app works immediately with proxy
 
 // ============ MOBILE BOTTOM NAV ============
 function MobileBottomNav({ activePage, setActivePage, darkMode }) {
@@ -1229,7 +1150,7 @@ function DesktopNav({ activePage, setActivePage, rateLimitStatus, onSearchOpen, 
 }
 
 // ============ MARKET OVERVIEW ============
-function MarketOverview({ apiKey, onSelectStock, darkMode }) {
+function MarketOverview({ onSelectStock, darkMode }) {
   const [marketData, setMarketData] = useState({})
   const [trendingData, setTrendingData] = useState({})
   const [loading, setLoading] = useState(true)
@@ -1244,7 +1165,7 @@ function MarketOverview({ apiKey, onSelectStock, darkMode }) {
     const unusual = []
     for (const symbol of [...indices, ...trending]) {
       try {
-        const data = await finnhubFetch(`/quote?symbol=${symbol}`, apiKey)
+        const data = await finnhubFetch(`/quote?symbol=${symbol}`)
         if (indices.includes(symbol)) market[symbol] = { ...data, timestamp: new Date() }
         else {
           trend[symbol] = { ...data, timestamp: new Date() }
@@ -1257,7 +1178,7 @@ function MarketOverview({ apiKey, onSelectStock, darkMode }) {
     setTrendingData(trend)
     setUnusualActivity(unusual.sort((a, b) => Math.abs(b.change) - Math.abs(a.change)))
     setLoading(false)
-  }, [apiKey])
+  }, [])
 
   useEffect(() => { fetchData(); const interval = setInterval(fetchData, 60000); return () => clearInterval(interval) }, [fetchData])
 
@@ -1320,17 +1241,17 @@ function MarketOverview({ apiKey, onSelectStock, darkMode }) {
         </div>
         <div className="space-y-4">
           <UnusualActivityCard activities={unusualActivity} onSelect={onSelectStock} darkMode={darkMode} />
-          <EarningsCalendar apiKey={apiKey} onSelect={onSelectStock} darkMode={darkMode} />
+          <EarningsCalendar onSelect={onSelectStock} darkMode={darkMode} />
         </div>
       </div>
 
-      {newsSymbol && <StockNewsModal symbol={newsSymbol} apiKey={apiKey} onClose={() => setNewsSymbol(null)} />}
+      {newsSymbol && <StockNewsModal symbol={newsSymbol} onClose={() => setNewsSymbol(null)} />}
     </div>
   )
 }
 
 // ============ STOCK DETAIL MODAL ============
-function StockDetail({ symbol, apiKey, onClose, darkMode }) {
+function StockDetail({ symbol, onClose, darkMode }) {
   const [quote, setQuote] = useState(null)
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -1341,8 +1262,8 @@ function StockDetail({ symbol, apiKey, onClose, darkMode }) {
       setLoading(true)
       try {
         const [q, p] = await Promise.all([
-          finnhubFetch(`/quote?symbol=${symbol}`, apiKey),
-          finnhubFetch(`/stock/profile2?symbol=${symbol}`, apiKey)
+          finnhubFetch(`/quote?symbol=${symbol}`),
+          finnhubFetch(`/stock/profile2?symbol=${symbol}`)
         ])
         setQuote({ ...q, timestamp: new Date() })
         setProfile(p)
@@ -1350,7 +1271,7 @@ function StockDetail({ symbol, apiKey, onClose, darkMode }) {
       finally { setLoading(false) }
     }
     fetchData()
-  }, [symbol, apiKey])
+  }, [symbol])
 
   const change = quote ? quote.c - quote.pc : 0
   const pctChange = quote?.pc ? (change / quote.pc) * 100 : 0
@@ -1396,9 +1317,9 @@ function StockDetail({ symbol, apiKey, onClose, darkMode }) {
             </div>
 
             {/* Interactive Chart */}
-            <StockChart symbol={symbol} apiKey={apiKey} darkMode={darkMode} height={300} />
+            <StockChart symbol={symbol} darkMode={darkMode} height={300} />
 
-            <PriceTargetTracker symbol={symbol} currentPrice={quote?.c} apiKey={apiKey} darkMode={darkMode} />
+            <PriceTargetTracker symbol={symbol} currentPrice={quote?.c} darkMode={darkMode} />
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[{ label: 'Open', value: quote?.o }, { label: 'High', value: quote?.h }, { label: 'Low', value: quote?.l }, { label: 'Prev Close', value: quote?.pc }].map(item => (
@@ -1423,13 +1344,13 @@ function StockDetail({ symbol, apiKey, onClose, darkMode }) {
           </div>
         )}
       </div>
-      {showNews && <StockNewsModal symbol={symbol} apiKey={apiKey} onClose={() => setShowNews(false)} />}
+      {showNews && <StockNewsModal symbol={symbol} onClose={() => setShowNews(false)} />}
     </div>
   )
 }
 
 // ============ WATCHLIST ============
-function Watchlist({ apiKey, watchlist, setWatchlist, onSelectStock, darkMode }) {
+function Watchlist({ watchlist, setWatchlist, onSelectStock, darkMode }) {
   const [quotes, setQuotes] = useState({})
   const [loading, setLoading] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
@@ -1441,20 +1362,20 @@ function Watchlist({ apiKey, watchlist, setWatchlist, onSelectStock, darkMode })
     const newQuotes = {}
     for (const symbol of watchlist) {
       try {
-        const data = await finnhubFetch(`/quote?symbol=${symbol}`, apiKey)
+        const data = await finnhubFetch(`/quote?symbol=${symbol}`)
         newQuotes[symbol] = { ...data, timestamp: new Date() }
       } catch {}
     }
     setQuotes(newQuotes)
     setLoading(false)
-  }, [apiKey, watchlist])
+  }, [watchlist])
 
   useEffect(() => { fetchQuotes(); const interval = setInterval(fetchQuotes, 60000); return () => clearInterval(interval) }, [fetchQuotes])
 
   const addSymbol = async (symbol) => {
     if (watchlist.includes(symbol)) { addToast('Already in watchlist', 'error'); return }
     try {
-      const data = await finnhubFetch(`/quote?symbol=${symbol}`, apiKey)
+      const data = await finnhubFetch(`/quote?symbol=${symbol}`)
       if (data.c === 0 && data.h === 0) { addToast('Invalid symbol', 'error'); return }
       const newWatchlist = [...watchlist, symbol]
       setWatchlist(newWatchlist)
@@ -1486,7 +1407,7 @@ function Watchlist({ apiKey, watchlist, setWatchlist, onSelectStock, darkMode })
 
       {showSearch && (
         <div className="max-w-md">
-          <PredictiveSearch apiKey={apiKey} onSelect={addSymbol} inline placeholder="Search to add..." />
+          <PredictiveSearch onSelect={addSymbol} inline placeholder="Search to add..." />
         </div>
       )}
 
@@ -1538,7 +1459,7 @@ function Watchlist({ apiKey, watchlist, setWatchlist, onSelectStock, darkMode })
 }
 
 // ============ EXPLORE PAGE (SECTORS) ============
-function ExplorePage({ apiKey, onSelectStock, darkMode }) {
+function ExplorePage({ onSelectStock, darkMode }) {
   const [selectedSector, setSelectedSector] = useState(null)
   const [sectorData, setSectorData] = useState({})
   const [loading, setLoading] = useState(false)
@@ -1548,7 +1469,7 @@ function ExplorePage({ apiKey, onSelectStock, darkMode }) {
     const data = {}
     for (const symbol of sector.stocks.slice(0, 6)) {
       try {
-        const quote = await finnhubFetch(`/quote?symbol=${symbol}`, apiKey)
+        const quote = await finnhubFetch(`/quote?symbol=${symbol}`)
         data[symbol] = quote
       } catch {}
     }
@@ -1625,14 +1546,14 @@ function ExplorePage({ apiKey, onSelectStock, darkMode }) {
 }
 
 // ============ PORTFOLIO PAGE ============
-function PortfolioPage({ apiKey, darkMode, portfolio, setPortfolio }) {
+function PortfolioPage({ darkMode, portfolio, setPortfolio }) {
   return (
     <div className="space-y-6 animate-fade-in">
       <div>
         <h2 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>Portfolio</h2>
         <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>Practice trading with $100,000 virtual cash</p>
       </div>
-      <PortfolioSimulator apiKey={apiKey} darkMode={darkMode} portfolio={portfolio} setPortfolio={setPortfolio} />
+      <PortfolioSimulator darkMode={darkMode} portfolio={portfolio} setPortfolio={setPortfolio} />
     </div>
   )
 }
@@ -1641,7 +1562,7 @@ function PortfolioPage({ apiKey, darkMode, portfolio, setPortfolio }) {
 // Crypto-related keywords to filter out from stock news
 const CRYPTO_KEYWORDS = ['bitcoin', 'btc', 'ethereum', 'eth', 'crypto', 'cryptocurrency', 'blockchain', 'dogecoin', 'solana', 'cardano', 'xrp', 'ripple', 'binance', 'coinbase', 'nft', 'defi', 'altcoin', 'token', 'mining', 'wallet']
 
-function NewsPage({ apiKey, darkMode }) {
+function NewsPage({ darkMode }) {
   const [news, setNews] = useState([])
   const [loading, setLoading] = useState(true)
   const [category, setCategory] = useState('general')
@@ -1661,7 +1582,7 @@ function NewsPage({ apiKey, darkMode }) {
   const fetchNews = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await finnhubFetch(`/news?category=${category}`, apiKey)
+      const data = await finnhubFetch(`/news?category=${category}`)
       let filteredNews = Array.isArray(data) ? data : []
 
       // Filter out crypto news if enabled and not on crypto tab
@@ -1674,7 +1595,7 @@ function NewsPage({ apiKey, darkMode }) {
       setNews([])
     }
     finally { setLoading(false) }
-  }, [apiKey, category, hideCrypto])
+  }, [category, hideCrypto])
 
   useEffect(() => { fetchNews() }, [fetchNews])
 
@@ -1780,49 +1701,9 @@ function NewsPage({ apiKey, darkMode }) {
 }
 
 // ============ SETTINGS PAGE ============
-function SettingsPage({ apiKey, onChangeApiKey, darkMode, syncStatus }) {
-  const [newApiKey, setNewApiKey] = useState(apiKey)
-  const [testing, setTesting] = useState(false)
-  const [testResult, setTestResult] = useState(null) // 'success', 'error', null
+function SettingsPage({ darkMode, syncStatus }) {
   const { addToast } = useToast()
   const { user, signIn, signOut: handleSignOut } = useAuth()
-
-  const validateAndSave = async () => {
-    if (!newApiKey.trim()) {
-      addToast('Please enter an API key', 'error')
-      return
-    }
-
-    setTesting(true)
-    setTestResult(null)
-
-    try {
-      const response = await fetch(`https://finnhub.io/api/v1/quote?symbol=AAPL&token=${newApiKey}`)
-      const data = await response.json()
-
-      if (data.error || (data.c === 0 && data.h === 0)) {
-        setTestResult('error')
-        addToast('Invalid API key', 'error')
-      } else {
-        setTestResult('success')
-        localStorage.setItem('finnhub_api_key', newApiKey)
-        onChangeApiKey(newApiKey)
-        addToast('API key saved successfully', 'success')
-      }
-    } catch {
-      setTestResult('error')
-      addToast('Failed to validate API key', 'error')
-    }
-
-    setTesting(false)
-  }
-
-  const handleReset = () => {
-    if (window.confirm('Reset API key? You will need to enter a new one.')) {
-      localStorage.removeItem('finnhub_api_key')
-      onChangeApiKey('')
-    }
-  }
 
   const handleClear = () => {
     if (window.confirm('Clear all local data? Cloud data will remain.')) {
@@ -1901,81 +1782,16 @@ function SettingsPage({ apiKey, onChangeApiKey, darkMode, syncStatus }) {
         )}
       </div>
 
-      {/* API Key Section */}
+      {/* About Section */}
       <div className={`rounded-xl border p-6 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
         <div className="flex items-center gap-3 mb-4">
-          <Settings className={`w-5 h-5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
-          <h3 className={`text-lg font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>API Configuration</h3>
+          <BarChart3 className={`w-5 h-5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
+          <h3 className={`text-lg font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>About</h3>
         </div>
-
-        <div className="space-y-4">
-          <div>
-            <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-              Finnhub API Key
-            </label>
-            <div className="flex gap-2">
-              <div className="flex-1 relative">
-                <input
-                  type="text"
-                  value={newApiKey}
-                  onChange={e => {
-                    setNewApiKey(e.target.value)
-                    setTestResult(null)
-                  }}
-                  placeholder="Enter your API key..."
-                  className={`w-full px-4 py-2.5 rounded-xl border ${
-                    testResult === 'success' ? 'border-green-500' :
-                    testResult === 'error' ? 'border-red-500' :
-                    darkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'bg-gray-50 border-gray-200 placeholder-gray-400'
-                  }`}
-                />
-                {testResult === 'success' && (
-                  <CheckCircle className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-green-400" />
-                )}
-                {testResult === 'error' && (
-                  <AlertCircle className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-red-400" />
-                )}
-              </div>
-              <button
-                onClick={validateAndSave}
-                disabled={testing || !newApiKey.trim()}
-                className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-xl text-white font-medium transition-colors flex items-center gap-2"
-              >
-                {testing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                {testing ? 'Testing...' : 'Save'}
-              </button>
-            </div>
-            {testResult === 'error' && (
-              <p className="text-red-400 text-sm mt-2 flex items-center gap-1">
-                <AlertCircle className="w-4 h-4" />
-                Invalid API key. Please check and try again.
-              </p>
-            )}
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <a
-              href="https://finnhub.io/register"
-              target="_blank"
-              rel="noopener noreferrer"
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm transition-colors ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
-            >
-              <ExternalLink className="w-4 h-4" />
-              Get Free API Key
-            </a>
-            <button
-              onClick={handleReset}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm transition-colors ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
-            >
-              <RefreshCw className="w-4 h-4" />
-              Change API Key
-            </button>
-          </div>
-
-          <p className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-            Free tier: 60 API calls/minute, 15-minute delayed stock data
-          </p>
-        </div>
+        <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+          Stock Research Hub provides free stock data with 15-minute delayed quotes.
+          Sign in with Google to sync your watchlist and portfolio across devices.
+        </p>
       </div>
 
       {/* Data Management */}
@@ -2018,7 +1834,6 @@ function SettingsPage({ apiKey, onChangeApiKey, darkMode, syncStatus }) {
 function AppContent() {
   const { user, loading: authLoading, signIn } = useAuth()
   const { addToast } = useToast()
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem('finnhub_api_key') || '')
   const [activePage, setActivePage] = useState('overview')
   const [selectedStock, setSelectedStock] = useState(null)
   const [showSearch, setShowSearch] = useState(false)
@@ -2033,7 +1848,7 @@ function AppContent() {
   })
   const [settings, setSettings] = useState(() => {
     const saved = localStorage.getItem('user_settings')
-    return saved ? JSON.parse(saved) : { apiKey: localStorage.getItem('finnhub_api_key') || '' }
+    return saved ? JSON.parse(saved) : {}
   })
   const [rateLimitStatus, setRateLimitStatus] = useState({ used: 0, remaining: 60, isLimited: false, waitTimeLeft: 0 })
   const [dismissedSyncBanner, setDismissedSyncBanner] = useState(() => sessionStorage.getItem('dismissed_sync_banner') === 'true')
@@ -2067,19 +1882,6 @@ function AppContent() {
 
   useEffect(() => { localStorage.setItem('dark_mode', darkMode) }, [darkMode])
 
-  // Sync settings apiKey with local apiKey state
-  useEffect(() => {
-    if (settings.apiKey && settings.apiKey !== apiKey) {
-      setApiKey(settings.apiKey)
-    }
-  }, [settings.apiKey, apiKey])
-
-  const handleChangeApiKey = (newKey) => {
-    setApiKey(newKey)
-    setSettings(prev => ({ ...prev, apiKey: newKey }))
-    localStorage.setItem('finnhub_api_key', newKey)
-  }
-
   // Show loading while auth state is being determined
   if (authLoading) {
     return (
@@ -2091,8 +1893,6 @@ function AppContent() {
       </div>
     )
   }
-
-  if (!apiKey) return <ApiKeySetup onSave={handleChangeApiKey} />
 
   const dismissBanner = () => {
     setDismissedSyncBanner(true)
@@ -2138,17 +1938,17 @@ function AppContent() {
       )}
 
       <main className="max-w-7xl mx-auto px-4 py-6">
-        {activePage === 'overview' && <MarketOverview apiKey={apiKey} onSelectStock={setSelectedStock} darkMode={darkMode} />}
-        {activePage === 'watchlist' && <Watchlist apiKey={apiKey} watchlist={watchlist} setWatchlist={setWatchlist} onSelectStock={setSelectedStock} darkMode={darkMode} />}
-        {activePage === 'explore' && <ExplorePage apiKey={apiKey} onSelectStock={setSelectedStock} darkMode={darkMode} finnhubFetch={finnhubFetch} />}
-        {activePage === 'portfolio' && <EnhancedPortfolio apiKey={apiKey} darkMode={darkMode} portfolio={portfolio} setPortfolio={setPortfolio} watchlist={watchlist} finnhubFetch={finnhubFetch} addToast={addToast} />}
-        {activePage === 'insights' && <AIInsights apiKey={apiKey} watchlist={watchlist} darkMode={darkMode} finnhubFetch={finnhubFetch} />}
-        {activePage === 'news' && <NewsPage apiKey={apiKey} darkMode={darkMode} />}
-        {activePage === 'settings' && <SettingsPage apiKey={apiKey} onChangeApiKey={handleChangeApiKey} darkMode={darkMode} syncStatus={syncStatus} />}
+        {activePage === 'overview' && <MarketOverview onSelectStock={setSelectedStock} darkMode={darkMode} />}
+        {activePage === 'watchlist' && <Watchlist watchlist={watchlist} setWatchlist={setWatchlist} onSelectStock={setSelectedStock} darkMode={darkMode} />}
+        {activePage === 'explore' && <ExplorePage onSelectStock={setSelectedStock} darkMode={darkMode} finnhubFetch={finnhubFetch} />}
+        {activePage === 'portfolio' && <EnhancedPortfolio darkMode={darkMode} portfolio={portfolio} setPortfolio={setPortfolio} watchlist={watchlist} finnhubFetch={finnhubFetch} addToast={addToast} />}
+        {activePage === 'insights' && <AIInsights watchlist={watchlist} darkMode={darkMode} finnhubFetch={finnhubFetch} />}
+        {activePage === 'news' && <NewsPage darkMode={darkMode} />}
+        {activePage === 'settings' && <SettingsPage darkMode={darkMode} syncStatus={syncStatus} />}
       </main>
 
-      {selectedStock && <StockDetail symbol={selectedStock} apiKey={apiKey} onClose={() => setSelectedStock(null)} darkMode={darkMode} />}
-      {showSearch && <PredictiveSearch apiKey={apiKey} onSelect={setSelectedStock} onClose={() => setShowSearch(false)} />}
+      {selectedStock && <StockDetail symbol={selectedStock} onClose={() => setSelectedStock(null)} darkMode={darkMode} />}
+      {showSearch && <PredictiveSearch onSelect={setSelectedStock} onClose={() => setShowSearch(false)} />}
     </div>
   )
 }

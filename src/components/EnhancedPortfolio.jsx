@@ -54,7 +54,9 @@ function SectionExplainer({ darkMode }) {
   )
 }
 
-export default function EnhancedPortfolio({ apiKey, darkMode, portfolio, setPortfolio, watchlist = [], finnhubFetch, addToast }) {
+const PROXY_BASE_URL = 'https://stock-api-proxy-seven.vercel.app/api/finnhub'
+
+export default function EnhancedPortfolio({ darkMode, portfolio, setPortfolio, watchlist = [], finnhubFetch, addToast }) {
   const [quotes, setQuotes] = useState({})
   const [loading, setLoading] = useState(false)
   const [showAddPosition, setShowAddPosition] = useState(false)
@@ -102,7 +104,7 @@ export default function EnhancedPortfolio({ apiKey, darkMode, portfolio, setPort
       for (const position of safePortfolio.positions) {
         if (!position?.symbol) continue
         try {
-          const data = await finnhubFetch(`/quote?symbol=${position.symbol}`, apiKey)
+          const data = await finnhubFetch(`/quote?symbol=${position.symbol}`)
           if (data && typeof data.c === 'number') {
             newQuotes[position.symbol] = data
           }
@@ -117,7 +119,7 @@ export default function EnhancedPortfolio({ apiKey, darkMode, portfolio, setPort
     } finally {
       setLoading(false)
     }
-  }, [safePortfolio.positions, apiKey, finnhubFetch])
+  }, [safePortfolio.positions, finnhubFetch])
 
   useEffect(() => {
     fetchQuotes()
@@ -133,14 +135,14 @@ export default function EnhancedPortfolio({ apiKey, darkMode, portfolio, setPort
     }
     setSearching(true)
     try {
-      const response = await fetch(`https://finnhub.io/api/v1/search?q=${encodeURIComponent(query)}&token=${apiKey}`)
+      const response = await fetch(`${PROXY_BASE_URL}?endpoint=search&q=${encodeURIComponent(query)}`)
       const data = await response.json()
       setSearchResults((data.result || []).slice(0, 5))
     } catch {
       setSearchResults([])
     }
     setSearching(false)
-  }, [apiKey])
+  }, [])
 
   useEffect(() => {
     const timer = setTimeout(() => searchStocks(searchQuery), 300)
@@ -269,7 +271,7 @@ export default function EnhancedPortfolio({ apiKey, darkMode, portfolio, setPort
   // Quick add from watchlist
   const handleQuickAdd = async (symbol) => {
     try {
-      const quote = await finnhubFetch(`/quote?symbol=${symbol}`, apiKey)
+      const quote = await finnhubFetch(`/quote?symbol=${symbol}`)
       setFormData({
         symbol,
         shares: '',

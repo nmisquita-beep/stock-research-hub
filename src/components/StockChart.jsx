@@ -12,7 +12,9 @@ const TIME_RANGES = [
   { label: 'ALL', days: 1825, resolution: 'W' }
 ]
 
-export default function StockChart({ symbol, apiKey, darkMode, height = 300 }) {
+const PROXY_BASE_URL = 'https://stock-api-proxy-seven.vercel.app/api/finnhub'
+
+export default function StockChart({ symbol, darkMode, height = 300 }) {
   const chartContainerRef = useRef(null)
   const chartRef = useRef(null)
   const seriesRef = useRef(null)
@@ -39,7 +41,7 @@ export default function StockChart({ symbol, apiKey, darkMode, height = 300 }) {
 
   // Fetch and render chart data
   const fetchData = useCallback(async () => {
-    if (!symbol || !apiKey) {
+    if (!symbol) {
       setLoading(false)
       return
     }
@@ -53,7 +55,7 @@ export default function StockChart({ symbol, apiKey, darkMode, height = 300 }) {
       const from = to - (range.days * 24 * 60 * 60)
 
       const response = await fetch(
-        `https://finnhub.io/api/v1/stock/candle?symbol=${symbol}&resolution=${range.resolution}&from=${from}&to=${to}&token=${apiKey}`
+        `${PROXY_BASE_URL}?endpoint=stock/candle&symbol=${symbol}&resolution=${range.resolution}&from=${from}&to=${to}`
       )
 
       if (!response.ok) {
@@ -105,7 +107,7 @@ export default function StockChart({ symbol, apiKey, darkMode, height = 300 }) {
       setPriceData([])
       setLoading(false)
     }
-  }, [symbol, apiKey, timeRange])
+  }, [symbol, timeRange])
 
   // Fetch data when dependencies change
   useEffect(() => {

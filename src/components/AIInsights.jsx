@@ -57,7 +57,7 @@ function SectionExplainer({ title, description, darkMode }) {
   )
 }
 
-export default function AIInsights({ apiKey, watchlist = [], darkMode, finnhubFetch }) {
+export default function AIInsights({ watchlist = [], darkMode, finnhubFetch }) {
   const [anthropicKey, setAnthropicKey] = useState(() => localStorage.getItem('anthropic_api_key') || '')
   const [showApiKeyInput, setShowApiKeyInput] = useState(false)
   const [marketMood, setMarketMood] = useState(50)
@@ -75,7 +75,7 @@ export default function AIInsights({ apiKey, watchlist = [], darkMode, finnhubFe
 
   // Generate rule-based insights
   const generateInsights = useCallback(async () => {
-    if (!apiKey || safeWatchlist.length === 0) {
+    if (safeWatchlist.length === 0) {
       setLoading(false)
       return
     }
@@ -91,7 +91,7 @@ export default function AIInsights({ apiKey, watchlist = [], darkMode, finnhubFe
       const stockData = {}
       for (const symbol of safeWatchlist.slice(0, 10)) {
         try {
-          const quote = await finnhubFetch(`/quote?symbol=${symbol}`, apiKey)
+          const quote = await finnhubFetch(`/quote?symbol=${symbol}`)
           if (quote && typeof quote.c === 'number') {
             stockData[symbol] = quote
           }
@@ -177,7 +177,7 @@ export default function AIInsights({ apiKey, watchlist = [], darkMode, finnhubFe
     }
 
     setLoading(false)
-  }, [apiKey, safeWatchlist, finnhubFetch])
+  }, [safeWatchlist, finnhubFetch])
 
   useEffect(() => {
     generateInsights()
@@ -196,9 +196,9 @@ export default function AIInsights({ apiKey, watchlist = [], darkMode, finnhubFe
     try {
       // Fetch stock data
       const [quote, news, profile] = await Promise.all([
-        finnhubFetch(`/quote?symbol=${symbol}`, apiKey),
-        finnhubFetch(`/company-news?symbol=${symbol}&from=${new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}&to=${new Date().toISOString().split('T')[0]}`, apiKey).catch(() => []),
-        finnhubFetch(`/stock/profile2?symbol=${symbol}`, apiKey).catch(() => ({}))
+        finnhubFetch(`/quote?symbol=${symbol}`),
+        finnhubFetch(`/company-news?symbol=${symbol}&from=${new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}&to=${new Date().toISOString().split('T')[0]}`).catch(() => []),
+        finnhubFetch(`/stock/profile2?symbol=${symbol}`).catch(() => ({}))
       ])
 
       const newsHeadlines = (news || []).slice(0, 5).map(n => n.headline).join('\n')
