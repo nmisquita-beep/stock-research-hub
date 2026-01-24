@@ -6,7 +6,7 @@ import {
   AlertTriangle, ChevronRight, HelpCircle, Sparkles,
   Cloud, CloudOff, LogIn, LogOut, User, Brain
 } from 'lucide-react'
-import { AreaChart, Area, ResponsiveContainer } from 'recharts'
+import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip as RechartsTooltip, CartesianGrid, BarChart, Bar, ComposedChart, Line } from 'recharts'
 import AIInsights from './components/AIInsights'
 import { auth, db, googleProvider } from './firebase'
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth'
@@ -21,86 +21,94 @@ const POSITIVE_WORDS = ['surge', 'jump', 'gain', 'rise', 'rally', 'soar', 'boom'
 const NEGATIVE_WORDS = ['fall', 'drop', 'plunge', 'crash', 'decline', 'loss', 'miss', 'cut', 'bearish', 'downgrade', 'sell', 'weak', 'negative', 'low', 'fear', 'concern', 'risk', 'warning', 'slump', 'tumble']
 const CRYPTO_KEYWORDS = ['bitcoin', 'btc', 'ethereum', 'eth', 'crypto', 'cryptocurrency', 'blockchain', 'dogecoin', 'solana', 'cardano', 'xrp', 'ripple', 'binance', 'coinbase', 'nft', 'defi', 'altcoin', 'token', 'mining', 'wallet']
 
-// ============ RATE LIMITER ============
-class RateLimiter {
-  constructor(maxCalls, windowMs) {
-    this.maxCalls = maxCalls
-    this.windowMs = windowMs
-    this.calls = []
-    this.waitingUntil = null
-  }
-
-  async throttle() {
-    const now = Date.now()
-    this.calls = this.calls.filter(time => now - time < this.windowMs)
-
-    if (this.calls.length >= this.maxCalls) {
-      const waitTime = this.windowMs - (now - this.calls[0]) + 100
-      this.waitingUntil = now + waitTime
-      const actualWait = Math.min(waitTime, 5000)
-      await new Promise(resolve => setTimeout(resolve, actualWait))
-      this.waitingUntil = null
-      return this.throttle()
-    }
-
-    this.calls.push(now)
-    return true
-  }
-
-  getStatus() {
-    const now = Date.now()
-    this.calls = this.calls.filter(time => now - time < this.windowMs)
-    const remaining = this.maxCalls - this.calls.length
-    const waitTimeLeft = this.waitingUntil ? Math.max(0, this.waitingUntil - now) : 0
-    return { used: this.calls.length, remaining, isLimited: remaining <= 0, waitTimeLeft }
-  }
-}
-
-const rateLimiter = new RateLimiter(60, 60000)
-
 // ============ API HELPERS ============
-const PROXY_BASE_URL = 'https://stock-api-proxy-seven.vercel.app/api/finnhub'
+const FINNHUB_PROXY_URL = 'https://stock-api-proxy-seven.vercel.app/api/finnhub'
+const YAHOO_PROXY_URL = 'https://stock-api-proxy-seven.vercel.app/api/yahoo'
 
-const finnhubFetch = async (endpoint, timeout = 10000) => {
-  await rateLimiter.throttle()
-
+// Yahoo Finance API (no rate limits!)
+const yahooFetch = async (symbol, type = 'quote', options = {}, timeout = 15000) => {
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), timeout)
 
-  const endpointParts = endpoint.startsWith('/') ? endpoint.slice(1) : endpoint
-  const [path, queryString] = endpointParts.split('?')
-
-  let proxyUrl = `${PROXY_BASE_URL}?endpoint=${path}`
-  if (queryString) {
-    proxyUrl += `&${queryString}`
+  let url = `${YAHOO_PROXY_URL}?symbol=${encodeURIComponent(symbol)}`
+  if (type !== 'quote') {
+    url += `&type=${type}`
   }
-
-  console.log('finnhubFetch - endpoint:', endpoint)
-  console.log('finnhubFetch - proxyUrl:', proxyUrl)
+  if (options.range) url += `&range=${options.range}`
+  if (options.interval) url += `&interval=${options.interval}`
 
   try {
-    const response = await fetch(proxyUrl, { signal: controller.signal })
+    const response = await fetch(url, { signal: controller.signal })
     clearTimeout(timeoutId)
 
-    console.log('finnhubFetch - response status:', response.status)
-
-    if (response.status === 429) {
-      throw new Error('Rate limit exceeded. Please wait a moment.')
-    }
     if (!response.ok) {
-      const errorText = await response.text()
-      console.error('finnhubFetch - error response:', errorText)
-      throw new Error(`API Error: ${response.status}`)
+      throw new Error(`Yahoo API Error: ${response.status}`)
     }
-    const data = await response.json()
-    console.log('finnhubFetch - data:', data)
-    return data
+    return await response.json()
   } catch (error) {
     clearTimeout(timeoutId)
     if (error.name === 'AbortError') {
       throw new Error('Request timeout')
     }
     throw error
+  }
+}
+
+// Finnhub API (only for company news now)
+const finnhubFetch = async (endpoint, timeout = 10000) => {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeout)
+
+  const endpointParts = endpoint.startsWith('/') ? endpoint.slice(1) : endpoint
+  const [path, queryString] = endpointParts.split('?')
+
+  let proxyUrl = `${FINNHUB_PROXY_URL}?endpoint=${path}`
+  if (queryString) {
+    proxyUrl += `&${queryString}`
+  }
+
+  try {
+    const response = await fetch(proxyUrl, { signal: controller.signal })
+    clearTimeout(timeoutId)
+
+    if (response.status === 429) {
+      throw new Error('Rate limit exceeded. Please wait a moment.')
+    }
+    if (!response.ok) {
+      throw new Error(`API Error: ${response.status}`)
+    }
+    return await response.json()
+  } catch (error) {
+    clearTimeout(timeoutId)
+    if (error.name === 'AbortError') {
+      throw new Error('Request timeout')
+    }
+    throw error
+  }
+}
+
+// Normalize Yahoo quote data to common format
+const normalizeYahooQuote = (data) => {
+  if (!data) return null
+  return {
+    c: data.regularMarketPrice || data.price || 0,
+    pc: data.regularMarketPreviousClose || data.previousClose || 0,
+    h: data.regularMarketDayHigh || data.dayHigh || 0,
+    l: data.regularMarketDayLow || data.dayLow || 0,
+    o: data.regularMarketOpen || data.open || 0,
+    change: data.regularMarketChange || 0,
+    changePercent: data.regularMarketChangePercent || 0,
+    volume: data.regularMarketVolume || 0,
+    marketCap: data.marketCap || 0,
+    peRatio: data.trailingPE || data.forwardPE || null,
+    eps: data.trailingEps || null,
+    weekHigh52: data.fiftyTwoWeekHigh || null,
+    weekLow52: data.fiftyTwoWeekLow || null,
+    avgVolume: data.averageDailyVolume3Month || data.averageVolume || 0,
+    name: data.shortName || data.longName || '',
+    exchange: data.exchange || '',
+    currency: data.currency || 'USD',
+    timestamp: new Date()
   }
 }
 
@@ -723,13 +731,20 @@ function PredictiveSearch({ onSelect, onClose, placeholder = "Search stocks...",
     if (!q.trim()) { setResults([]); return }
     setLoading(true)
     try {
-      const data = await finnhubFetch(`/search?q=${encodeURIComponent(q)}`)
-      const resultArray = data && Array.isArray(data.result) ? data.result : []
-      setResults(resultArray.slice(0, 6).map(r => ({ symbol: r.symbol, name: r.description })))
+      // Use Yahoo search - no rate limits
+      const data = await yahooFetch(q, 'search')
+      let resultArray = []
+      if (data && data.quotes && Array.isArray(data.quotes)) {
+        resultArray = data.quotes
+          .filter(r => r.quoteType === 'EQUITY' || r.quoteType === 'ETF')
+          .slice(0, 6)
+          .map(r => ({ symbol: r.symbol, name: r.shortname || r.longname || r.symbol }))
+      }
+      setResults(resultArray)
       setSelectedIndex(0)
     } catch { setResults([]) }
     finally { setLoading(false) }
-  }, 250), [])
+  }, 200), [])
 
   useEffect(() => { searchStocks(query) }, [query, searchStocks])
 
@@ -989,7 +1004,7 @@ function MobileBottomNav({ activePage, setActivePage, darkMode }) {
 }
 
 // ============ DESKTOP NAVIGATION ============
-function DesktopNav({ activePage, setActivePage, rateLimitStatus, onSearchOpen, darkMode, toggleDarkMode, syncStatus }) {
+function DesktopNav({ activePage, setActivePage, onSearchOpen, darkMode, toggleDarkMode, syncStatus }) {
   const { user, loading: authLoading, signIn, signOut: handleSignOut } = useAuth()
   const [showUserMenu, setShowUserMenu] = useState(false)
 
@@ -1045,10 +1060,6 @@ function DesktopNav({ activePage, setActivePage, rateLimitStatus, onSearchOpen, 
                 {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
               </button>
             </Tooltip>
-            <div className="hidden sm:flex items-center gap-2 text-sm px-3 py-1 rounded-full bg-gray-700/50 text-gray-300">
-              <Activity className="w-3 h-3" />
-              <span>{rateLimitStatus.remaining}/60</span>
-            </div>
             {authLoading ? (
               <div className="w-8 h-8 rounded-full bg-gray-700 animate-pulse" />
             ) : user ? (
@@ -1104,15 +1115,21 @@ function MarketOverview({ onSelectStock, darkMode }) {
   const fetchData = useCallback(async () => {
     setLoading(true)
     const market = {}, trend = {}
-    for (const symbol of [...indices, ...trending]) {
-      try {
-        const data = await finnhubFetch(`/quote?symbol=${symbol}`)
-        if (data && typeof data.c === 'number') {
-          if (indices.includes(symbol)) market[symbol] = { ...data, timestamp: new Date() }
-          else trend[symbol] = { ...data, timestamp: new Date() }
+    // Yahoo has no rate limits - fetch all in parallel
+    const allSymbols = [...indices, ...trending]
+    const results = await Promise.allSettled(
+      allSymbols.map(symbol => yahooFetch(symbol))
+    )
+    results.forEach((result, i) => {
+      const symbol = allSymbols[i]
+      if (result.status === 'fulfilled' && result.value) {
+        const normalized = normalizeYahooQuote(result.value)
+        if (normalized && normalized.c > 0) {
+          if (indices.includes(symbol)) market[symbol] = normalized
+          else trend[symbol] = normalized
         }
-      } catch {}
-    }
+      }
+    })
     setMarketData(market)
     setTrendingData(trend)
     setLoading(false)
@@ -1183,42 +1200,173 @@ function MarketOverview({ onSelectStock, darkMode }) {
   )
 }
 
+// ============ STOCK CHART COMPONENT ============
+function StockChart({ symbol, range = '1mo', interval = '1d' }) {
+  const [chartData, setChartData] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchChart = async () => {
+      setLoading(true)
+      try {
+        const data = await yahooFetch(symbol, 'chart', { range, interval })
+        if (data && data.chart && data.chart.result && data.chart.result[0]) {
+          const result = data.chart.result[0]
+          const timestamps = result.timestamp || []
+          const quotes = result.indicators?.quote?.[0] || {}
+
+          const formatted = timestamps.map((t, i) => ({
+            time: t * 1000,
+            date: new Date(t * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+            open: quotes.open?.[i],
+            high: quotes.high?.[i],
+            low: quotes.low?.[i],
+            close: quotes.close?.[i],
+            volume: quotes.volume?.[i]
+          })).filter(d => d.close !== null && d.close !== undefined)
+
+          setChartData(formatted)
+        }
+      } catch (err) {
+        console.error('Chart fetch error:', err)
+        setChartData([])
+      }
+      setLoading(false)
+    }
+    fetchChart()
+  }, [symbol, range, interval])
+
+  if (loading) {
+    return <div className="h-64 bg-gray-700/30 rounded-xl animate-pulse" />
+  }
+
+  if (chartData.length === 0) {
+    return (
+      <div className="h-64 bg-gray-700/30 rounded-xl flex items-center justify-center text-gray-400">
+        No chart data available
+      </div>
+    )
+  }
+
+  const firstPrice = chartData[0]?.close || 0
+  const lastPrice = chartData[chartData.length - 1]?.close || 0
+  const isPositive = lastPrice >= firstPrice
+  const chartColor = isPositive ? '#22c55e' : '#ef4444'
+
+  const minPrice = Math.min(...chartData.map(d => d.low || d.close).filter(Boolean))
+  const maxPrice = Math.max(...chartData.map(d => d.high || d.close).filter(Boolean))
+  const maxVolume = Math.max(...chartData.map(d => d.volume || 0))
+
+  return (
+    <div className="space-y-2">
+      {/* Price Chart */}
+      <div className="h-48">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={chartData} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+            <defs>
+              <linearGradient id={`chartGradient-${symbol}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={chartColor} stopOpacity={0.3} />
+                <stop offset="100%" stopColor={chartColor} stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
+            <XAxis
+              dataKey="date"
+              axisLine={false}
+              tickLine={false}
+              tick={{ fill: '#9ca3af', fontSize: 10 }}
+              interval="preserveStartEnd"
+            />
+            <YAxis
+              domain={[minPrice * 0.99, maxPrice * 1.01]}
+              axisLine={false}
+              tickLine={false}
+              tick={{ fill: '#9ca3af', fontSize: 10 }}
+              tickFormatter={(v) => `$${v.toFixed(0)}`}
+              width={50}
+            />
+            <RechartsTooltip
+              contentStyle={{ background: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
+              labelStyle={{ color: '#9ca3af' }}
+              formatter={(value) => [`$${value?.toFixed(2)}`, 'Price']}
+            />
+            <Area
+              type="monotone"
+              dataKey="close"
+              stroke={chartColor}
+              strokeWidth={2}
+              fill={`url(#chartGradient-${symbol})`}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Volume Chart */}
+      <div className="h-16">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={chartData} margin={{ top: 0, right: 5, left: 5, bottom: 0 }}>
+            <Bar
+              dataKey="volume"
+              fill="#6b7280"
+              opacity={0.5}
+            />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  )
+}
+
 // ============ STOCK DETAIL MODAL ============
 function StockDetail({ symbol, onClose, darkMode }) {
   const [quote, setQuote] = useState(null)
-  const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
   const [showNews, setShowNews] = useState(false)
+  const [chartRange, setChartRange] = useState('1mo')
+
+  const rangeOptions = [
+    { value: '1d', label: '1D', interval: '5m' },
+    { value: '5d', label: '1W', interval: '15m' },
+    { value: '1mo', label: '1M', interval: '1d' },
+    { value: '3mo', label: '3M', interval: '1d' },
+    { value: '6mo', label: '6M', interval: '1d' },
+    { value: '1y', label: '1Y', interval: '1d' },
+    { value: '5y', label: '5Y', interval: '1wk' }
+  ]
+
+  const currentRangeOption = rangeOptions.find(r => r.value === chartRange) || rangeOptions[2]
 
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true)
       try {
-        const [q, p] = await Promise.all([
-          finnhubFetch(`/quote?symbol=${symbol}`),
-          finnhubFetch(`/stock/profile2?symbol=${symbol}`)
-        ])
-        setQuote({ ...q, timestamp: new Date() })
-        setProfile(p)
-      } catch {}
-      finally { setLoading(false) }
+        const data = await yahooFetch(symbol)
+        if (data) {
+          setQuote(normalizeYahooQuote(data))
+        }
+      } catch (err) {
+        console.error('Quote fetch error:', err)
+      }
+      setLoading(false)
     }
     fetchData()
   }, [symbol])
 
-  const change = quote ? quote.c - quote.pc : 0
-  const pctChange = quote?.pc ? (change / quote.pc) * 100 : 0
+  const change = quote?.change || 0
+  const pctChange = quote?.changePercent || 0
   const positive = change >= 0
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={onClose}>
-      <div className="bg-gray-800/95 backdrop-blur rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden border border-gray-700 shadow-2xl" onClick={e => e.stopPropagation()}>
+      <div className="bg-gray-800/95 backdrop-blur rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden border border-gray-700 shadow-2xl" onClick={e => e.stopPropagation()}>
         <div className="p-4 border-b border-gray-700 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            {profile?.logo && <img src={profile.logo} alt={symbol} className="w-12 h-12 rounded-xl bg-white p-1" />}
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+              <span className="text-white font-bold text-lg">{symbol.charAt(0)}</span>
+            </div>
             <div>
               <h2 className="text-xl font-bold text-white">{symbol}</h2>
-              <p className="text-gray-400">{profile?.name || 'Loading...'}</p>
+              <p className="text-gray-400">{quote?.name || 'Loading...'}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -1235,40 +1383,75 @@ function StockDetail({ symbol, onClose, darkMode }) {
           <div className="p-8 flex items-center justify-center"><RefreshCw className="w-8 h-8 text-blue-500 animate-spin" /></div>
         ) : (
           <div className="p-6 space-y-6 overflow-y-auto max-h-[calc(90vh-80px)]">
-            <div className="rounded-xl p-6 bg-gradient-to-br from-gray-700/50 to-gray-800/50">
-              <div className="flex items-baseline gap-4 flex-wrap">
-                <span className="text-4xl font-bold text-white">{formatCurrency(quote?.c)}</span>
-                <span className={`text-lg font-medium px-3 py-1 rounded-full ${positive ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-                  {positive ? '+' : ''}{pctChange.toFixed(2)}%
-                </span>
-              </div>
-              {quote?.timestamp && (
-                <div className="text-sm mt-2 flex items-center gap-1 text-gray-400">
-                  <Clock className="w-4 h-4" /> {formatTimestamp(quote.timestamp)}
-                </div>
-              )}
+            {/* Price Header */}
+            <div className="flex items-baseline gap-4 flex-wrap">
+              <span className="text-4xl font-bold text-white">{formatCurrency(quote?.c)}</span>
+              <span className={`text-lg font-medium px-3 py-1 rounded-full ${positive ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                {positive ? '+' : ''}{pctChange?.toFixed(2)}%
+              </span>
+              <span className={`text-sm ${positive ? 'text-green-400' : 'text-red-400'}`}>
+                {positive ? '+' : ''}{formatCurrency(change)}
+              </span>
             </div>
 
+            {/* Chart with Range Selector */}
+            <div className="rounded-xl bg-gray-700/30 p-4">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-medium text-gray-400">Price Chart</h3>
+                <div className="flex gap-1">
+                  {rangeOptions.map(option => (
+                    <button
+                      key={option.value}
+                      onClick={() => setChartRange(option.value)}
+                      className={`px-3 py-1 text-xs font-medium rounded-lg transition-colors ${
+                        chartRange === option.value
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <StockChart symbol={symbol} range={chartRange} interval={currentRangeOption.interval} />
+            </div>
+
+            {/* Key Metrics */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {[{ label: 'Open', value: quote?.o }, { label: 'High', value: quote?.h }, { label: 'Low', value: quote?.l }, { label: 'Prev Close', value: quote?.pc }].map(item => (
-                <div key={item.label} className="rounded-lg p-4 bg-gray-700/30">
-                  <div className="text-sm text-gray-400">{item.label}</div>
-                  <div className="font-medium text-white">{formatCurrency(item.value)}</div>
-                </div>
-              ))}
-            </div>
-
-            {profile && (
-              <div className="rounded-xl p-6 bg-gray-700/30">
-                <h3 className="text-lg font-semibold mb-4 text-white">Company Info</h3>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div><span className="text-gray-400">Industry:</span> <span className="text-white">{profile.finnhubIndustry || 'N/A'}</span></div>
-                  <div><span className="text-gray-400">Market Cap:</span> <span className="text-white">{formatLargeNumber((profile.marketCapitalization || 0) * 1e6)}</span></div>
-                  <div><span className="text-gray-400">Exchange:</span> <span className="text-white">{profile.exchange || 'N/A'}</span></div>
-                  <div><span className="text-gray-400">Country:</span> <span className="text-white">{profile.country || 'N/A'}</span></div>
-                </div>
+              <div className="rounded-lg p-4 bg-gray-700/30">
+                <div className="text-sm text-gray-400">Open</div>
+                <div className="font-medium text-white">{formatCurrency(quote?.o)}</div>
               </div>
-            )}
+              <div className="rounded-lg p-4 bg-gray-700/30">
+                <div className="text-sm text-gray-400">Day Range</div>
+                <div className="font-medium text-white">{formatCurrency(quote?.l)} - {formatCurrency(quote?.h)}</div>
+              </div>
+              <div className="rounded-lg p-4 bg-gray-700/30">
+                <div className="text-sm text-gray-400">52W Range</div>
+                <div className="font-medium text-white">{formatCurrency(quote?.weekLow52)} - {formatCurrency(quote?.weekHigh52)}</div>
+              </div>
+              <div className="rounded-lg p-4 bg-gray-700/30">
+                <div className="text-sm text-gray-400">Prev Close</div>
+                <div className="font-medium text-white">{formatCurrency(quote?.pc)}</div>
+              </div>
+              <div className="rounded-lg p-4 bg-gray-700/30">
+                <div className="text-sm text-gray-400">Volume</div>
+                <div className="font-medium text-white">{quote?.volume?.toLocaleString() || 'N/A'}</div>
+              </div>
+              <div className="rounded-lg p-4 bg-gray-700/30">
+                <div className="text-sm text-gray-400">Avg Volume</div>
+                <div className="font-medium text-white">{quote?.avgVolume?.toLocaleString() || 'N/A'}</div>
+              </div>
+              <div className="rounded-lg p-4 bg-gray-700/30">
+                <div className="text-sm text-gray-400">P/E Ratio</div>
+                <div className="font-medium text-white">{quote?.peRatio?.toFixed(2) || 'N/A'}</div>
+              </div>
+              <div className="rounded-lg p-4 bg-gray-700/30">
+                <div className="text-sm text-gray-400">Market Cap</div>
+                <div className="font-medium text-white">{formatLargeNumber(quote?.marketCap)}</div>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -1288,14 +1471,19 @@ function Watchlist({ watchlist, setWatchlist, onSelectStock, darkMode }) {
     if (!watchlist || watchlist.length === 0) return
     setLoading(true)
     const newQuotes = {}
-    for (const symbol of watchlist) {
-      try {
-        const data = await finnhubFetch(`/quote?symbol=${symbol}`)
-        if (data && typeof data.c === 'number') {
-          newQuotes[symbol] = { ...data, timestamp: new Date() }
+    // Yahoo has no rate limits - fetch all in parallel
+    const results = await Promise.allSettled(
+      watchlist.map(symbol => yahooFetch(symbol))
+    )
+    results.forEach((result, i) => {
+      const symbol = watchlist[i]
+      if (result.status === 'fulfilled' && result.value) {
+        const normalized = normalizeYahooQuote(result.value)
+        if (normalized && normalized.c > 0) {
+          newQuotes[symbol] = normalized
         }
-      } catch {}
-    }
+      }
+    })
     setQuotes(newQuotes)
     setLoading(false)
   }, [watchlist])
@@ -1305,11 +1493,12 @@ function Watchlist({ watchlist, setWatchlist, onSelectStock, darkMode }) {
   const addSymbol = async (symbol) => {
     if (watchlist.includes(symbol)) { addToast('Already in watchlist', 'error'); return }
     try {
-      const data = await finnhubFetch(`/quote?symbol=${symbol}`)
-      if (!data || (data.c === 0 && data.h === 0)) { addToast('Invalid symbol', 'error'); return }
+      const data = await yahooFetch(symbol)
+      const normalized = normalizeYahooQuote(data)
+      if (!normalized || normalized.c === 0) { addToast('Invalid symbol', 'error'); return }
       const newWatchlist = [...watchlist, symbol]
       setWatchlist(newWatchlist)
-      setQuotes(prev => ({ ...prev, [symbol]: { ...data, timestamp: new Date() } }))
+      setQuotes(prev => ({ ...prev, [symbol]: normalized }))
       addToast(`${symbol} added`, 'success')
       setShowSearch(false)
     } catch { addToast('Failed to add', 'error') }
@@ -1399,15 +1588,20 @@ function MarketMovers({ onSelectStock, darkMode }) {
   const fetchData = useCallback(async () => {
     setLoading(true)
     const stockData = []
-    for (const symbol of popularStocks) {
-      try {
-        const data = await finnhubFetch(`/quote?symbol=${symbol}`)
-        if (data && typeof data.c === 'number' && data.pc) {
-          const change = ((data.c - data.pc) / data.pc) * 100
-          stockData.push({ symbol, price: data.c, change })
+    // Yahoo has no rate limits - fetch all in parallel
+    const results = await Promise.allSettled(
+      popularStocks.map(symbol => yahooFetch(symbol))
+    )
+    results.forEach((result, i) => {
+      const symbol = popularStocks[i]
+      if (result.status === 'fulfilled' && result.value) {
+        const normalized = normalizeYahooQuote(result.value)
+        if (normalized && normalized.c > 0 && normalized.pc > 0) {
+          const change = ((normalized.c - normalized.pc) / normalized.pc) * 100
+          stockData.push({ symbol, price: normalized.c, change })
         }
-      } catch {}
-    }
+      }
+    })
     const sorted = stockData.sort((a, b) => b.change - a.change)
     setGainers(sorted.slice(0, 5))
     setLosers(sorted.slice(-5).reverse())
@@ -1977,7 +2171,6 @@ function AppContent() {
     const saved = localStorage.getItem('user_settings')
     return saved ? JSON.parse(saved) : {}
   })
-  const [rateLimitStatus, setRateLimitStatus] = useState({ used: 0, remaining: 60, isLimited: false, waitTimeLeft: 0 })
   const [dismissedSyncBanner, setDismissedSyncBanner] = useState(() => sessionStorage.getItem('dismissed_sync_banner') === 'true')
 
   const watchlistSync = useCloudSync('watchlist', watchlist, setWatchlist, user)
@@ -1987,11 +2180,6 @@ function AppContent() {
     synced: user ? (watchlistSync.synced && settingsSync.synced) : false,
     syncing: user ? (watchlistSync.syncing || settingsSync.syncing) : false
   }
-
-  useEffect(() => {
-    const interval = setInterval(() => setRateLimitStatus(rateLimiter.getStatus()), 1000)
-    return () => clearInterval(interval)
-  }, [])
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -2022,7 +2210,7 @@ function AppContent() {
 
   return (
     <div className="min-h-screen pb-20 md:pb-0 transition-colors bg-gray-900">
-      <DesktopNav activePage={activePage} setActivePage={setActivePage} rateLimitStatus={rateLimitStatus}
+      <DesktopNav activePage={activePage} setActivePage={setActivePage}
         onSearchOpen={() => setShowSearch(true)} darkMode={darkMode} toggleDarkMode={() => setDarkMode(!darkMode)} syncStatus={syncStatus} />
       <MobileBottomNav activePage={activePage} setActivePage={setActivePage} darkMode={darkMode} />
 
@@ -2041,17 +2229,6 @@ function AppContent() {
                 <X className="w-4 h-4" />
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {rateLimitStatus.isLimited && (
-        <div className="border-b bg-yellow-900/20 border-yellow-500/30">
-          <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-center gap-3">
-            <RefreshCw className="w-4 h-4 text-yellow-400 animate-spin" />
-            <span className="text-sm text-yellow-300">
-              Rate limit reached. Waiting {Math.ceil(rateLimitStatus.waitTimeLeft / 1000)}s...
-            </span>
           </div>
         </div>
       )}

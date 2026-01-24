@@ -2,6 +2,40 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { Brain, Sparkles, Search, RefreshCw, TrendingUp, TrendingDown, Minus, X, Clock, AlertTriangle, BarChart3, CheckCircle, Target, Lightbulb, ChevronRight, Newspaper, DollarSign } from 'lucide-react'
 
 const GROQ_PROXY_URL = 'https://stock-api-proxy-seven.vercel.app/api/groq'
+const YAHOO_PROXY_URL = 'https://stock-api-proxy-seven.vercel.app/api/yahoo'
+
+// Yahoo Finance API helper
+const yahooFetch = async (symbol, type = 'quote', options = {}) => {
+  let url = `${YAHOO_PROXY_URL}?symbol=${encodeURIComponent(symbol)}`
+  if (type !== 'quote') url += `&type=${type}`
+  if (options.range) url += `&range=${options.range}`
+  if (options.interval) url += `&interval=${options.interval}`
+  const response = await fetch(url)
+  if (!response.ok) throw new Error(`Yahoo API Error: ${response.status}`)
+  return await response.json()
+}
+
+// Normalize Yahoo quote data
+const normalizeYahooQuote = (data) => {
+  if (!data) return null
+  return {
+    c: data.regularMarketPrice || data.price || 0,
+    pc: data.regularMarketPreviousClose || data.previousClose || 0,
+    h: data.regularMarketDayHigh || data.dayHigh || 0,
+    l: data.regularMarketDayLow || data.dayLow || 0,
+    o: data.regularMarketOpen || data.open || 0,
+    change: data.regularMarketChange || 0,
+    changePercent: data.regularMarketChangePercent || 0,
+    volume: data.regularMarketVolume || 0,
+    marketCap: data.marketCap || 0,
+    peRatio: data.trailingPE || data.forwardPE || null,
+    eps: data.trailingEps || null,
+    weekHigh52: data.fiftyTwoWeekHigh || null,
+    weekLow52: data.fiftyTwoWeekLow || null,
+    name: data.shortName || data.longName || '',
+    exchange: data.exchange || ''
+  }
+}
 
 // Parse markdown-style formatting to JSX
 const parseMarkdown = (text) => {
@@ -66,16 +100,23 @@ export default function AIInsights({ darkMode, finnhubFetch }) {
     }
     setSearchLoading(true)
     try {
-      const data = await finnhubFetch(`/search?q=${encodeURIComponent(q)}`)
-      const results = data && Array.isArray(data.result) ? data.result : []
-      setSearchResults(results.slice(0, 6).map(r => ({ symbol: r.symbol, name: r.description })))
+      // Use Yahoo search - no rate limits
+      const data = await yahooFetch(q, 'search')
+      let results = []
+      if (data && data.quotes && Array.isArray(data.quotes)) {
+        results = data.quotes
+          .filter(r => r.quoteType === 'EQUITY' || r.quoteType === 'ETF')
+          .slice(0, 6)
+          .map(r => ({ symbol: r.symbol, name: r.shortname || r.longname || r.symbol }))
+      }
+      setSearchResults(results)
       setShowDropdown(true)
       setSelectedIndex(0)
     } catch {
       setSearchResults([])
     }
     setSearchLoading(false)
-  }, 200), [finnhubFetch])
+  }, 200), [])
 
   useEffect(() => {
     if (symbol.length >= 1) {
@@ -130,23 +171,42 @@ export default function AIInsights({ darkMode, finnhubFetch }) {
     setShowDropdown(false)
 
     try {
-      // Fetch quote data
-      const quote = await finnhubFetch(`/quote?symbol=${sym}`)
-      if (!quote || (quote.c === 0 && quote.h === 0 && quote.l === 0)) {
+      // Fetch quote data from Yahoo (no rate limits!)
+      const yahooData = await yahooFetch(sym)
+      const quote = normalizeYahooQuote(yahooData)
+      if (!quote || quote.c === 0) {
         throw new Error(`Invalid symbol: ${sym}`)
       }
 
-      // Fetch company profile
-      const profile = await finnhubFetch(`/stock/profile2?symbol=${sym}`).catch(() => ({}))
-
-      // Fetch basic financials (includes 52-week high/low, PE ratio, etc.)
-      let metrics = {}
+      // Fetch 1-month chart data for trend analysis
+      let chartTrend = 'N/A'
+      let chartPrices = []
       try {
-        const financials = await finnhubFetch(`/stock/metric?symbol=${sym}&metric=all`)
-        metrics = financials?.metric || {}
+        const chartData = await yahooFetch(sym, 'chart', { range: '1mo', interval: '1d' })
+        if (chartData?.chart?.result?.[0]) {
+          const result = chartData.chart.result[0]
+          const closes = result.indicators?.quote?.[0]?.close || []
+          chartPrices = closes.filter(c => c !== null)
+          if (chartPrices.length >= 2) {
+            const startPrice = chartPrices[0]
+            const endPrice = chartPrices[chartPrices.length - 1]
+            const monthChange = ((endPrice - startPrice) / startPrice * 100).toFixed(1)
+            chartTrend = `${monthChange >= 0 ? '+' : ''}${monthChange}% over past month`
+
+            // Calculate if trending up or down
+            const midPoint = chartPrices[Math.floor(chartPrices.length / 2)]
+            if (endPrice > midPoint && midPoint > startPrice) {
+              chartTrend += ' (strong uptrend)'
+            } else if (endPrice < midPoint && midPoint < startPrice) {
+              chartTrend += ' (strong downtrend)'
+            } else if (endPrice > startPrice) {
+              chartTrend += ' (recovery/choppy)'
+            }
+          }
+        }
       } catch {}
 
-      // Fetch company news
+      // Fetch company news from Finnhub (still works well for news)
       const today = new Date()
       const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)
       const fromDate = weekAgo.toISOString().split('T')[0]
@@ -162,12 +222,12 @@ export default function AIInsights({ darkMode, finnhubFetch }) {
         }
       } catch {}
 
-      const change = quote.pc ? ((quote.c - quote.pc) / quote.pc * 100) : 0
-      const weekHigh52 = metrics['52WeekHigh'] || null
-      const weekLow52 = metrics['52WeekLow'] || null
-      const peRatio = metrics['peBasicExclExtraTTM'] || metrics['peTTM'] || null
-      const eps = metrics['epsBasicExclExtraItemsTTM'] || null
-      const marketCap = profile?.marketCapitalization || null
+      const change = quote.changePercent || 0
+      const weekHigh52 = quote.weekHigh52
+      const weekLow52 = quote.weekLow52
+      const peRatio = quote.peRatio
+      const eps = quote.eps
+      const marketCap = quote.marketCap
 
       // Calculate position in 52-week range
       let pricePosition = null
@@ -181,8 +241,7 @@ export default function AIInsights({ darkMode, finnhubFetch }) {
       // Build comprehensive stock data for AI
       const stockData = {
         symbol: sym,
-        name: profile?.name || sym,
-        industry: profile?.finnhubIndustry || 'Unknown',
+        name: quote.name || sym,
         currentPrice: quote.c,
         previousClose: quote.pc,
         dayHigh: quote.h,
@@ -194,23 +253,24 @@ export default function AIInsights({ darkMode, finnhubFetch }) {
         pricePositionIn52WeekRange: pricePosition ? `${pricePosition}%` : 'N/A',
         peRatio: peRatio ? peRatio.toFixed(1) : 'N/A',
         eps: eps ? eps.toFixed(2) : 'N/A',
-        marketCapBillions: marketCap ? (marketCap / 1000).toFixed(1) : 'N/A',
+        marketCapBillions: marketCap ? (marketCap / 1e9).toFixed(1) : 'N/A',
+        chartTrend,
         recentNewsHeadlines: news.map(n => n.headline).filter(Boolean)
       }
 
-      // Opinionated AI prompt
+      // Opinionated AI prompt with chart trend data
       const prompt = `You are an opinionated stock analyst. Be decisive and give clear recommendations. Based on this data for ${sym}:
 
 PRICE DATA:
 - Current: $${quote.c?.toFixed(2)} (${change >= 0 ? '+' : ''}${change.toFixed(2)}% today)
 - 52-Week High: $${weekHigh52?.toFixed(2) || 'N/A'} | 52-Week Low: $${weekLow52?.toFixed(2) || 'N/A'}
 - Position in 52-week range: ${pricePosition ? pricePosition + '%' : 'N/A'} (0%=at low, 100%=at high)
+- 1-Month Trend: ${chartTrend}
 
 FUNDAMENTALS:
 - P/E Ratio: ${peRatio ? peRatio.toFixed(1) : 'N/A'}
 - EPS: $${eps ? eps.toFixed(2) : 'N/A'}
-- Market Cap: $${marketCap ? (marketCap / 1000).toFixed(1) + 'B' : 'N/A'}
-- Industry: ${profile?.finnhubIndustry || 'Unknown'}
+- Market Cap: $${marketCap ? (marketCap / 1e9).toFixed(1) + 'B' : 'N/A'}
 
 RECENT NEWS:
 ${news.length > 0 ? news.map(n => '- ' + n.headline).join('\n') : '- No recent news'}
@@ -266,8 +326,8 @@ BOTTOM LINE: Would you BUY, HOLD, or AVOID? One decisive sentence.`
 
       const analysis = {
         symbol: sym,
-        name: profile?.name || sym,
-        industry: profile?.finnhubIndustry || '',
+        name: quote.name || sym,
+        industry: '',
         price: quote.c,
         previousClose: quote.pc,
         dayHigh: quote.h,
@@ -279,6 +339,7 @@ BOTTOM LINE: Would you BUY, HOLD, or AVOID? One decisive sentence.`
         peRatio,
         eps,
         marketCap,
+        chartTrend,
         news: news.slice(0, 3),
         analysis: analysisText,
         sentiment,
