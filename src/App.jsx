@@ -3,7 +3,7 @@ import {
   TrendingUp, TrendingDown, Plus, X, Settings, BarChart3, Newspaper,
   Home, Clock, RefreshCw, Star, Trash2, AlertCircle, CheckCircle,
   Activity, Search, Moon, Sun, Zap, Calendar,
-  AlertTriangle, ChevronRight,
+  AlertTriangle, ChevronRight, HelpCircle, Sparkles,
   Cloud, CloudOff, LogIn, LogOut, User, Brain
 } from 'lucide-react'
 import { AreaChart, Area, ResponsiveContainer } from 'recharts'
@@ -342,11 +342,12 @@ function useCloudSync(key, localValue, setLocalValue, user) {
 function Tooltip({ children, content }) {
   const [show, setShow] = useState(false)
   return (
-    <div className="relative inline-block" onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
+    <div className="relative inline-block overflow-visible" onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
       {children}
       {show && (
-        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 text-xs bg-gray-900 text-white rounded whitespace-nowrap z-50">
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 text-xs bg-gray-900 text-white rounded-lg whitespace-nowrap z-[100] shadow-lg border border-gray-700 pointer-events-none">
           {content}
+          <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-gray-900" />
         </div>
       )}
     </div>
@@ -416,6 +417,99 @@ function FearGreedIndicator({ value }) {
         <span className="text-xs text-gray-400">Fear</span>
         <span className={`text-sm font-medium ${label.color}`}>{label.text}</span>
         <span className="text-xs text-gray-400">Greed</span>
+      </div>
+    </div>
+  )
+}
+
+// ============ ONBOARDING TOUR ============
+function OnboardingTour({ onComplete }) {
+  const [step, setStep] = useState(0)
+
+  const steps = [
+    {
+      title: 'Welcome to Stock Research Hub!',
+      description: 'Your free tool for tracking stocks, getting AI insights, and staying updated with market news.',
+      icon: Sparkles
+    },
+    {
+      title: 'Track Your Watchlist',
+      description: 'Add your favorite stocks to your watchlist to monitor prices and changes at a glance.',
+      icon: Star
+    },
+    {
+      title: 'See Market Movers',
+      description: 'Quickly see which stocks are gaining or losing the most today.',
+      icon: TrendingUp
+    },
+    {
+      title: 'Get AI-Powered Analysis',
+      description: 'Enter any stock symbol to get instant AI analysis with opportunities, risks, and sentiment.',
+      icon: Brain
+    },
+    {
+      title: 'Stay Informed',
+      description: 'Read curated market news filtered for relevance. No fluff, just financial news that matters.',
+      icon: Newspaper
+    }
+  ]
+
+  const currentStep = steps[step]
+  const isLast = step === steps.length - 1
+
+  const handleNext = () => {
+    if (isLast) {
+      localStorage.setItem('tour_completed', 'true')
+      onComplete()
+    } else {
+      setStep(step + 1)
+    }
+  }
+
+  const handleSkip = () => {
+    localStorage.setItem('tour_completed', 'true')
+    onComplete()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
+      <div className="bg-gray-800 rounded-2xl max-w-md w-full border border-gray-700 shadow-2xl overflow-hidden">
+        {/* Progress dots */}
+        <div className="flex justify-center gap-2 pt-6">
+          {steps.map((_, i) => (
+            <div
+              key={i}
+              className={`w-2 h-2 rounded-full transition-all ${
+                i === step ? 'bg-blue-500 w-6' : i < step ? 'bg-blue-500' : 'bg-gray-600'
+              }`}
+            />
+          ))}
+        </div>
+
+        {/* Content */}
+        <div className="p-8 text-center">
+          <div className="w-16 h-16 rounded-2xl bg-blue-500/20 flex items-center justify-center mx-auto mb-6">
+            <currentStep.icon className="w-8 h-8 text-blue-400" />
+          </div>
+          <h2 className="text-xl font-bold text-white mb-3">{currentStep.title}</h2>
+          <p className="text-gray-400 leading-relaxed">{currentStep.description}</p>
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center justify-between p-6 border-t border-gray-700">
+          <button
+            onClick={handleSkip}
+            className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
+          >
+            Skip tour
+          </button>
+          <button
+            onClick={handleNext}
+            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition-colors"
+          >
+            {isLast ? 'Get Started' : 'Next'}
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -1216,18 +1310,45 @@ const parseNewsResponse = (data) => {
 
 // ============ MARKET-RELEVANT KEYWORDS ============
 const MARKET_KEYWORDS = [
-  'stock', 'stocks', 'market', 'markets', 'trading', 'trader', 'trade',
-  'earnings', 'shares', 'share', 'investor', 'investors', 'investment',
-  's&p', 'nasdaq', 'dow', 'nyse', 'fed', 'federal reserve',
-  'economy', 'economic', 'inflation', 'interest rate', 'rates',
-  'ipo', 'merger', 'acquisition', 'acquire', 'deal',
-  'ceo', 'cfo', 'quarterly', 'quarter', 'q1', 'q2', 'q3', 'q4',
-  'revenue', 'profit', 'profits', 'loss', 'losses', 'earnings',
-  'bull', 'bear', 'bullish', 'bearish', 'rally', 'crash', 'surge', 'plunge',
-  'wall street', 'hedge fund', 'etf', 'mutual fund', 'dividend',
-  'sec', 'regulation', 'antitrust', 'layoff', 'layoffs', 'hiring',
-  'forecast', 'guidance', 'outlook', 'analyst', 'analysts', 'upgrade', 'downgrade',
-  'billion', 'million', 'valuation', 'market cap', 'aapl', 'msft', 'googl', 'amzn', 'nvda', 'tsla', 'meta'
+  // Stock market terms
+  'stock', 'stocks', 'market', 'markets', 'trading', 'wall street',
+  'earnings', 'shares', 'share price', 'investor', 'investors',
+  's&p 500', 's&p', 'nasdaq', 'dow jones', 'dow', 'nyse', 'russell',
+  // Fed & economy
+  'fed', 'federal reserve', 'interest rate', 'rate cut', 'rate hike',
+  'inflation', 'gdp', 'jobs report', 'unemployment', 'recession',
+  // Corporate
+  'ipo', 'merger', 'acquisition', 'takeover', 'buyout',
+  'ceo', 'earnings report', 'quarterly results', 'guidance',
+  'revenue', 'profit', 'eps', 'beat estimates', 'miss estimates',
+  // Market movements
+  'rally', 'surge', 'plunge', 'crash', 'selloff', 'sell-off',
+  'bullish', 'bearish', 'all-time high', 'record high',
+  // Financial terms
+  'hedge fund', 'etf', 'mutual fund', 'dividend', 'buyback',
+  'valuation', 'market cap', 'pe ratio', 'yield',
+  // Major companies (by ticker or name)
+  'apple', 'microsoft', 'google', 'alphabet', 'amazon', 'nvidia', 'tesla', 'meta',
+  'aapl', 'msft', 'googl', 'amzn', 'nvda', 'tsla',
+  'jpmorgan', 'goldman', 'berkshire', 'netflix', 'disney'
+]
+
+// Blocklist - articles containing these are NOT market relevant
+const NEWS_BLOCKLIST = [
+  'social security', 'medicare', 'medicaid', 'retirement tips',
+  'porta-potty', 'bathroom', 'twins', 'birthday', 'wedding',
+  'recipe', 'cooking', 'diet', 'weight loss', 'fitness',
+  'celebrity', 'kardashian', 'royal family', 'prince harry',
+  'horoscope', 'zodiac', 'astrology',
+  'weather forecast', 'hurricane warning',
+  'travel tips', 'vacation', 'hotel review',
+  'dating', 'relationship advice', 'marriage',
+  'pet', 'dog', 'cat', 'puppy', 'kitten',
+  'home improvement', 'diy', 'gardening',
+  'lottery', 'powerball', 'mega millions',
+  'sports score', 'nfl', 'nba', 'mlb', 'nhl', 'super bowl',
+  'movie review', 'tv show', 'netflix series', 'streaming',
+  'video game', 'gaming', 'playstation', 'xbox'
 ]
 
 // ============ NEWS PAGE ============
@@ -1247,8 +1368,16 @@ function NewsPage({ darkMode }) {
     return CRYPTO_KEYWORDS.some(keyword => text.includes(keyword))
   }
 
+  const isBlocklisted = (article) => {
+    if (!article) return true
+    const text = `${article.headline || ''} ${article.summary || ''}`.toLowerCase()
+    return NEWS_BLOCKLIST.some(keyword => text.includes(keyword))
+  }
+
   const isMarketRelevant = (article) => {
     if (!article) return false
+    // First check blocklist
+    if (isBlocklisted(article)) return false
     const text = `${article.headline || ''} ${article.summary || ''}`.toLowerCase()
     return MARKET_KEYWORDS.some(keyword => text.includes(keyword))
   }
@@ -1373,7 +1502,7 @@ function NewsPage({ darkMode }) {
 }
 
 // ============ SETTINGS PAGE ============
-function SettingsPage({ darkMode, syncStatus }) {
+function SettingsPage({ darkMode, syncStatus, onShowTour }) {
   const { user, signIn, signOut: handleSignOut } = useAuth()
 
   const handleClear = () => {
@@ -1461,6 +1590,21 @@ function SettingsPage({ darkMode, syncStatus }) {
 
       <div className="rounded-xl border p-6 bg-gray-800 border-gray-700">
         <div className="flex items-center gap-3 mb-4">
+          <HelpCircle className="w-5 h-5 text-gray-400" />
+          <h3 className="text-lg font-medium text-white">Help</h3>
+        </div>
+        <p className="text-sm mb-4 text-gray-400">
+          New to Stock Research Hub? Take a quick tour to learn the basics.
+        </p>
+        <button onClick={onShowTour}
+          className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 rounded-xl text-white flex items-center gap-2 transition-colors">
+          <Sparkles className="w-4 h-4" />
+          Show Tour
+        </button>
+      </div>
+
+      <div className="rounded-xl border p-6 bg-gray-800 border-gray-700">
+        <div className="flex items-center gap-3 mb-4">
           <Trash2 className="w-5 h-5 text-gray-400" />
           <h3 className="text-lg font-medium text-white">Data Management</h3>
         </div>
@@ -1485,6 +1629,7 @@ function AppContent() {
   const [selectedStock, setSelectedStock] = useState(null)
   const [showSearch, setShowSearch] = useState(false)
   const [darkMode, setDarkMode] = useState(true)
+  const [showTour, setShowTour] = useState(() => !localStorage.getItem('tour_completed'))
   const [watchlist, setWatchlist] = useState(() => {
     const saved = localStorage.getItem('watchlist')
     return saved ? JSON.parse(saved) : ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA']
@@ -1578,11 +1723,12 @@ function AppContent() {
         {activePage === 'explore' && <MarketMovers onSelectStock={setSelectedStock} darkMode={darkMode} />}
         {activePage === 'insights' && <AIInsights darkMode={darkMode} finnhubFetch={finnhubFetch} />}
         {activePage === 'news' && <NewsPage darkMode={darkMode} />}
-        {activePage === 'settings' && <SettingsPage darkMode={darkMode} syncStatus={syncStatus} />}
+        {activePage === 'settings' && <SettingsPage darkMode={darkMode} syncStatus={syncStatus} onShowTour={() => setShowTour(true)} />}
       </main>
 
       {selectedStock && <StockDetail symbol={selectedStock} onClose={() => setSelectedStock(null)} darkMode={darkMode} />}
       {showSearch && <PredictiveSearch onSelect={setSelectedStock} onClose={() => setShowSearch(false)} />}
+      {showTour && <OnboardingTour onComplete={() => setShowTour(false)} />}
     </div>
   )
 }
