@@ -1,485 +1,393 @@
-import { useState, useEffect, useCallback } from 'react'
-import { Brain, Sparkles, AlertTriangle, TrendingUp, TrendingDown, RefreshCw, Lightbulb, Shield, Eye, BarChart3, HelpCircle, X, Zap } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { Brain, Sparkles, Search, RefreshCw, TrendingUp, TrendingDown, Minus, X, Clock, AlertTriangle } from 'lucide-react'
 
-// Sentiment analysis helper
-const POSITIVE_WORDS = ['surge', 'jump', 'gain', 'rise', 'rally', 'soar', 'boom', 'growth', 'profit', 'beat', 'exceed', 'bullish', 'upgrade', 'buy', 'outperform', 'strong', 'positive', 'record', 'high', 'breakout', 'momentum', 'optimistic', 'success']
-const NEGATIVE_WORDS = ['fall', 'drop', 'plunge', 'crash', 'decline', 'loss', 'miss', 'cut', 'bearish', 'downgrade', 'sell', 'weak', 'negative', 'low', 'fear', 'concern', 'risk', 'warning', 'slump', 'tumble', 'worry', 'trouble', 'fail']
+const GEMINI_PROXY_URL = 'https://stock-api-proxy-seven.vercel.app/api/gemini'
 
-const analyzeSentiment = (text) => {
-  if (!text) return { score: 0, label: 'neutral', confidence: 50 }
-  const lower = text.toLowerCase()
-  let positiveCount = 0, negativeCount = 0
-  POSITIVE_WORDS.forEach(word => { if (lower.includes(word)) positiveCount++ })
-  NEGATIVE_WORDS.forEach(word => { if (lower.includes(word)) negativeCount++ })
-  const total = positiveCount + negativeCount
-  const confidence = total > 0 ? Math.min(100, 50 + total * 10) : 50
-  if (positiveCount > negativeCount) return { score: positiveCount - negativeCount, label: 'bullish', confidence }
-  if (negativeCount > positiveCount) return { score: negativeCount - positiveCount, label: 'bearish', confidence }
-  return { score: 0, label: 'neutral', confidence: 50 }
-}
-
-// Info tooltip component
-function InfoTooltip({ text, darkMode }) {
-  const [show, setShow] = useState(false)
-  return (
-    <div className="relative inline-block">
-      <button
-        onMouseEnter={() => setShow(true)}
-        onMouseLeave={() => setShow(false)}
-        className={`p-0.5 rounded-full ${darkMode ? 'text-gray-400 hover:text-gray-300' : 'text-gray-400 hover:text-gray-500'}`}
-      >
-        <HelpCircle className="w-3.5 h-3.5" />
-      </button>
-      {show && (
-        <div className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 text-xs rounded-lg shadow-lg z-50 w-48 ${darkMode ? 'bg-gray-700 text-gray-100' : 'bg-gray-900 text-white'}`}>
-          {text}
-          <div className={`absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent ${darkMode ? 'border-t-gray-700' : 'border-t-gray-900'}`}></div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// Section explanation component
-function SectionExplainer({ title, description, darkMode }) {
-  const [expanded, setExpanded] = useState(false)
-  return (
-    <div className={`mb-4 p-3 rounded-lg ${darkMode ? 'bg-blue-900/20 border border-blue-500/30' : 'bg-blue-50 border border-blue-100'}`}>
-      <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-2 w-full text-left">
-        <Lightbulb className="w-4 h-4 text-blue-400" />
-        <span className={`text-sm font-medium ${darkMode ? 'text-blue-300' : 'text-blue-700'}`}>{title}</span>
-        <span className={`text-xs ml-auto ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>{expanded ? 'Hide' : 'What is this?'}</span>
-      </button>
-      {expanded && (
-        <p className={`mt-2 text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{description}</p>
-      )}
-    </div>
-  )
-}
-
-export default function AIInsights({ watchlist = [], darkMode, finnhubFetch }) {
-  const [marketMood, setMarketMood] = useState(50)
-  const [insights, setInsights] = useState([])
-  const [watchlistSummary, setWatchlistSummary] = useState(null)
-  const [riskAlerts, setRiskAlerts] = useState([])
-  const [stocksToWatch, setStocksToWatch] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [analyzing, setAnalyzing] = useState(null)
-  const [aiAnalysis, setAiAnalysis] = useState(null)
-  const [error, setError] = useState(null)
-  const [stockDataCache, setStockDataCache] = useState({})
-
-  // Safe watchlist
-  const safeWatchlist = Array.isArray(watchlist) ? watchlist : []
-
-  // Generate rule-based insights
-  const generateInsights = useCallback(async () => {
-    if (safeWatchlist.length === 0) {
-      setLoading(false)
-      return
+export default function AIInsights({ darkMode, finnhubFetch }) {
+  const [symbol, setSymbol] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [currentAnalysis, setCurrentAnalysis] = useState(null)
+  const [history, setHistory] = useState(() => {
+    try {
+      const saved = localStorage.getItem('ai_analysis_history')
+      return saved ? JSON.parse(saved) : []
+    } catch {
+      return []
     }
+  })
+  const [error, setError] = useState(null)
+  const inputRef = useRef(null)
+
+  // Save history to localStorage
+  useEffect(() => {
+    localStorage.setItem('ai_analysis_history', JSON.stringify(history.slice(0, 5)))
+  }, [history])
+
+  const analyzeStock = async (stockSymbol) => {
+    const sym = (stockSymbol || symbol).toUpperCase().trim()
+    if (!sym) return
 
     setLoading(true)
     setError(null)
-    const newInsights = []
-    const alerts = []
-    const toWatch = []
+    setCurrentAnalysis(null)
 
     try {
-      // Fetch data for watchlist stocks
-      const stockData = {}
-      for (const symbol of safeWatchlist.slice(0, 10)) {
-        try {
-          const quote = await finnhubFetch(`/quote?symbol=${symbol}`)
-          if (quote && typeof quote.c === 'number') {
-            stockData[symbol] = quote
-          }
-        } catch (err) {
-          console.warn(`Failed to fetch ${symbol}:`, err)
-        }
+      // Fetch stock data
+      console.log('Fetching quote for:', sym)
+      const quote = await finnhubFetch(`/quote?symbol=${sym}`)
+      console.log('Quote response:', quote)
+
+      if (!quote || (quote.c === 0 && quote.h === 0 && quote.l === 0)) {
+        throw new Error(`Invalid symbol: ${sym}`)
       }
 
-      // Cache stock data for AI analysis
-      setStockDataCache(stockData)
+      // Fetch company profile
+      console.log('Fetching profile for:', sym)
+      const profile = await finnhubFetch(`/stock/profile2?symbol=${sym}`).catch(() => ({}))
+      console.log('Profile response:', profile)
 
-      // Analyze each stock
-      for (const [symbol, data] of Object.entries(stockData)) {
-        if (!data || !data.c) continue
+      // Fetch recent news
+      const today = new Date()
+      const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)
+      const fromDate = weekAgo.toISOString().split('T')[0]
+      const toDate = today.toISOString().split('T')[0]
 
-        const change = data.pc ? ((data.c - data.pc) / data.pc) * 100 : 0
-
-        // Large moves
-        if (Math.abs(change) > 5) {
-          alerts.push({
-            symbol,
-            type: change > 0 ? 'surge' : 'drop',
-            message: `${symbol} ${change > 0 ? 'up' : 'down'} ${Math.abs(change).toFixed(1)}% today`,
-            severity: Math.abs(change) > 10 ? 'high' : 'medium'
-          })
-        }
-
-        // Near highs/lows
-        if (data.h && data.c >= data.h * 0.99) {
-          toWatch.push({ symbol, reason: 'Trading near daily high', type: 'bullish' })
-        }
-        if (data.l && data.c <= data.l * 1.01) {
-          toWatch.push({ symbol, reason: 'Trading near daily low', type: 'bearish' })
-        }
+      console.log('Fetching news for:', sym)
+      let news = []
+      try {
+        const newsData = await finnhubFetch(`/company-news?symbol=${sym}&from=${fromDate}&to=${toDate}`)
+        news = Array.isArray(newsData) ? newsData.slice(0, 5) : []
+      } catch (e) {
+        console.warn('News fetch failed:', e)
       }
+      console.log('News response:', news)
 
-      // Calculate market mood based on watchlist performance
-      const changes = Object.values(stockData).filter(d => d && d.pc).map(d => ((d.c - d.pc) / d.pc) * 100)
-      if (changes.length > 0) {
-        const avgChange = changes.reduce((a, b) => a + b, 0) / changes.length
-        const newMood = Math.max(0, Math.min(100, 50 + avgChange * 10))
-        setMarketMood(newMood)
+      const change = quote.pc ? ((quote.c - quote.pc) / quote.pc * 100) : 0
 
-        // Generate summary
-        const gainers = Object.entries(stockData).filter(([, d]) => d && d.pc && d.c > d.pc).length
-        const losers = Object.entries(stockData).filter(([, d]) => d && d.pc && d.c < d.pc).length
-        setWatchlistSummary({
-          total: Object.keys(stockData).length,
-          gainers,
-          losers,
-          avgChange: avgChange.toFixed(2),
-          bestPerformer: Object.entries(stockData).sort((a, b) => {
-            const changeA = a[1]?.pc ? ((a[1].c - a[1].pc) / a[1].pc) * 100 : 0
-            const changeB = b[1]?.pc ? ((b[1].c - b[1].pc) / b[1].pc) * 100 : 0
-            return changeB - changeA
-          })[0]?.[0],
-          worstPerformer: Object.entries(stockData).sort((a, b) => {
-            const changeA = a[1]?.pc ? ((a[1].c - a[1].pc) / a[1].pc) * 100 : 0
-            const changeB = b[1]?.pc ? ((b[1].c - b[1].pc) / b[1].pc) * 100 : 0
-            return changeA - changeB
-          })[0]?.[0]
-        })
-      }
-
-      // Generate insights based on patterns
-      if (changes.filter(c => c > 0).length > changes.length * 0.7) {
-        newInsights.push({
-          type: 'positive',
-          title: 'Strong Watchlist Performance',
-          message: 'Most of your watchlist stocks are in the green today, indicating positive momentum.'
-        })
-      } else if (changes.filter(c => c < 0).length > changes.length * 0.7) {
-        newInsights.push({
-          type: 'negative',
-          title: 'Watchlist Under Pressure',
-          message: 'Most of your watchlist stocks are down today. Consider reviewing your positions.'
-        })
-      }
-
-      setInsights(newInsights)
-      setRiskAlerts(alerts)
-      setStocksToWatch(toWatch)
-    } catch (err) {
-      console.error('Error generating insights:', err)
-      setError('Failed to generate insights. Please try again.')
-    }
-
-    setLoading(false)
-  }, [safeWatchlist, finnhubFetch])
-
-  useEffect(() => {
-    generateInsights()
-  }, [generateInsights])
-
-  // AI Analysis with Gemini (free, no API key required)
-  const analyzeWithAI = async (symbol) => {
-    setAnalyzing(symbol)
-    setAiAnalysis(null)
-
-    try {
-      // Get cached quote data or fetch fresh
-      let quote = stockDataCache[symbol]
-      if (!quote) {
-        quote = await finnhubFetch(`/quote?symbol=${symbol}`)
-      }
-
-      // Fetch additional data for analysis
-      const [news, profile] = await Promise.all([
-        finnhubFetch(`/company-news?symbol=${symbol}&from=${new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}&to=${new Date().toISOString().split('T')[0]}`).catch(() => []),
-        finnhubFetch(`/stock/profile2?symbol=${symbol}`).catch(() => ({}))
-      ])
-
-      const newsHeadlines = (news || []).slice(0, 5).map(n => n.headline)
-      const change = quote?.pc ? ((quote.c - quote.pc) / quote.pc * 100).toFixed(2) : 0
-
-      // Prepare stock data for Gemini
+      // Prepare data for Gemini
       const stockData = {
-        symbol,
-        name: profile?.name || symbol,
+        symbol: sym,
+        name: profile?.name || sym,
         industry: profile?.finnhubIndustry || 'Unknown',
-        currentPrice: quote?.c,
-        previousClose: quote?.pc,
-        dayHigh: quote?.h,
-        dayLow: quote?.l,
-        changePercent: change,
-        recentNews: newsHeadlines
+        currentPrice: quote.c,
+        previousClose: quote.pc,
+        dayHigh: quote.h,
+        dayLow: quote.l,
+        openPrice: quote.o,
+        changePercent: change.toFixed(2),
+        recentNews: news.map(n => n.headline).filter(Boolean)
       }
 
-      // Call Gemini proxy
-      const response = await fetch('https://stock-api-proxy-seven.vercel.app/api/gemini', {
+      console.log('Calling Gemini with:', stockData)
+
+      // Call Gemini API
+      const response = await fetch(GEMINI_PROXY_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          prompt: `Analyze ${symbol} stock. What are the key things investors should know right now?`,
+          prompt: `Provide a comprehensive analysis of ${sym} stock. Include:
+1. A brief overview of the current price action
+2. Key factors investors should consider
+3. Recent news sentiment analysis
+4. Potential risks and opportunities
+5. A clear sentiment rating (Bullish, Neutral, or Bearish)
+
+Be concise but thorough. Format with clear sections.`,
           stockData
         })
       })
 
+      console.log('Gemini response status:', response.status)
+
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || 'AI analysis failed')
+        const errorText = await response.text()
+        console.error('Gemini error response:', errorText)
+        let errorMessage = 'AI analysis failed'
+        try {
+          const errorData = JSON.parse(errorText)
+          errorMessage = errorData.error || errorMessage
+        } catch {
+          errorMessage = errorText || errorMessage
+        }
+        throw new Error(errorMessage)
       }
 
       const data = await response.json()
-      setAiAnalysis({
-        symbol,
+      console.log('Gemini data:', data)
+
+      if (!data || !data.insight) {
+        throw new Error('No analysis generated')
+      }
+
+      // Determine sentiment from the analysis text
+      const analysisLower = data.insight.toLowerCase()
+      let sentiment = 'neutral'
+      if (analysisLower.includes('bullish') || analysisLower.includes('buy') || analysisLower.includes('positive outlook')) {
+        sentiment = 'bullish'
+      } else if (analysisLower.includes('bearish') || analysisLower.includes('sell') || analysisLower.includes('negative outlook')) {
+        sentiment = 'bearish'
+      }
+
+      const analysis = {
+        symbol: sym,
+        name: profile?.name || sym,
+        price: quote.c,
+        change: change,
         analysis: data.insight,
+        sentiment,
         timestamp: new Date().toISOString()
+      }
+
+      setCurrentAnalysis(analysis)
+
+      // Add to history (avoid duplicates)
+      setHistory(prev => {
+        const filtered = prev.filter(h => h.symbol !== sym)
+        return [analysis, ...filtered].slice(0, 5)
       })
+
+      setSymbol('')
+
     } catch (err) {
-      console.error('AI analysis error:', err)
-      setAiAnalysis({
-        symbol,
-        error: err.message || 'Failed to generate AI analysis. Please try again.',
-        timestamp: new Date().toISOString()
-      })
+      console.error('Analysis error:', err)
+      setError(err.message || 'Failed to analyze stock. Please try again.')
     }
 
-    setAnalyzing(null)
+    setLoading(false)
   }
 
-  const getMoodLabel = (mood) => {
-    if (mood <= 25) return { text: 'Very Bearish', color: 'text-red-400', emoji: '🐻' }
-    if (mood <= 40) return { text: 'Bearish', color: 'text-orange-400', emoji: '📉' }
-    if (mood <= 60) return { text: 'Neutral', color: 'text-yellow-400', emoji: '➖' }
-    if (mood <= 75) return { text: 'Bullish', color: 'text-lime-400', emoji: '📈' }
-    return { text: 'Very Bullish', color: 'text-green-400', emoji: '🐂' }
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    analyzeStock()
   }
 
-  const moodLabel = getMoodLabel(marketMood)
+  const handleHistoryClick = (item) => {
+    setCurrentAnalysis(item)
+  }
+
+  const clearHistory = () => {
+    setHistory([])
+    localStorage.removeItem('ai_analysis_history')
+  }
+
+  const getSentimentDisplay = (sentiment) => {
+    switch (sentiment) {
+      case 'bullish':
+        return { icon: TrendingUp, color: 'text-green-400', bg: 'bg-green-500/20', label: 'Bullish' }
+      case 'bearish':
+        return { icon: TrendingDown, color: 'text-red-400', bg: 'bg-red-500/20', label: 'Bearish' }
+      default:
+        return { icon: Minus, color: 'text-yellow-400', bg: 'bg-yellow-500/20', label: 'Neutral' }
+    }
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <h2 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>AI Insights</h2>
-          <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Smart analysis of your watchlist and market trends</p>
-        </div>
-        <button
-          onClick={generateInsights}
-          disabled={loading}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl transition-colors ${darkMode ? 'bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700' : 'bg-white hover:bg-gray-50 text-gray-700 border border-gray-200'}`}
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
+      {/* Header */}
+      <div>
+        <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+          <Brain className="w-7 h-7 text-purple-400" />
+          AI Stock Analysis
+        </h2>
+        <p className="text-gray-400 mt-1">Get instant AI-powered insights on any stock</p>
       </div>
 
-      <SectionExplainer
-        title="About AI Insights"
-        description="This section uses AI and data analysis to provide insights about your watchlist stocks. It analyzes price movements, news sentiment, and patterns to help you make informed decisions. This is not financial advice."
-        darkMode={darkMode}
-      />
+      {/* Search Bar */}
+      <form onSubmit={handleSubmit} className="relative">
+        <div className={`flex items-center gap-3 p-4 rounded-xl border transition-all ${
+          darkMode
+            ? 'bg-gray-800 border-gray-700 focus-within:border-purple-500'
+            : 'bg-white border-gray-200 focus-within:border-purple-500'
+        }`}>
+          <Search className="w-5 h-5 text-gray-400" />
+          <input
+            ref={inputRef}
+            type="text"
+            value={symbol}
+            onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+            placeholder="Enter stock symbol (e.g., AAPL, MSFT, TSLA)"
+            className={`flex-1 bg-transparent outline-none text-lg ${
+              darkMode ? 'text-white placeholder-gray-500' : 'text-gray-900 placeholder-gray-400'
+            }`}
+            disabled={loading}
+          />
+          <button
+            type="submit"
+            disabled={loading || !symbol.trim()}
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-medium transition-all ${
+              loading || !symbol.trim()
+                ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                : 'bg-purple-600 hover:bg-purple-700 text-white'
+            }`}
+          >
+            {loading ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                Analyzing...
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4" />
+                Analyze
+              </>
+            )}
+          </button>
+        </div>
+      </form>
 
+      {/* Error Display */}
       {error && (
-        <div className={`p-3 rounded-lg ${darkMode ? 'bg-red-900/20 border border-red-500/30' : 'bg-red-50 border border-red-200'}`}>
-          <p className={`text-sm ${darkMode ? 'text-red-300' : 'text-red-700'}`}>{error}</p>
+        <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-red-400 font-medium">Analysis Failed</p>
+            <p className="text-red-300 text-sm mt-1">{error}</p>
+          </div>
         </div>
       )}
 
-      {safeWatchlist.length === 0 ? (
-        <div className={`rounded-xl p-12 border text-center ${darkMode ? 'bg-gray-800/50 border-gray-700' : 'bg-white border-gray-200'}`}>
-          <Brain className={`w-12 h-12 mx-auto mb-4 ${darkMode ? 'text-gray-600' : 'text-gray-300'}`} />
-          <h3 className={`text-lg font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>No stocks to analyze</h3>
-          <p className={`${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>Add stocks to your watchlist to see AI insights</p>
+      {/* Loading State */}
+      {loading && (
+        <div className="p-8 rounded-xl border bg-gray-800/50 border-gray-700 text-center">
+          <RefreshCw className="w-12 h-12 text-purple-400 animate-spin mx-auto mb-4" />
+          <p className="text-white font-medium">Analyzing {symbol}...</p>
+          <p className="text-gray-400 text-sm mt-1">Gathering data and generating insights</p>
         </div>
-      ) : (
-        <>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Market Mood */}
-            <div className={`rounded-xl p-4 border ${darkMode ? 'bg-gradient-to-br from-gray-800 to-gray-900 border-gray-700' : 'bg-white border-gray-200'}`}>
-              <div className="flex items-center gap-2 mb-4">
-                <Brain className="w-5 h-5 text-purple-400" />
-                <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Market Mood</h3>
-                <InfoTooltip text="Based on the average performance of your watchlist stocks today" darkMode={darkMode} />
-              </div>
-              <div className="text-center">
-                <div className="text-4xl mb-2">{moodLabel.emoji}</div>
-                <div className={`text-xl font-bold ${moodLabel.color}`}>{moodLabel.text}</div>
-                <div className="relative h-3 bg-gradient-to-r from-red-500 via-yellow-500 to-green-500 rounded-full mt-4">
-                  <div
-                    className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full shadow-lg border-2 border-gray-800 transition-all duration-500"
-                    style={{ left: `calc(${marketMood}% - 8px)` }}
-                  />
-                </div>
-                <p className={`text-xs mt-3 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                  Based on your watchlist performance
-                </p>
-              </div>
-            </div>
+      )}
 
-            {/* Watchlist Summary */}
-            <div className={`rounded-xl p-4 border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-              <div className="flex items-center gap-2 mb-4">
-                <BarChart3 className="w-5 h-5 text-blue-400" />
-                <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Watchlist Summary</h3>
-              </div>
-              {watchlistSummary ? (
-                <div className="space-y-3">
-                  <div className="flex justify-between">
-                    <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>Stocks Tracked</span>
-                    <span className={darkMode ? 'text-white' : 'text-gray-900'}>{watchlistSummary.total}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-green-400">Gainers</span>
-                    <span className="text-green-400">{watchlistSummary.gainers}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-red-400">Losers</span>
-                    <span className="text-red-400">{watchlistSummary.losers}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>Avg Change</span>
-                    <span className={parseFloat(watchlistSummary.avgChange) >= 0 ? 'text-green-400' : 'text-red-400'}>
-                      {parseFloat(watchlistSummary.avgChange) >= 0 ? '+' : ''}{watchlistSummary.avgChange}%
-                    </span>
-                  </div>
-                  {watchlistSummary.bestPerformer && (
-                    <div className="flex justify-between">
-                      <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>Best Today</span>
-                      <span className="text-green-400">{watchlistSummary.bestPerformer}</span>
-                    </div>
-                  )}
-                </div>
-              ) : loading ? (
-                <div className="flex items-center justify-center py-8">
-                  <RefreshCw className={`w-6 h-6 animate-spin ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
-                </div>
-              ) : (
-                <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                  Add stocks to your watchlist to see summary
-                </p>
-              )}
-            </div>
-
-            {/* AI Analysis - Now Free! */}
-            <div className={`rounded-xl p-4 border ${darkMode ? 'bg-gradient-to-br from-purple-900/20 to-gray-800 border-purple-500/30' : 'bg-purple-50 border-purple-100'}`}>
-              <div className="flex items-center gap-2 mb-4">
+      {/* Current Analysis Result */}
+      {currentAnalysis && !loading && (
+        <div className="rounded-xl border bg-gray-800 border-gray-700 overflow-hidden">
+          {/* Header */}
+          <div className="p-4 border-b border-gray-700 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center">
                 <Sparkles className="w-5 h-5 text-purple-400" />
-                <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>AI Stock Analysis</h3>
-                <span className="px-2 py-0.5 text-xs bg-green-500/20 text-green-400 rounded-full flex items-center gap-1">
-                  <Zap className="w-3 h-3" /> Free
-                </span>
               </div>
-              <p className={`text-sm mb-4 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                Get instant AI-powered analysis of any stock in your watchlist.
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-lg font-bold text-white">{currentAnalysis.symbol}</h3>
+                  <span className="text-gray-400">•</span>
+                  <span className="text-gray-300">{currentAnalysis.name}</span>
+                </div>
+                <div className="flex items-center gap-3 text-sm">
+                  <span className="text-white font-medium">${currentAnalysis.price?.toFixed(2)}</span>
+                  <span className={currentAnalysis.change >= 0 ? 'text-green-400' : 'text-red-400'}>
+                    {currentAnalysis.change >= 0 ? '+' : ''}{currentAnalysis.change?.toFixed(2)}%
+                  </span>
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => setCurrentAnalysis(null)}
+              className="p-2 rounded-lg hover:bg-gray-700 text-gray-400"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Sentiment Badge */}
+          {currentAnalysis.sentiment && (
+            <div className="px-4 py-3 border-b border-gray-700">
+              {(() => {
+                const s = getSentimentDisplay(currentAnalysis.sentiment)
+                return (
+                  <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ${s.bg}`}>
+                    <s.icon className={`w-4 h-4 ${s.color}`} />
+                    <span className={`font-medium ${s.color}`}>{s.label}</span>
+                  </div>
+                )
+              })()}
+            </div>
+          )}
+
+          {/* Analysis Content */}
+          <div className="p-4">
+            <div className="prose prose-invert max-w-none">
+              <p className="text-gray-200 whitespace-pre-wrap leading-relaxed">
+                {currentAnalysis.analysis}
               </p>
-              <div className="space-y-2">
-                {safeWatchlist.slice(0, 4).map(symbol => (
-                  <button
-                    key={symbol}
-                    onClick={() => analyzeWithAI(symbol)}
-                    disabled={analyzing === symbol}
-                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition-colors ${darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-white hover:bg-gray-50 border border-gray-200'}`}
-                  >
-                    <span className={darkMode ? 'text-white' : 'text-gray-900'}>{symbol}</span>
-                    {analyzing === symbol ? (
-                      <RefreshCw className="w-4 h-4 animate-spin text-purple-400" />
-                    ) : (
-                      <span className="text-purple-400 text-sm font-medium">Analyze</span>
-                    )}
-                  </button>
-                ))}
-              </div>
             </div>
           </div>
 
-          {/* AI Analysis Result */}
-          {aiAnalysis && (
-            <div className={`rounded-xl p-4 border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-purple-400" />
-                  <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>AI Analysis: {aiAnalysis.symbol}</h3>
-                </div>
-                <button onClick={() => setAiAnalysis(null)} className={`p-1 rounded-lg ${darkMode ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}>
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              {aiAnalysis.error ? (
-                <p className="text-red-400 text-sm">{aiAnalysis.error}</p>
-              ) : (
-                <p className={`text-sm leading-relaxed whitespace-pre-wrap ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                  {aiAnalysis.analysis}
-                </p>
-              )}
-              <p className={`text-xs mt-3 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-                Generated at {new Date(aiAnalysis.timestamp).toLocaleString()}
-              </p>
-            </div>
-          )}
+          {/* Disclaimer */}
+          <div className="px-4 py-3 bg-gray-900/50 border-t border-gray-700">
+            <p className="text-xs text-gray-500 flex items-center gap-2">
+              <AlertTriangle className="w-3 h-3" />
+              This is AI-generated analysis, not financial advice. Always do your own research before investing.
+            </p>
+          </div>
 
-          {/* Risk Alerts */}
-          {riskAlerts.length > 0 && (
-            <div className={`rounded-xl p-4 border ${darkMode ? 'bg-red-900/20 border-red-500/30' : 'bg-red-50 border-red-100'}`}>
-              <div className="flex items-center gap-2 mb-4">
-                <Shield className="w-5 h-5 text-red-400" />
-                <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Risk Alerts</h3>
-                <InfoTooltip text="Stocks in your watchlist with significant price movements today" darkMode={darkMode} />
-              </div>
-              <div className="space-y-2">
-                {riskAlerts.map((alert, i) => (
-                  <div key={i} className={`flex items-center gap-3 p-3 rounded-lg ${darkMode ? 'bg-gray-800/50' : 'bg-white'}`}>
-                    {alert.type === 'surge' ? (
-                      <TrendingUp className="w-4 h-4 text-green-400 flex-shrink-0" />
-                    ) : (
-                      <TrendingDown className="w-4 h-4 text-red-400 flex-shrink-0" />
-                    )}
-                    <span className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>{alert.symbol}</span>
-                    <span className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{alert.message}</span>
-                    {alert.severity === 'high' && (
-                      <span className="px-2 py-0.5 text-xs bg-red-500/20 text-red-400 rounded-full">High</span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Stocks to Watch */}
-          {stocksToWatch.length > 0 && (
-            <div className={`rounded-xl p-4 border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-              <div className="flex items-center gap-2 mb-4">
-                <Eye className="w-5 h-5 text-blue-400" />
-                <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Stocks to Watch</h3>
-                <InfoTooltip text="Stocks showing interesting patterns or trading near significant levels" darkMode={darkMode} />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                {stocksToWatch.map((stock, i) => (
-                  <div key={i} className={`flex items-center gap-3 p-3 rounded-lg ${darkMode ? 'bg-gray-700/50' : 'bg-gray-50'}`}>
-                    <span className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>{stock.symbol}</span>
-                    <span className={`text-sm ${stock.type === 'bullish' ? 'text-green-400' : 'text-red-400'}`}>
-                      {stock.reason}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </>
+          {/* Timestamp */}
+          <div className="px-4 py-2 border-t border-gray-700">
+            <p className="text-xs text-gray-500 flex items-center gap-1">
+              <Clock className="w-3 h-3" />
+              Generated {new Date(currentAnalysis.timestamp).toLocaleString()}
+            </p>
+          </div>
+        </div>
       )}
 
-      {/* Disclaimer */}
-      <div className={`p-4 rounded-lg ${darkMode ? 'bg-gray-800/50 border border-gray-700' : 'bg-gray-50 border border-gray-200'}`}>
-        <p className={`text-xs text-center ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-          AI Insights are generated using automated analysis and AI models. This is not financial advice.
-          Always do your own research before making investment decisions. Data may be delayed up to 15 minutes.
-        </p>
-      </div>
+      {/* Recent Analyses History */}
+      {history.length > 0 && !loading && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-medium text-gray-400">Recent Analyses</h3>
+            <button
+              onClick={clearHistory}
+              className="text-xs text-gray-500 hover:text-gray-400"
+            >
+              Clear history
+            </button>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {history.map((item, i) => {
+              const s = getSentimentDisplay(item.sentiment)
+              const isActive = currentAnalysis?.symbol === item.symbol &&
+                               currentAnalysis?.timestamp === item.timestamp
+              return (
+                <button
+                  key={`${item.symbol}-${item.timestamp}`}
+                  onClick={() => handleHistoryClick(item)}
+                  className={`p-3 rounded-xl border text-left transition-all ${
+                    isActive
+                      ? 'bg-purple-500/20 border-purple-500/50'
+                      : 'bg-gray-800/50 border-gray-700 hover:border-gray-600 hover:bg-gray-800'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-bold text-white">{item.symbol}</span>
+                    <div className={`p-1 rounded ${s.bg}`}>
+                      <s.icon className={`w-3 h-3 ${s.color}`} />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-gray-400">${item.price?.toFixed(2)}</span>
+                    <span className={item.change >= 0 ? 'text-green-400' : 'text-red-400'}>
+                      {item.change >= 0 ? '+' : ''}{item.change?.toFixed(2)}%
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2 line-clamp-2">
+                    {item.analysis?.substring(0, 80)}...
+                  </p>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Empty State */}
+      {!currentAnalysis && !loading && history.length === 0 && (
+        <div className="rounded-xl p-12 border text-center bg-gray-800/50 border-gray-700">
+          <Brain className="w-16 h-16 mx-auto mb-4 text-gray-600" />
+          <h3 className="text-lg font-medium mb-2 text-gray-300">No analyses yet</h3>
+          <p className="text-gray-500 max-w-md mx-auto">
+            Enter a stock symbol above to get AI-powered analysis including price action,
+            key factors, news sentiment, and investment considerations.
+          </p>
+        </div>
+      )}
     </div>
   )
 }

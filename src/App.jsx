@@ -75,15 +75,26 @@ const finnhubFetch = async (endpoint, timeout = 10000) => {
     proxyUrl += `&${queryString}`
   }
 
+  console.log('finnhubFetch - endpoint:', endpoint)
+  console.log('finnhubFetch - proxyUrl:', proxyUrl)
+
   try {
     const response = await fetch(proxyUrl, { signal: controller.signal })
     clearTimeout(timeoutId)
 
+    console.log('finnhubFetch - response status:', response.status)
+
     if (response.status === 429) {
       throw new Error('Rate limit exceeded. Please wait a moment.')
     }
-    if (!response.ok) throw new Error(`API Error: ${response.status}`)
-    return response.json()
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error('finnhubFetch - error response:', errorText)
+      throw new Error(`API Error: ${response.status}`)
+    }
+    const data = await response.json()
+    console.log('finnhubFetch - data:', data)
+    return data
   } catch (error) {
     clearTimeout(timeoutId)
     if (error.name === 'AbortError') {
@@ -1167,10 +1178,22 @@ function NewsPage({ darkMode }) {
   const fetchNews = useCallback(async () => {
     setLoading(true)
     try {
+      // Debug: log the API call
+      console.log('Fetching news for category:', category)
       const data = await finnhubFetch(`/news?category=${category}`)
-      let articles = Array.isArray(data) ? data : []
+      console.log('News API response:', data)
+
+      let articles = []
+      if (Array.isArray(data)) {
+        articles = data
+      } else if (data && typeof data === 'object') {
+        // Sometimes the API returns an object with a data property
+        articles = Array.isArray(data.data) ? data.data : []
+      }
+
       // Filter out crypto by default
       articles = articles.filter(article => !isCryptoRelated(article))
+      console.log('Filtered articles:', articles.length)
       setNews(articles.slice(0, 20))
     } catch (error) {
       console.error('News fetch error:', error)
@@ -1451,7 +1474,7 @@ function AppContent() {
         {activePage === 'overview' && <MarketOverview onSelectStock={setSelectedStock} darkMode={darkMode} />}
         {activePage === 'watchlist' && <Watchlist watchlist={watchlist} setWatchlist={setWatchlist} onSelectStock={setSelectedStock} darkMode={darkMode} />}
         {activePage === 'explore' && <MarketMovers onSelectStock={setSelectedStock} darkMode={darkMode} />}
-        {activePage === 'insights' && <AIInsights watchlist={watchlist} darkMode={darkMode} finnhubFetch={finnhubFetch} />}
+        {activePage === 'insights' && <AIInsights darkMode={darkMode} finnhubFetch={finnhubFetch} />}
         {activePage === 'news' && <NewsPage darkMode={darkMode} />}
         {activePage === 'settings' && <SettingsPage darkMode={darkMode} syncStatus={syncStatus} />}
       </main>
