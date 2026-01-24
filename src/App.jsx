@@ -56,17 +56,60 @@ const aiCache = {
 }
 
 // Groq AI API helper
-const groqFetch = async (prompt, stockData = {}) => {
+// Clean AI text - remove asterisks and markdown
+const cleanAiText = (text) => {
+  if (!text) return ''
+  return text
+    .replace(/\*\*/g, '')
+    .replace(/\*/g, '')
+    .replace(/#{1,6}\s/g, '')
+    .replace(/`/g, '')
+    .trim()
+}
+
+// Parse AI JSON response with fallback
+const parseAiJson = (text) => {
+  if (!text) return null
+  try {
+    // Try to extract JSON from the response
+    const jsonMatch = text.match(/\{[\s\S]*\}/)
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0])
+    }
+  } catch (e) {
+    console.log('JSON parse failed, using text fallback')
+  }
+  return null
+}
+
+// AI System prompt for helpful, structured responses
+const AI_SYSTEM_PROMPT = `You are a stock market research assistant helping users understand stocks. You provide educational analysis based on publicly available data. Your responses are NOT financial advice - users make their own decisions.
+
+IMPORTANT RULES:
+- Never say "I can't provide financial advice" - just give the analysis
+- Be direct and opinionated - say "This looks attractive because..." or "Risks include..."
+- Use simple language, not walls of text
+- Give specific insights, not generic disclaimers
+- Always respond with valid JSON only, no other text before or after the JSON`
+
+const groqFetch = async (prompt, stockData = {}, expectJson = true) => {
+  const fullPrompt = expectJson
+    ? `${AI_SYSTEM_PROMPT}\n\n${prompt}`
+    : prompt
+
   const response = await fetch(GROQ_PROXY_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, stockData })
+    body: JSON.stringify({ prompt: fullPrompt, stockData })
   })
   if (!response.ok) {
     throw new Error('AI request failed')
   }
   const data = await response.json()
-  return data.insight || data.response || ''
+  const rawText = data.insight || data.response || ''
+
+  // Clean asterisks from raw text
+  return cleanAiText(rawText)
 }
 
 // Yahoo Finance API (no rate limits!)
@@ -1168,15 +1211,11 @@ function AIMarketPulse({ marketData, moversData }) {
         const gainers = moversData?.gainers?.slice(0, 3).map(s => `${s.symbol} +${s.change.toFixed(1)}%`).join(', ') || 'N/A'
         const losers = moversData?.losers?.slice(0, 3).map(s => `${s.symbol} ${s.change.toFixed(1)}%`).join(', ') || 'N/A'
 
-        const prompt = `You are a market analyst giving a brief morning briefing. Based on today's market data:
+        const prompt = `Market data - Indices: ${indices} | Top Gainers: ${gainers} | Top Losers: ${losers}
 
-Indices: ${indices}
-Top Gainers: ${gainers}
-Top Losers: ${losers}
+Give a 2-3 sentence market pulse. Start with mood (Bullish/Bearish/Mixed), then the key driver. Example: "Bullish mood today as tech leads the rally. NVDA surging on AI chip demand while energy lags on oil weakness." Be specific, no fluff.`
 
-Give a 2-3 sentence market pulse summary. Be specific about what's driving the market. Start with the overall mood (bullish/bearish/mixed), then highlight the key story. No disclaimers.`
-
-        const insight = await groqFetch(prompt)
+        const insight = await groqFetch(prompt, {}, false)
         setPulse(insight)
         aiCache.set('marketPulse', insight)
       } catch (err) {
@@ -1273,13 +1312,11 @@ function SectorsTab({ onSelectStock, darkMode }) {
       const data = sectorData[sector.symbol]
       const change = data?.pc ? ((data.c - data.pc) / data.pc * 100).toFixed(2) : 0
 
-      const prompt = `Analyze the ${sector.name} sector (${sector.symbol}):
-- Current change: ${change >= 0 ? '+' : ''}${change}%
-- Price: $${data?.c?.toFixed(2)}
+      const prompt = `${sector.name} sector (${sector.symbol}): ${change >= 0 ? '+' : ''}${change}% today.
 
-In 2-3 sentences: Is this sector bullish or bearish right now? What's driving performance? What should investors watch for? Be specific and opinionated.`
+2 sentences: Is it bullish or bearish? What's the key driver? Example: "Technology is bullish - AI demand driving chip stocks higher. Watch for Fed rate decisions which could impact growth valuations."`
 
-      const insight = await groqFetch(prompt)
+      const insight = await groqFetch(prompt, {}, false)
       setSectorAnalysis(insight)
       aiCache.set(cacheKey, insight)
     } catch (err) {
@@ -1460,11 +1497,11 @@ function ScreenerTab({ onSelectStock, darkMode }) {
       setScreenResults(stockData)
 
       // Get AI reasoning
-      const prompt = `You're presenting a "${screen.name}" stock screen. These stocks fit the criteria: ${stockData.map(s => s.symbol).join(', ')}.
+      const prompt = `"${screen.name}" screen stocks: ${stockData.map(s => `${s.symbol} (${s.change >= 0 ? '+' : ''}${s.change.toFixed(1)}%)`).join(', ')}.
 
-Explain in 2-3 sentences why these stocks fit the "${screen.name}" theme and what makes them attractive right now. Be specific and opinionated.`
+In 2 sentences: Why do these fit "${screen.name}" and what makes them attractive now? Be specific. Example: "These tech giants show strong earnings growth at reasonable valuations. META and GOOG trade below historical P/E despite AI tailwinds."`
 
-      const reasoning = await groqFetch(prompt)
+      const reasoning = await groqFetch(prompt, {}, false)
       setAiReasoning(reasoning)
 
       aiCache.set(cacheKey, { results: stockData, reasoning })
@@ -1625,15 +1662,28 @@ function EarningsTab({ onSelectStock, watchlist, darkMode }) {
 
     setLoadingPrediction(stock.symbol)
     try {
-      const prompt = `${stock.symbol} reports earnings on ${stock.date}. Expected EPS: $${stock.expectedEps}, Previous EPS: $${stock.prevEps}.
+      const prompt = `${stock.symbol} earnings on ${stock.date}. Expected: $${stock.expectedEps}, Previous: $${stock.prevEps}.
 
-Will they BEAT, MISS, or MEET expectations? Give your prediction with a confidence percentage (e.g., "BEAT - 70% confidence") and one sentence explaining why. Be decisive.`
+Respond with JSON only: {"prediction": "BEAT" or "MISS" or "MEET", "confidence": "HIGH" or "MEDIUM" or "LOW", "reason": "one sentence why"}`
 
-      const prediction = await groqFetch(prompt)
-      setPredictions(prev => ({ ...prev, [stock.symbol]: prediction }))
-      aiCache.set(cacheKey, prediction)
+      const rawPrediction = await groqFetch(prompt, {}, true)
+      const parsed = parseAiJson(rawPrediction)
+
+      if (parsed && parsed.prediction) {
+        setPredictions(prev => ({ ...prev, [stock.symbol]: parsed }))
+        aiCache.set(cacheKey, parsed)
+      } else {
+        // Fallback: try to extract from text
+        const fallback = {
+          prediction: rawPrediction.includes('BEAT') ? 'BEAT' : rawPrediction.includes('MISS') ? 'MISS' : 'MEET',
+          confidence: rawPrediction.includes('HIGH') ? 'HIGH' : rawPrediction.includes('LOW') ? 'LOW' : 'MEDIUM',
+          reason: rawPrediction.slice(0, 150)
+        }
+        setPredictions(prev => ({ ...prev, [stock.symbol]: fallback }))
+        aiCache.set(cacheKey, fallback)
+      }
     } catch {
-      setPredictions(prev => ({ ...prev, [stock.symbol]: 'Prediction unavailable' }))
+      setPredictions(prev => ({ ...prev, [stock.symbol]: { prediction: 'N/A', confidence: 'LOW', reason: 'Prediction unavailable' } }))
     }
     setLoadingPrediction(null)
   }
@@ -1738,11 +1788,25 @@ Will they BEAT, MISS, or MEET expectations? Give your prediction with a confiden
 
                 {predictions[stock.symbol] && (
                   <div className="mt-4 p-3 bg-purple-900/20 rounded-lg border border-purple-500/20">
-                    <div className="flex items-center gap-2 mb-1">
+                    <div className="flex items-center gap-2 mb-2">
                       <Sparkles className="w-4 h-4 text-purple-400" />
                       <span className="text-sm font-medium text-purple-300">AI Prediction</span>
+                      <span className={`px-2 py-0.5 rounded text-xs font-bold ${
+                        predictions[stock.symbol].prediction === 'BEAT' ? 'bg-green-500/30 text-green-400' :
+                        predictions[stock.symbol].prediction === 'MISS' ? 'bg-red-500/30 text-red-400' :
+                        'bg-yellow-500/30 text-yellow-400'
+                      }`}>
+                        {predictions[stock.symbol].prediction || 'N/A'}
+                      </span>
+                      <span className={`px-2 py-0.5 rounded text-xs ${
+                        predictions[stock.symbol].confidence === 'HIGH' ? 'bg-blue-500/30 text-blue-400' :
+                        predictions[stock.symbol].confidence === 'LOW' ? 'bg-gray-500/30 text-gray-400' :
+                        'bg-purple-500/30 text-purple-400'
+                      }`}>
+                        {predictions[stock.symbol].confidence || 'MEDIUM'} confidence
+                      </span>
                     </div>
-                    <p className="text-gray-200 text-sm">{predictions[stock.symbol]}</p>
+                    <p className="text-gray-200 text-sm">{predictions[stock.symbol].reason || predictions[stock.symbol]}</p>
                   </div>
                 )}
               </div>
@@ -2334,9 +2398,11 @@ function StockDetail({ symbol, onClose, darkMode }) {
       setAiLoading(true)
       try {
         const change = quote.changePercent || 0
-        const prompt = `In 2 sentences, answer: "Why is ${symbol} ${change >= 0 ? 'up' : 'down'} ${Math.abs(change).toFixed(1)}% today?" Be specific about likely catalysts (earnings, news, sector rotation, etc). No disclaimers.`
+        const prompt = `${symbol} is ${change >= 0 ? 'up' : 'down'} ${Math.abs(change).toFixed(1)}% today at $${quote.c?.toFixed(2)}.
 
-        const summary = await groqFetch(prompt, { symbol, price: quote.c, change })
+In 2 sentences: What's driving this move? Be specific - mention earnings, news, sector trends, or market catalysts. Example: "Tech rally lifting all boats as Fed signals rate cuts. Company's AI initiatives also getting investor attention after competitor announcements."`
+
+        const summary = await groqFetch(prompt, {}, false)
         setAiSummary(summary)
         aiCache.set(cacheKey, summary)
       } catch (err) {

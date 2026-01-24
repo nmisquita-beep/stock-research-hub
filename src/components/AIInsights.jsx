@@ -258,36 +258,20 @@ export default function AIInsights({ darkMode, finnhubFetch }) {
         recentNewsHeadlines: news.map(n => n.headline).filter(Boolean)
       }
 
-      // Opinionated AI prompt with chart trend data
-      const prompt = `You are an opinionated stock analyst. Be decisive and give clear recommendations. Based on this data for ${sym}:
+      // JSON AI prompt for structured response
+      const prompt = `Analyze ${sym}: $${quote.c?.toFixed(2)} (${change >= 0 ? '+' : ''}${change.toFixed(2)}% today), P/E: ${peRatio ? peRatio.toFixed(1) : 'N/A'}, 52W Range: $${weekLow52?.toFixed(2) || '?'}-$${weekHigh52?.toFixed(2) || '?'} (at ${pricePosition || '?'}%), Trend: ${chartTrend}.
+${news.length > 0 ? 'News: ' + news.slice(0,3).map(n => n.headline).join(' | ') : ''}
 
-PRICE DATA:
-- Current: $${quote.c?.toFixed(2)} (${change >= 0 ? '+' : ''}${change.toFixed(2)}% today)
-- 52-Week High: $${weekHigh52?.toFixed(2) || 'N/A'} | 52-Week Low: $${weekLow52?.toFixed(2) || 'N/A'}
-- Position in 52-week range: ${pricePosition ? pricePosition + '%' : 'N/A'} (0%=at low, 100%=at high)
-- 1-Month Trend: ${chartTrend}
-
-FUNDAMENTALS:
-- P/E Ratio: ${peRatio ? peRatio.toFixed(1) : 'N/A'}
-- EPS: $${eps ? eps.toFixed(2) : 'N/A'}
-- Market Cap: $${marketCap ? (marketCap / 1e9).toFixed(1) + 'B' : 'N/A'}
-
-RECENT NEWS:
-${news.length > 0 ? news.map(n => '- ' + n.headline).join('\n') : '- No recent news'}
-
-Give your analysis in this EXACT format:
-
-RATING: [BULLISH/BEARISH/NEUTRAL] - Pick ONE, be decisive!
-
-PRICE ASSESSMENT: Is the current price attractive? Compare to 52-week range. One sentence.
-
-RECENT CATALYSTS: What's driving the stock based on news? One sentence.
-
-KEY RISK: The #1 thing that could go wrong. One sentence.
-
-KEY OPPORTUNITY: The #1 reason to be optimistic. One sentence.
-
-BOTTOM LINE: Would you BUY, HOLD, or AVOID? One decisive sentence.`
+Respond with ONLY this JSON, no other text:
+{
+  "rating": "BULLISH" or "BEARISH" or "NEUTRAL",
+  "summary": "1-2 sentence overview of the stock",
+  "strengths": ["strength 1", "strength 2", "strength 3"],
+  "risks": ["risk 1", "risk 2", "risk 3"],
+  "keyMetrics": "Brief note on valuation - is it cheap/expensive and why",
+  "catalyst": "What could move this stock soon",
+  "bottomLine": "BUY, HOLD, or AVOID - one decisive sentence"
+}`
 
       const response = await fetch(GROQ_PROXY_URL, {
         method: 'POST',
@@ -312,22 +296,39 @@ BOTTOM LINE: Would you BUY, HOLD, or AVOID? One decisive sentence.`
         throw new Error('No analysis generated')
       }
 
-      // Extract rating from response
-      const analysisText = data.insight
-      const ratingMatch = analysisText.match(/RATING:\s*(BULLISH|BEARISH|NEUTRAL)/i)
+      // Clean asterisks from response
+      const rawText = (data.insight || '').replace(/\*\*/g, '').replace(/\*/g, '').trim()
+
+      // Try to parse JSON response
+      let aiJson = null
       let sentiment = 'neutral'
-      if (ratingMatch) {
-        sentiment = ratingMatch[1].toLowerCase()
-      } else {
-        const lower = analysisText.toLowerCase()
-        if (lower.includes('bullish') || lower.includes('buy')) sentiment = 'bullish'
-        else if (lower.includes('bearish') || lower.includes('avoid') || lower.includes('sell')) sentiment = 'bearish'
+      try {
+        const jsonMatch = rawText.match(/\{[\s\S]*\}/)
+        if (jsonMatch) {
+          aiJson = JSON.parse(jsonMatch[0])
+          if (aiJson.rating) {
+            sentiment = aiJson.rating.toLowerCase()
+          }
+        }
+      } catch (e) {
+        console.log('JSON parse failed, using text fallback')
+      }
+
+      // Fallback: extract from text if no JSON
+      if (!aiJson) {
+        const ratingMatch = rawText.match(/RATING:\s*(BULLISH|BEARISH|NEUTRAL)/i)
+        if (ratingMatch) {
+          sentiment = ratingMatch[1].toLowerCase()
+        } else {
+          const lower = rawText.toLowerCase()
+          if (lower.includes('bullish') || lower.includes('buy')) sentiment = 'bullish'
+          else if (lower.includes('bearish') || lower.includes('avoid') || lower.includes('sell')) sentiment = 'bearish'
+        }
       }
 
       const analysis = {
         symbol: sym,
         name: quote.name || sym,
-        industry: '',
         price: quote.c,
         previousClose: quote.pc,
         dayHigh: quote.h,
@@ -341,7 +342,8 @@ BOTTOM LINE: Would you BUY, HOLD, or AVOID? One decisive sentence.`
         marketCap,
         chartTrend,
         news: news.slice(0, 3),
-        analysis: analysisText,
+        analysis: rawText,
+        aiJson, // Parsed JSON data
         sentiment,
         timestamp: new Date().toISOString()
       }
@@ -534,71 +536,137 @@ BOTTOM LINE: Would you BUY, HOLD, or AVOID? One decisive sentence.`
             </div>
           </div>
 
-          {/* Analysis Sections */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Price Assessment */}
-            {parseSection(currentAnalysis.analysis, 'PRICE ASSESSMENT') && (
-              <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <DollarSign className="w-5 h-5 text-blue-400" />
-                  <h4 className="font-semibold text-white">Price Assessment</h4>
+          {/* Analysis Sections - JSON format */}
+          {currentAnalysis.aiJson ? (
+            <>
+              {/* Summary */}
+              {currentAnalysis.aiJson.summary && (
+                <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4">
+                  <p className="text-gray-200 text-base leading-relaxed">{currentAnalysis.aiJson.summary}</p>
                 </div>
-                <p className="text-gray-300 text-sm leading-relaxed">
-                  {parseMarkdown(parseSection(currentAnalysis.analysis, 'PRICE ASSESSMENT'))}
-                </p>
-              </div>
-            )}
+              )}
 
-            {/* Recent Catalysts */}
-            {parseSection(currentAnalysis.analysis, 'RECENT CATALYSTS') && (
-              <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <Newspaper className="w-5 h-5 text-purple-400" />
-                  <h4 className="font-semibold text-white">Recent Catalysts</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Strengths */}
+                {currentAnalysis.aiJson.strengths && currentAnalysis.aiJson.strengths.length > 0 && (
+                  <div className="rounded-xl border border-green-500/30 bg-green-500/5 p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <CheckCircle className="w-5 h-5 text-green-400" />
+                      <h4 className="font-semibold text-green-400">Strengths</h4>
+                    </div>
+                    <ul className="space-y-2">
+                      {currentAnalysis.aiJson.strengths.map((s, i) => (
+                        <li key={i} className="flex items-start gap-2 text-sm text-gray-300">
+                          <span className="text-green-400 mt-0.5">+</span>
+                          <span>{s}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Risks */}
+                {currentAnalysis.aiJson.risks && currentAnalysis.aiJson.risks.length > 0 && (
+                  <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <AlertTriangle className="w-5 h-5 text-red-400" />
+                      <h4 className="font-semibold text-red-400">Risks</h4>
+                    </div>
+                    <ul className="space-y-2">
+                      {currentAnalysis.aiJson.risks.map((r, i) => (
+                        <li key={i} className="flex items-start gap-2 text-sm text-gray-300">
+                          <span className="text-red-400 mt-0.5">!</span>
+                          <span>{r}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Key Metrics */}
+                {currentAnalysis.aiJson.keyMetrics && (
+                  <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <DollarSign className="w-5 h-5 text-blue-400" />
+                      <h4 className="font-semibold text-white">Valuation</h4>
+                    </div>
+                    <p className="text-gray-300 text-sm leading-relaxed">{currentAnalysis.aiJson.keyMetrics}</p>
+                  </div>
+                )}
+
+                {/* Catalyst */}
+                {currentAnalysis.aiJson.catalyst && (
+                  <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Lightbulb className="w-5 h-5 text-yellow-400" />
+                      <h4 className="font-semibold text-white">Upcoming Catalyst</h4>
+                    </div>
+                    <p className="text-gray-300 text-sm leading-relaxed">{currentAnalysis.aiJson.catalyst}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Bottom Line */}
+              {currentAnalysis.aiJson.bottomLine && (
+                <div className={`rounded-xl border ${s.border} ${s.bg} p-4`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Target className="w-5 h-5 ${s.color}" />
+                    <h4 className="font-semibold text-white">Bottom Line</h4>
+                  </div>
+                  <p className="text-white font-medium">{currentAnalysis.aiJson.bottomLine}</p>
                 </div>
-                <p className="text-gray-300 text-sm leading-relaxed">
-                  {parseMarkdown(parseSection(currentAnalysis.analysis, 'RECENT CATALYSTS'))}
-                </p>
-              </div>
-            )}
-
-            {/* Key Opportunity */}
-            {parseSection(currentAnalysis.analysis, 'KEY OPPORTUNITY') && (
-              <div className="rounded-xl border border-green-500/30 bg-green-500/5 p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <CheckCircle className="w-5 h-5 text-green-400" />
-                  <h4 className="font-semibold text-green-400">Key Opportunity</h4>
+              )}
+            </>
+          ) : (
+            /* Fallback: Text-based display */
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {parseSection(currentAnalysis.analysis, 'PRICE ASSESSMENT') && (
+                <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <DollarSign className="w-5 h-5 text-blue-400" />
+                    <h4 className="font-semibold text-white">Price Assessment</h4>
+                  </div>
+                  <p className="text-gray-300 text-sm leading-relaxed">
+                    {parseSection(currentAnalysis.analysis, 'PRICE ASSESSMENT')}
+                  </p>
                 </div>
-                <p className="text-gray-300 text-sm leading-relaxed">
-                  {parseMarkdown(parseSection(currentAnalysis.analysis, 'KEY OPPORTUNITY'))}
-                </p>
-              </div>
-            )}
+              )}
 
-            {/* Key Risk */}
-            {parseSection(currentAnalysis.analysis, 'KEY RISK') && (
-              <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <AlertTriangle className="w-5 h-5 text-red-400" />
-                  <h4 className="font-semibold text-red-400">Key Risk</h4>
+              {parseSection(currentAnalysis.analysis, 'KEY OPPORTUNITY') && (
+                <div className="rounded-xl border border-green-500/30 bg-green-500/5 p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <CheckCircle className="w-5 h-5 text-green-400" />
+                    <h4 className="font-semibold text-green-400">Opportunity</h4>
+                  </div>
+                  <p className="text-gray-300 text-sm leading-relaxed">
+                    {parseSection(currentAnalysis.analysis, 'KEY OPPORTUNITY')}
+                  </p>
                 </div>
-                <p className="text-gray-300 text-sm leading-relaxed">
-                  {parseMarkdown(parseSection(currentAnalysis.analysis, 'KEY RISK'))}
-                </p>
-              </div>
-            )}
-          </div>
+              )}
 
-          {/* Bottom Line */}
-          {parseSection(currentAnalysis.analysis, 'BOTTOM LINE') && (
-            <div className={`rounded-xl border ${s.border} ${s.bg} p-4`}>
-              <div className="flex items-center gap-2 mb-2">
-                <Target className="w-5 h-5" style={{ color: s.color.replace('text-', '') }} />
-                <h4 className="font-semibold text-white">Bottom Line</h4>
-              </div>
-              <p className="text-white font-medium">
-                {parseMarkdown(parseSection(currentAnalysis.analysis, 'BOTTOM LINE'))}
-              </p>
+              {parseSection(currentAnalysis.analysis, 'KEY RISK') && (
+                <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <AlertTriangle className="w-5 h-5 text-red-400" />
+                    <h4 className="font-semibold text-red-400">Risk</h4>
+                  </div>
+                  <p className="text-gray-300 text-sm leading-relaxed">
+                    {parseSection(currentAnalysis.analysis, 'KEY RISK')}
+                  </p>
+                </div>
+              )}
+
+              {parseSection(currentAnalysis.analysis, 'BOTTOM LINE') && (
+                <div className={`rounded-xl border ${s.border} ${s.bg} p-4 md:col-span-2`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Target className="w-5 h-5" />
+                    <h4 className="font-semibold text-white">Bottom Line</h4>
+                  </div>
+                  <p className="text-white font-medium">
+                    {parseSection(currentAnalysis.analysis, 'BOTTOM LINE')}
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
