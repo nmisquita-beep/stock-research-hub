@@ -436,7 +436,7 @@ function OnboardingTour({ onComplete }) {
   const [highlightRect, setHighlightRect] = useState(null)
   const [isAnimating, setIsAnimating] = useState(false)
 
-  // Step 0 = Welcome, Step 5 = Finish (both centered modals)
+  // Step 0 = Welcome, Step 4 = Finish (both centered modals)
   const steps = [
     {
       type: 'welcome',
@@ -446,16 +446,9 @@ function OnboardingTour({ onComplete }) {
     },
     {
       type: 'highlight',
-      target: '[data-tour="overview"]',
-      title: 'Market Overview',
-      description: 'Track major indices like S&P 500 and see trending stocks at a glance.',
-      position: 'bottom'
-    },
-    {
-      type: 'highlight',
-      target: '[data-tour="watchlist"]',
-      title: 'Your Watchlist',
-      description: 'Build and monitor your personal list of stocks. Add any stock you want to track.',
+      target: '[data-tour="dashboard"]',
+      title: 'Dashboard',
+      description: 'Your home base - market indices, your watchlist, and top movers all in one place.',
       position: 'bottom'
     },
     {
@@ -979,11 +972,10 @@ function StockNewsModal({ symbol, onClose }) {
 // ============ MOBILE BOTTOM NAV ============
 function MobileBottomNav({ activePage, setActivePage, darkMode }) {
   const navItems = [
-    { id: 'overview', label: 'Home', icon: Home },
-    { id: 'watchlist', label: 'Watchlist', icon: Star },
-    { id: 'news', label: 'News', icon: Newspaper },
+    { id: 'dashboard', label: 'Dashboard', icon: Home },
     { id: 'insights', label: 'AI', icon: Brain },
-    { id: 'settings', label: 'More', icon: Settings }
+    { id: 'news', label: 'News', icon: Newspaper },
+    { id: 'settings', label: 'Settings', icon: Settings }
   ]
 
   return (
@@ -1009,9 +1001,7 @@ function DesktopNav({ activePage, setActivePage, onSearchOpen, darkMode, toggleD
   const [showUserMenu, setShowUserMenu] = useState(false)
 
   const navItems = [
-    { id: 'overview', label: 'Overview', icon: Home, tour: 'overview' },
-    { id: 'watchlist', label: 'Watchlist', icon: Star, tour: 'watchlist' },
-    { id: 'explore', label: 'Movers', icon: TrendingUp, tour: 'movers' },
+    { id: 'dashboard', label: 'Dashboard', icon: Home, tour: 'dashboard' },
     { id: 'insights', label: 'AI Insights', icon: Brain, tour: 'insights' },
     { id: 'news', label: 'News', icon: Newspaper, tour: 'news' },
     { id: 'settings', label: 'Settings', icon: Settings }
@@ -1105,6 +1095,254 @@ function DesktopNav({ activePage, setActivePage, onSearchOpen, darkMode, toggleD
 }
 
 // ============ MARKET OVERVIEW ============
+// ============ COMBINED DASHBOARD ============
+function Dashboard({ watchlist, setWatchlist, onSelectStock, darkMode }) {
+  const [marketData, setMarketData] = useState({})
+  const [watchlistQuotes, setWatchlistQuotes] = useState({})
+  const [moversData, setMoversData] = useState({ gainers: [], losers: [] })
+  const [loading, setLoading] = useState(true)
+  const [showAddStock, setShowAddStock] = useState(false)
+  const { addToast } = useToast()
+
+  const indices = ['SPY', 'QQQ', 'DIA', 'IWM']
+  const popularStocks = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'AMD', 'JPM', 'V', 'MA', 'DIS', 'NFLX', 'PYPL', 'INTC', 'CRM']
+
+  const fetchAllData = useCallback(async () => {
+    setLoading(true)
+
+    // Combine all symbols to fetch (remove duplicates)
+    const allSymbols = [...new Set([...indices, ...watchlist, ...popularStocks])]
+
+    // Fetch all at once - Yahoo has no rate limits
+    const results = await Promise.allSettled(
+      allSymbols.map(symbol => yahooFetch(symbol))
+    )
+
+    const allData = {}
+    results.forEach((result, i) => {
+      const symbol = allSymbols[i]
+      if (result.status === 'fulfilled' && result.value) {
+        const normalized = normalizeYahooQuote(result.value)
+        if (normalized && normalized.c > 0) {
+          allData[symbol] = normalized
+        }
+      }
+    })
+
+    // Split data into categories
+    const market = {}
+    indices.forEach(s => { if (allData[s]) market[s] = allData[s] })
+    setMarketData(market)
+
+    const quotes = {}
+    watchlist.forEach(s => { if (allData[s]) quotes[s] = allData[s] })
+    setWatchlistQuotes(quotes)
+
+    // Calculate movers from popular stocks
+    const stockData = popularStocks
+      .filter(s => allData[s] && allData[s].pc > 0)
+      .map(s => ({
+        symbol: s,
+        price: allData[s].c,
+        change: ((allData[s].c - allData[s].pc) / allData[s].pc) * 100
+      }))
+      .sort((a, b) => b.change - a.change)
+
+    setMoversData({
+      gainers: stockData.slice(0, 5),
+      losers: stockData.slice(-5).reverse()
+    })
+
+    setLoading(false)
+  }, [watchlist])
+
+  useEffect(() => {
+    fetchAllData()
+    const interval = setInterval(fetchAllData, 60000)
+    return () => clearInterval(interval)
+  }, [fetchAllData])
+
+  const mood = calculateMarketMood(marketData)
+
+  const addSymbol = async (symbol) => {
+    if (watchlist.includes(symbol)) { addToast('Already in watchlist', 'error'); return }
+    try {
+      const data = await yahooFetch(symbol)
+      const normalized = normalizeYahooQuote(data)
+      if (!normalized || normalized.c === 0) { addToast('Invalid symbol', 'error'); return }
+      setWatchlist([...watchlist, symbol])
+      setWatchlistQuotes(prev => ({ ...prev, [symbol]: normalized }))
+      addToast(`${symbol} added`, 'success')
+      setShowAddStock(false)
+    } catch { addToast('Failed to add', 'error') }
+  }
+
+  const removeSymbol = (symbol) => {
+    setWatchlist(watchlist.filter(s => s !== symbol))
+    addToast(`${symbol} removed`, 'info')
+  }
+
+  return (
+    <div className="space-y-8">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold text-white">Dashboard</h2>
+        <button onClick={fetchAllData} disabled={loading} className="flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-gray-700 hover:bg-gray-600 text-gray-200">
+          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
+        </button>
+      </div>
+
+      {/* Market Indices Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+        {indices.map(symbol => {
+          const data = marketData[symbol]
+          const change = data ? data.c - data.pc : 0
+          const pctChange = data?.pc ? (change / data.pc) * 100 : 0
+          const positive = change >= 0
+          const sparkData = data ? generateSparklineData(data.c, data.pc) : []
+          return (
+            <div key={symbol} onClick={() => onSelectStock(symbol)}
+              className="rounded-xl p-4 cursor-pointer transition-all hover:scale-[1.02] bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700 hover:border-gray-600">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-medium text-gray-300">{symbol}</span>
+                {positive ? <TrendingUp className="w-4 h-4 text-green-500" /> : <TrendingDown className="w-4 h-4 text-red-500" />}
+              </div>
+              {loading ? <Skeleton className="h-8 w-24" /> : (
+                <div className="flex items-end justify-between">
+                  <div>
+                    <div className="text-xl font-bold text-white">{formatCurrency(data?.c)}</div>
+                    <div className={`text-sm font-medium ${positive ? 'text-green-400' : 'text-red-400'}`}>{positive ? '+' : ''}{pctChange.toFixed(2)}%</div>
+                  </div>
+                  <MiniSparkline data={sparkData} positive={positive} />
+                </div>
+              )}
+            </div>
+          )
+        })}
+        <FearGreedIndicator value={mood} />
+      </div>
+
+      {/* Your Watchlist Section */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+            <Star className="w-5 h-5 text-yellow-400" />
+            Your Watchlist
+          </h3>
+          <button onClick={() => setShowAddStock(!showAddStock)} className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg text-white text-sm transition-all">
+            <Plus className="w-4 h-4" /> Add
+          </button>
+        </div>
+
+        {showAddStock && (
+          <div className="max-w-md">
+            <PredictiveSearch onSelect={addSymbol} inline placeholder="Search to add..." />
+          </div>
+        )}
+
+        {watchlist && watchlist.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+            {watchlist.map(symbol => {
+              const quote = watchlistQuotes[symbol]
+              const change = quote ? quote.c - quote.pc : 0
+              const pctChange = quote?.pc ? (change / quote.pc) * 100 : 0
+              const positive = change >= 0
+              const sparkData = quote ? generateSparklineData(quote.c, quote.pc) : []
+              return (
+                <div key={symbol} className="rounded-xl p-3 border transition-all hover:scale-[1.02] bg-gray-800/50 border-gray-700 hover:border-gray-600">
+                  <div className="flex items-center justify-between mb-2">
+                    <button onClick={() => onSelectStock(symbol)} className="font-bold hover:text-blue-400 text-white">{symbol}</button>
+                    <button onClick={() => removeSymbol(symbol)} className="p-1 hover:bg-red-600/20 rounded text-gray-400 hover:text-red-400">
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                  {quote ? (
+                    <div className="flex items-end justify-between">
+                      <div>
+                        <div className="text-lg font-bold text-white">{formatCurrency(quote.c)}</div>
+                        <div className={`text-xs font-medium flex items-center gap-1 ${positive ? 'text-green-400' : 'text-red-400'}`}>
+                          {positive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                          {positive ? '+' : ''}{pctChange.toFixed(2)}%
+                        </div>
+                      </div>
+                      <MiniSparkline data={sparkData} positive={positive} height={32} />
+                    </div>
+                  ) : (
+                    <Skeleton className="h-10 w-full" />
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="rounded-xl p-8 border text-center bg-gray-800/50 border-gray-700">
+            <Star className="w-10 h-10 mx-auto mb-3 text-gray-600" />
+            <p className="text-gray-400">Add stocks to track them here</p>
+          </div>
+        )}
+      </div>
+
+      {/* Today's Movers Section */}
+      <div className="space-y-4">
+        <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+          <Activity className="w-5 h-5 text-blue-400" />
+          Today's Movers
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Top Gainers */}
+          <div className="rounded-xl p-4 border bg-gray-800/50 border-gray-700">
+            <h4 className="font-medium text-white mb-3 flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-green-400" />
+              Top Gainers
+            </h4>
+            <div className="space-y-2">
+              {loading ? (
+                [1,2,3,4,5].map(i => <Skeleton key={i} className="h-10 w-full" />)
+              ) : moversData.gainers.map((stock, i) => (
+                <button key={stock.symbol} onClick={() => onSelectStock(stock.symbol)}
+                  className="w-full flex items-center justify-between p-2 rounded-lg transition-colors hover:bg-gray-700/50">
+                  <div className="flex items-center gap-2">
+                    <span className="text-gray-500 text-xs w-3">{i + 1}</span>
+                    <span className="font-medium text-white text-sm">{stock.symbol}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-green-400 text-sm font-medium">+{stock.change.toFixed(2)}%</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Top Losers */}
+          <div className="rounded-xl p-4 border bg-gray-800/50 border-gray-700">
+            <h4 className="font-medium text-white mb-3 flex items-center gap-2">
+              <TrendingDown className="w-4 h-4 text-red-400" />
+              Top Losers
+            </h4>
+            <div className="space-y-2">
+              {loading ? (
+                [1,2,3,4,5].map(i => <Skeleton key={i} className="h-10 w-full" />)
+              ) : moversData.losers.map((stock, i) => (
+                <button key={stock.symbol} onClick={() => onSelectStock(stock.symbol)}
+                  className="w-full flex items-center justify-between p-2 rounded-lg transition-colors hover:bg-gray-700/50">
+                  <div className="flex items-center gap-2">
+                    <span className="text-gray-500 text-xs w-3">{i + 1}</span>
+                    <span className="font-medium text-white text-sm">{stock.symbol}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-red-400 text-sm font-medium">{stock.change.toFixed(2)}%</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ============ MARKET OVERVIEW (LEGACY - KEPT FOR REFERENCE) ============
 function MarketOverview({ onSelectStock, darkMode }) {
   const [marketData, setMarketData] = useState({})
   const [trendingData, setTrendingData] = useState({})
@@ -2158,7 +2396,7 @@ function SettingsPage({ darkMode, syncStatus, onShowTour }) {
 function AppContent() {
   const { user, loading: authLoading, signIn } = useAuth()
   const { addToast } = useToast()
-  const [activePage, setActivePage] = useState('overview')
+  const [activePage, setActivePage] = useState('dashboard')
   const [selectedStock, setSelectedStock] = useState(null)
   const [showSearch, setShowSearch] = useState(false)
   const [darkMode, setDarkMode] = useState(true)
@@ -2234,9 +2472,7 @@ function AppContent() {
       )}
 
       <main className="max-w-7xl mx-auto px-4 py-6">
-        {activePage === 'overview' && <MarketOverview onSelectStock={setSelectedStock} darkMode={darkMode} />}
-        {activePage === 'watchlist' && <Watchlist watchlist={watchlist} setWatchlist={setWatchlist} onSelectStock={setSelectedStock} darkMode={darkMode} />}
-        {activePage === 'explore' && <MarketMovers onSelectStock={setSelectedStock} darkMode={darkMode} />}
+        {activePage === 'dashboard' && <Dashboard watchlist={watchlist} setWatchlist={setWatchlist} onSelectStock={setSelectedStock} darkMode={darkMode} />}
         {activePage === 'insights' && <AIInsights darkMode={darkMode} finnhubFetch={finnhubFetch} />}
         {activePage === 'news' && <NewsPage darkMode={darkMode} watchlist={watchlist} />}
         {activePage === 'settings' && <SettingsPage darkMode={darkMode} syncStatus={syncStatus} onShowTour={() => setShowTour(true)} />}
