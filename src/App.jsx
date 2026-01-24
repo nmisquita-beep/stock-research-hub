@@ -638,26 +638,29 @@ function StockNewsModal({ symbol, onClose }) {
           <button onClick={onClose} className="p-2 hover:bg-gray-700 rounded-lg"><X className="w-5 h-5 text-gray-400" /></button>
         </div>
         <div className="overflow-y-auto max-h-[calc(80vh-80px)] p-4 space-y-3">
-          {loading ? [1,2,3].map(i => <Skeleton key={i} className="h-20 w-full" />) : news.length > 0 ? news.map((article, i) => {
-            const s = analyzeSentiment(article.headline)
+          {loading ? [1,2,3].map(i => <Skeleton key={i} className="h-24 w-full" />) : news.length > 0 ? news.map((article, i) => {
             const hasImage = article.image && article.image.length > 10
+            const summary = article.summary || ''
             return (
               <a key={i} href={article.url} target="_blank" rel="noopener noreferrer" className="block bg-gray-700/30 hover:bg-gray-700/50 rounded-lg transition-all group overflow-hidden">
                 <div className="flex">
                   {hasImage && (
-                    <div className="hidden sm:block w-24 h-20 flex-shrink-0">
+                    <div className="hidden sm:block w-28 h-24 flex-shrink-0">
                       <img src={article.image} alt="" className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none' }} />
                     </div>
                   )}
                   <div className="flex-1 p-4">
-                    <h4 className="text-white font-medium group-hover:text-blue-400 line-clamp-2">{article.headline}</h4>
-                    <div className="flex items-center gap-3 mt-2 text-xs">
+                    <h4 className="text-white font-medium group-hover:text-blue-400 line-clamp-2 mb-1">{article.headline}</h4>
+                    {summary && (
+                      <p className="text-sm text-gray-400 line-clamp-1 mb-2">{summary}</p>
+                    )}
+                    <div className="flex items-center gap-2 text-xs">
                       <span className="text-gray-300">{article.source}</span>
+                      <span className="text-gray-500">•</span>
                       <span className="text-gray-400 flex items-center gap-1">
                         <Clock className="w-3 h-3" />
                         {formatTimeAgo(article.datetime)}
                       </span>
-                      <span className={`px-2 py-0.5 rounded-full ${s.label === 'bullish' ? 'bg-green-500/20 text-green-400' : s.label === 'bearish' ? 'bg-red-500/20 text-red-400' : 'bg-gray-500/20 text-gray-400'}`}>{s.label}</span>
                     </div>
                   </div>
                 </div>
@@ -1211,6 +1214,22 @@ const parseNewsResponse = (data) => {
   return []
 }
 
+// ============ MARKET-RELEVANT KEYWORDS ============
+const MARKET_KEYWORDS = [
+  'stock', 'stocks', 'market', 'markets', 'trading', 'trader', 'trade',
+  'earnings', 'shares', 'share', 'investor', 'investors', 'investment',
+  's&p', 'nasdaq', 'dow', 'nyse', 'fed', 'federal reserve',
+  'economy', 'economic', 'inflation', 'interest rate', 'rates',
+  'ipo', 'merger', 'acquisition', 'acquire', 'deal',
+  'ceo', 'cfo', 'quarterly', 'quarter', 'q1', 'q2', 'q3', 'q4',
+  'revenue', 'profit', 'profits', 'loss', 'losses', 'earnings',
+  'bull', 'bear', 'bullish', 'bearish', 'rally', 'crash', 'surge', 'plunge',
+  'wall street', 'hedge fund', 'etf', 'mutual fund', 'dividend',
+  'sec', 'regulation', 'antitrust', 'layoff', 'layoffs', 'hiring',
+  'forecast', 'guidance', 'outlook', 'analyst', 'analysts', 'upgrade', 'downgrade',
+  'billion', 'million', 'valuation', 'market cap', 'aapl', 'msft', 'googl', 'amzn', 'nvda', 'tsla', 'meta'
+]
+
 // ============ NEWS PAGE ============
 function NewsPage({ darkMode }) {
   const [news, setNews] = useState([])
@@ -1218,14 +1237,20 @@ function NewsPage({ darkMode }) {
   const [category, setCategory] = useState('general')
   const categories = [
     { id: 'general', label: 'Market News' },
-    { id: 'forex', label: 'Forex' },
-    { id: 'merger', label: 'M&A' }
+    { id: 'merger', label: 'M&A' },
+    { id: 'technology', label: 'Technology' }
   ]
 
   const isCryptoRelated = (article) => {
     if (!article) return false
     const text = `${article.headline || ''} ${article.summary || ''}`.toLowerCase()
     return CRYPTO_KEYWORDS.some(keyword => text.includes(keyword))
+  }
+
+  const isMarketRelevant = (article) => {
+    if (!article) return false
+    const text = `${article.headline || ''} ${article.summary || ''}`.toLowerCase()
+    return MARKET_KEYWORDS.some(keyword => text.includes(keyword))
   }
 
   const fetchNews = useCallback(async () => {
@@ -1239,14 +1264,17 @@ function NewsPage({ darkMode }) {
       let articles = parseNewsResponse(data)
       console.log('Parsed articles count:', articles.length)
 
-      // Filter out crypto by default
+      // Filter out crypto
       articles = articles.filter(article => !isCryptoRelated(article))
-      console.log('After crypto filter:', articles.length)
+
+      // Filter for market-relevant news only
+      articles = articles.filter(article => isMarketRelevant(article))
+      console.log('After market filter:', articles.length)
 
       // Sort by datetime (newest first)
       articles.sort((a, b) => (b.datetime || 0) - (a.datetime || 0))
 
-      setNews(articles.slice(0, 20))
+      setNews(articles.slice(0, 25))
     } catch (error) {
       console.error('News fetch error:', error)
       setNews([])
@@ -1286,7 +1314,7 @@ function NewsPage({ darkMode }) {
       {loading ? (
         <div className="space-y-4">
           {[1, 2, 3, 4, 5].map(i => (
-            <div key={i} className="h-28 rounded-xl animate-pulse bg-gray-800" />
+            <div key={i} className="h-32 rounded-xl animate-pulse bg-gray-800" />
           ))}
         </div>
       ) : news.length === 0 ? (
@@ -1298,15 +1326,15 @@ function NewsPage({ darkMode }) {
       ) : (
         <div className="space-y-3">
           {news.map((article, i) => {
-            const sentiment = analyzeSentiment(article.headline)
             const hasImage = article.image && article.image.length > 10
+            const summary = article.summary || ''
             return (
               <a key={i} href={article.url} target="_blank" rel="noopener noreferrer"
-                className="block rounded-xl border transition-all hover:scale-[1.005] bg-gray-800/50 border-gray-700 hover:border-gray-600 hover:bg-gray-800 overflow-hidden">
+                className="block rounded-xl border transition-all hover:scale-[1.002] bg-gray-800/50 border-gray-700 hover:border-gray-600 hover:bg-gray-800 overflow-hidden group">
                 <div className="flex">
                   {/* Thumbnail */}
                   {hasImage && (
-                    <div className="hidden sm:block w-32 h-24 flex-shrink-0">
+                    <div className="hidden sm:block w-36 h-28 flex-shrink-0">
                       <img
                         src={article.image}
                         alt=""
@@ -1317,21 +1345,20 @@ function NewsPage({ darkMode }) {
                   )}
                   {/* Content */}
                   <div className="flex-1 p-4">
-                    <h3 className="font-medium mb-2 line-clamp-2 text-white group-hover:text-blue-400">
+                    <h3 className="font-medium mb-1.5 line-clamp-2 text-white group-hover:text-blue-400 transition-colors">
                       {article.headline}
                     </h3>
-                    <div className="flex items-center gap-3 text-sm flex-wrap">
+                    {summary && (
+                      <p className="text-sm text-gray-400 line-clamp-2 mb-2">
+                        {summary}
+                      </p>
+                    )}
+                    <div className="flex items-center gap-3 text-sm">
                       <span className="text-gray-300 font-medium">{article.source}</span>
+                      <span className="text-gray-500">•</span>
                       <span className="text-gray-400 flex items-center gap-1">
                         <Clock className="w-3 h-3" />
                         {formatTimeAgo(article.datetime)}
-                      </span>
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                        sentiment.label === 'bullish' ? 'bg-green-500/20 text-green-400' :
-                        sentiment.label === 'bearish' ? 'bg-red-500/20 text-red-400' :
-                        'bg-gray-500/20 text-gray-400'
-                      }`}>
-                        {sentiment.label}
                       </span>
                     </div>
                   </div>
