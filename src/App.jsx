@@ -7,7 +7,8 @@ import {
   Cloud, CloudOff, LogIn, LogOut, User, Brain,
   Filter, Grid3X3, PieChart, Target, DollarSign, Award, Layers,
   ArrowUpRight, ArrowDownRight, Info, Building, ChevronDown, Eye,
-  Crown, Leaf, Heart, Cpu, TrendingDown as TrendDown, Gem, Shield, LayoutGrid, List
+  Crown, Leaf, Heart, Cpu, TrendingDown as TrendDown, Gem, Shield, LayoutGrid, List,
+  Menu, ChevronUp, ArrowUp
 } from 'lucide-react'
 import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip as RechartsTooltip, CartesianGrid, BarChart, Bar, ComposedChart, Line } from 'recharts'
 import AIInsights from './components/AIInsights'
@@ -1324,10 +1325,11 @@ function PredictiveSearch({ onSelect, onClose, placeholder = "Search stocks...",
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-start justify-center pt-20 z-50" onClick={onClose}>
-      <div ref={wrapperRef} className="bg-gray-800 rounded-xl w-full max-w-lg mx-4 shadow-2xl border border-gray-700 overflow-hidden" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center gap-3 p-4 border-b border-gray-700">
-          <Search className="w-5 h-5 text-gray-400" />
+    <div className="fixed inset-0 bg-black/70 sm:bg-black/60 backdrop-blur-sm flex items-start justify-center pt-4 sm:pt-20 z-50" onClick={onClose}>
+      <div ref={wrapperRef} className="bg-gray-800 sm:rounded-xl w-full h-full sm:h-auto sm:max-w-lg sm:mx-4 shadow-2xl sm:border border-gray-700 overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+        {/* Search Header */}
+        <div className="flex items-center gap-3 p-4 border-b border-gray-700 flex-shrink-0">
+          <Search className="w-5 h-5 text-gray-400 flex-shrink-0" />
           <input
             ref={inputRef}
             type="text"
@@ -1337,12 +1339,29 @@ function PredictiveSearch({ onSelect, onClose, placeholder = "Search stocks...",
             placeholder={placeholder}
             className="flex-1 bg-transparent text-white placeholder-gray-400 outline-none text-lg"
           />
-          <kbd className="px-2 py-1 text-xs bg-gray-700 rounded text-gray-300">ESC</kbd>
+          {query && (
+            <button
+              onClick={() => { setQuery(''); setResults([]) }}
+              className="p-1.5 rounded-lg hover:bg-gray-700 sm:hidden"
+              aria-label="Clear search"
+            >
+              <X className="w-5 h-5 text-gray-400" />
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            className="sm:hidden p-2 -mr-2 text-blue-400 font-medium"
+          >
+            Cancel
+          </button>
+          <kbd className="hidden sm:block px-2 py-1 text-xs bg-gray-700 rounded text-gray-300">ESC</kbd>
         </div>
-        <div className="max-h-80 overflow-y-auto">
+
+        {/* Results */}
+        <div className="flex-1 overflow-y-auto sm:max-h-96">
           {loading ? (
-            <div className="p-4 text-center">
-              <RefreshCw className="w-5 h-5 animate-spin mx-auto text-gray-400" />
+            <div className="p-6 text-center">
+              <RefreshCw className="w-6 h-6 animate-spin mx-auto text-gray-400" />
               <p className="text-gray-400 mt-2">Searching...</p>
             </div>
           ) : results.length > 0 ? (
@@ -1351,20 +1370,20 @@ function PredictiveSearch({ onSelect, onClose, placeholder = "Search stocks...",
                 key={item.symbol}
                 onClick={() => handleSelect(item)}
                 onMouseEnter={() => setSelectedIndex(i)}
-                className={`w-full flex items-center justify-between p-4 transition-colors ${
+                className={`w-full flex items-center justify-between p-4 transition-colors border-b border-gray-700/50 last:border-0 active:bg-gray-600 ${
                   i === selectedIndex ? 'bg-blue-600/30' : 'hover:bg-gray-700'
                 }`}
               >
                 <div className="text-left">
                   <div className="flex items-center gap-2">
-                    <span className="text-white font-medium">{item.symbol}</span>
+                    <span className="text-white font-bold">{item.symbol}</span>
                     <span className={`text-[10px] px-1.5 py-0.5 rounded ${
                       item.type === 'ETF' ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'
                     }`}>
                       {item.type}
                     </span>
                   </div>
-                  <div className="text-gray-400 text-sm">{item.name}</div>
+                  <div className="text-gray-400 text-sm mt-0.5">{item.name}</div>
                 </div>
                 <ChevronRight className="w-4 h-4 text-gray-400" />
               </button>
@@ -1378,7 +1397,8 @@ function PredictiveSearch({ onSelect, onClose, placeholder = "Search stocks...",
             </div>
           )}
         </div>
-        <div className="p-3 border-t border-gray-700 flex items-center justify-between text-xs text-gray-500">
+        {/* Footer - hidden on mobile */}
+        <div className="hidden sm:flex p-3 border-t border-gray-700 items-center justify-between text-xs text-gray-500 flex-shrink-0">
           <span><kbd className="px-1 bg-gray-700 rounded">↑↓</kbd> navigate <kbd className="px-1 bg-gray-700 rounded ml-2">↵</kbd> select</span>
           <span><kbd className="px-1 bg-gray-700 rounded">esc</kbd> close</span>
         </div>
@@ -1540,29 +1560,97 @@ function StockNewsModal({ symbol, onClose }) {
 }
 
 // ============ MOBILE BOTTOM NAV ============
-function MobileBottomNav({ activePage, setActivePage, darkMode }) {
-  const navItems = [
+function MobileBottomNav({ activePage, setActivePage, onSearchOpen, darkMode }) {
+  const [showMoreMenu, setShowMoreMenu] = useState(false)
+
+  const mainItems = [
     { id: 'dashboard', label: 'Home', icon: Home },
     { id: 'explore', label: 'Explore', icon: Grid3X3 },
     { id: 'insights', label: 'AI', icon: Brain },
-    { id: 'earnings', label: 'Earnings', icon: Calendar },
-    { id: 'settings', label: 'More', icon: Settings }
+    { id: 'news', label: 'News', icon: Newspaper }
   ]
 
+  const moreItems = [
+    { id: 'screener', label: 'Screener', icon: Filter },
+    { id: 'earnings', label: 'Earnings', icon: Calendar },
+    { id: 'watchlist', label: 'Watchlist', icon: Star },
+    { id: 'settings', label: 'Settings', icon: Settings }
+  ]
+
+  const isMoreActive = moreItems.some(item => item.id === activePage)
+
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-gray-800/95 backdrop-blur-lg border-t border-gray-700 z-40 safe-area-pb">
-      <div className="flex items-center justify-around py-2">
-        {navItems.map(item => (
-          <button key={item.id} onClick={() => setActivePage(item.id)}
-            className={`flex flex-col items-center gap-1 px-2 py-2 rounded-lg transition-all ${
-              activePage === item.id ? 'text-blue-500' : 'text-gray-400'
-            }`}>
-            <item.icon className="w-5 h-5" />
-            <span className="text-[10px]">{item.label}</span>
+    <>
+      {/* More Menu Overlay */}
+      {showMoreMenu && (
+        <div className="md:hidden fixed inset-0 z-50" onClick={() => setShowMoreMenu(false)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div
+            className="absolute bottom-20 left-4 right-4 bg-gray-800 rounded-2xl border border-gray-700 shadow-2xl overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="p-2">
+              {moreItems.map(item => (
+                <button
+                  key={item.id}
+                  onClick={() => { setActivePage(item.id); setShowMoreMenu(false) }}
+                  className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-xl transition-all ${
+                    activePage === item.id
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-300 hover:bg-gray-700 active:bg-gray-600'
+                  }`}
+                >
+                  <item.icon className="w-5 h-5" />
+                  <span className="font-medium">{item.label}</span>
+                </button>
+              ))}
+            </div>
+            <div className="border-t border-gray-700 p-2">
+              <button
+                onClick={() => { onSearchOpen(); setShowMoreMenu(false) }}
+                className="w-full flex items-center gap-4 px-4 py-3.5 rounded-xl text-gray-300 hover:bg-gray-700 active:bg-gray-600 transition-all"
+              >
+                <Search className="w-5 h-5" />
+                <span className="font-medium">Search Stocks</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bottom Nav Bar */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-gray-800/95 backdrop-blur-lg border-t border-gray-700 z-40 pb-safe">
+        <div className="flex items-center justify-around py-1">
+          {mainItems.map(item => (
+            <button
+              key={item.id}
+              onClick={() => setActivePage(item.id)}
+              aria-label={item.label}
+              className={`flex flex-col items-center justify-center gap-0.5 min-w-[64px] min-h-[52px] px-2 py-1.5 rounded-xl transition-all active:scale-95 ${
+                activePage === item.id
+                  ? 'text-blue-500 bg-blue-500/10'
+                  : 'text-gray-400 active:bg-gray-700'
+              }`}
+            >
+              <item.icon className="w-6 h-6" />
+              <span className="text-[10px] font-medium">{item.label}</span>
+            </button>
+          ))}
+          <button
+            onClick={() => setShowMoreMenu(!showMoreMenu)}
+            aria-label="More options"
+            className={`flex flex-col items-center justify-center gap-0.5 min-w-[64px] min-h-[52px] px-2 py-1.5 rounded-xl transition-all active:scale-95 ${
+              isMoreActive || showMoreMenu
+                ? 'text-blue-500 bg-blue-500/10'
+                : 'text-gray-400 active:bg-gray-700'
+            }`}
+          >
+            <Menu className="w-6 h-6" />
+            <span className="text-[10px] font-medium">More</span>
           </button>
-        ))}
-      </div>
-    </nav>
+        </div>
+      </nav>
+    </>
   )
 }
 
@@ -1854,9 +1942,9 @@ function ExplorePage({ onSelectStock }) {
 
       {/* Stock Grid */}
       {loading && loadedCount === 0 ? (
-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-2 sm:gap-3">
           {[...Array(24)].map((_, i) => (
-            <div key={i} className="p-3 rounded-lg bg-gray-800 animate-pulse">
+            <div key={i} className="p-3 sm:p-4 rounded-xl bg-gray-800 animate-pulse">
               <div className="h-4 bg-gray-700 rounded mb-2" />
               <div className="h-3 bg-gray-700 rounded mb-2" />
               <div className="h-4 bg-gray-700 rounded" />
@@ -1872,7 +1960,7 @@ function ExplorePage({ onSelectStock }) {
                 <h3 className={`text-sm font-semibold ${SECTOR_COLORS[sector] || 'text-gray-300'}`}>
                   {sector} ({symbols.length})
                 </h3>
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-2 sm:gap-3">
                   {symbols.map(symbol => {
                     const quote = stockData[symbol]
                     const change = quote?.pc ? ((quote.c - quote.pc) / quote.pc * 100) : 0
@@ -1881,18 +1969,18 @@ function ExplorePage({ onSelectStock }) {
                       <button
                         key={symbol}
                         onClick={() => onSelectStock(symbol)}
-                        className={`p-3 rounded-lg border transition-all hover:scale-105 text-left ${
+                        className={`p-3 sm:p-4 rounded-xl border transition-all hover:scale-[1.02] active:scale-[0.98] text-left ${
                           pos ? 'bg-green-900/20 border-green-500/30 hover:border-green-500'
                             : 'bg-red-900/20 border-red-500/30 hover:border-red-500'
                         }`}
                       >
-                        <div className="text-sm font-bold text-white">{symbol}</div>
+                        <div className="text-sm sm:text-base font-bold text-white">{symbol}</div>
                         <div className="text-xs text-gray-400 truncate">
                           {quote?.name ? quote.name.split(' ')[0] : '—'}
                         </div>
                         {quote?.c ? (
                           <>
-                            <div className="text-sm text-gray-300">${quote.c.toFixed(2)}</div>
+                            <div className="text-sm text-gray-300 mt-1">${quote.c.toFixed(2)}</div>
                             <div className={`text-sm font-medium ${pos ? 'text-green-400' : 'text-red-400'}`}>
                               {pos ? '+' : ''}{change.toFixed(1)}%
                             </div>
@@ -3161,23 +3249,35 @@ function StockDetail({ symbol, onClose, darkMode }) {
   const positive = change >= 0
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={onClose}>
-      <div className="bg-gray-800/95 backdrop-blur rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden border border-gray-700 shadow-2xl" onClick={e => e.stopPropagation()}>
-        <div className="p-4 border-b border-gray-700 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-              <span className="text-white font-bold text-lg">{symbol.charAt(0)}</span>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4 z-50" onClick={onClose}>
+      <div
+        className="bg-gray-800/95 backdrop-blur w-full sm:max-w-3xl sm:rounded-2xl rounded-t-2xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden border-t sm:border border-gray-700 shadow-2xl transform transition-transform"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header - sticky on mobile */}
+        <div className="sticky top-0 z-10 bg-gray-800/95 backdrop-blur p-4 border-b border-gray-700 flex items-center justify-between">
+          <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0">
+              <span className="text-white font-bold text-base sm:text-lg">{symbol.charAt(0)}</span>
             </div>
-            <div>
-              <h2 className="text-xl font-bold text-white">{symbol}</h2>
-              <p className="text-gray-400">{quote?.name || 'Loading...'}</p>
+            <div className="min-w-0">
+              <h2 className="text-lg sm:text-xl font-bold text-white">{symbol}</h2>
+              <p className="text-sm text-gray-400 truncate">{quote?.name || 'Loading...'}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setShowNews(true)} className="p-2 rounded-lg hover:bg-gray-700">
+          <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+            <button
+              onClick={() => setShowNews(true)}
+              aria-label="View news"
+              className="p-2 sm:p-2.5 rounded-lg hover:bg-gray-700 active:bg-gray-600 transition-colors"
+            >
               <Newspaper className="w-5 h-5 text-gray-400" />
             </button>
-            <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-700">
+            <button
+              onClick={onClose}
+              aria-label="Close"
+              className="p-2 sm:p-2.5 rounded-lg hover:bg-gray-700 active:bg-gray-600 transition-colors"
+            >
               <X className="w-5 h-5 text-gray-400" />
             </button>
           </div>
@@ -3186,11 +3286,11 @@ function StockDetail({ symbol, onClose, darkMode }) {
         {loading ? (
           <div className="p-8 flex items-center justify-center"><RefreshCw className="w-8 h-8 text-blue-500 animate-spin" /></div>
         ) : (
-          <div className="p-6 space-y-6 overflow-y-auto max-h-[calc(90vh-80px)]">
+          <div className="p-4 sm:p-6 space-y-4 sm:space-y-6 overflow-y-auto max-h-[calc(95vh-80px)] sm:max-h-[calc(90vh-80px)]">
             {/* Price Header */}
-            <div className="flex items-baseline gap-4 flex-wrap">
-              <span className="text-4xl font-bold text-white">{formatCurrency(quote?.c)}</span>
-              <span className={`text-lg font-medium px-3 py-1 rounded-full ${positive ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+            <div className="flex items-baseline gap-2 sm:gap-4 flex-wrap">
+              <span className="text-3xl sm:text-4xl font-bold text-white">{formatCurrency(quote?.c)}</span>
+              <span className={`text-base sm:text-lg font-medium px-2.5 sm:px-3 py-1 rounded-full ${positive ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
                 {positive ? '+' : ''}{pctChange?.toFixed(2)}%
               </span>
               <span className={`text-sm ${positive ? 'text-green-400' : 'text-red-400'}`}>
@@ -3980,6 +4080,35 @@ function SettingsPage({ darkMode, syncStatus, onShowTour }) {
   )
 }
 
+// ============ BACK TO TOP BUTTON ============
+function BackToTopButton() {
+  const [show, setShow] = useState(false)
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setShow(window.scrollY > 400)
+    }
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  if (!show) return null
+
+  return (
+    <button
+      onClick={scrollToTop}
+      aria-label="Back to top"
+      className="fixed bottom-24 md:bottom-8 right-4 z-30 p-3 bg-gray-700 hover:bg-gray-600 active:bg-gray-500 rounded-full shadow-lg transition-all transform hover:scale-105 active:scale-95"
+    >
+      <ArrowUp className="w-5 h-5 text-white" />
+    </button>
+  )
+}
+
 // ============ APP CONTENT ============
 function AppContent() {
   const { user, loading: authLoading, signIn } = useAuth()
@@ -4038,7 +4167,7 @@ function AppContent() {
     <div className="min-h-screen pb-20 md:pb-0 transition-colors bg-gray-900">
       <DesktopNav activePage={activePage} setActivePage={setActivePage}
         onSearchOpen={() => setShowSearch(true)} darkMode={darkMode} toggleDarkMode={() => setDarkMode(!darkMode)} syncStatus={syncStatus} />
-      <MobileBottomNav activePage={activePage} setActivePage={setActivePage} darkMode={darkMode} />
+      <MobileBottomNav activePage={activePage} setActivePage={setActivePage} onSearchOpen={() => setShowSearch(true)} darkMode={darkMode} />
 
       {!user && !dismissedSyncBanner && (
         <div className="border-b bg-blue-900/20 border-blue-500/30">
@@ -4059,19 +4188,21 @@ function AppContent() {
         </div>
       )}
 
-      <main className="max-w-7xl mx-auto px-4 py-6">
+      <main className="max-w-7xl mx-auto px-4 py-6 pb-24 md:pb-6">
         {activePage === 'dashboard' && <Dashboard watchlist={watchlist} setWatchlist={setWatchlist} onSelectStock={setSelectedStock} darkMode={darkMode} />}
         {activePage === 'explore' && <ExplorePage onSelectStock={setSelectedStock} darkMode={darkMode} />}
         {activePage === 'insights' && <AIInsights darkMode={darkMode} finnhubFetch={finnhubFetch} />}
         {activePage === 'screener' && <ScreenerTab onSelectStock={setSelectedStock} darkMode={darkMode} />}
         {activePage === 'earnings' && <EarningsTab onSelectStock={setSelectedStock} watchlist={watchlist} darkMode={darkMode} />}
         {activePage === 'news' && <NewsPage darkMode={darkMode} watchlist={watchlist} />}
+        {activePage === 'watchlist' && <Watchlist watchlist={watchlist} setWatchlist={setWatchlist} onSelectStock={setSelectedStock} darkMode={darkMode} />}
         {activePage === 'settings' && <SettingsPage darkMode={darkMode} syncStatus={syncStatus} onShowTour={() => setShowTour(true)} />}
       </main>
 
       {selectedStock && <StockDetail symbol={selectedStock} onClose={() => setSelectedStock(null)} darkMode={darkMode} />}
       {showSearch && <PredictiveSearch onSelect={setSelectedStock} onClose={() => setShowSearch(false)} />}
       {showTour && <OnboardingTour onComplete={() => setShowTour(false)} onOpenSearch={() => setShowSearch(true)} />}
+      <BackToTopButton />
     </div>
   )
 }
