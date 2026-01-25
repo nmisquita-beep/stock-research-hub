@@ -1332,6 +1332,7 @@ function ExplorePage({ onSelectStock, darkMode }) {
   const [activeSector, setActiveSector] = useState('All')
   const [searchQuery, setSearchQuery] = useState('')
   const [lastUpdated, setLastUpdated] = useState(null)
+  const [error, setError] = useState(null)
   const lastFetchRef = useRef(0)
   const isFetchingRef = useRef(false)
   const stockDataRef = useRef({})
@@ -1348,6 +1349,7 @@ function ExplorePage({ onSelectStock, darkMode }) {
 
     isFetchingRef.current = true
     if (lastFetchRef.current === 0) setLoading(true)
+    setError(null)
 
     try {
       // Fetch in batches of 20
@@ -1383,6 +1385,7 @@ function ExplorePage({ onSelectStock, darkMode }) {
       setLastUpdated(new Date())
     } catch (err) {
       console.error('Explore fetch error:', err)
+      setError('Failed to load stocks')
     } finally {
       isFetchingRef.current = false
       setLoading(false)
@@ -1470,8 +1473,21 @@ function ExplorePage({ onSelectStock, darkMode }) {
         ))}
       </div>
 
+      {/* Error State */}
+      {error && (
+        <div className="p-4 bg-red-900/30 border border-red-500/50 rounded-xl text-center">
+          <p className="text-red-400">{error}</p>
+          <button
+            onClick={() => fetchStocks(true)}
+            className="mt-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Stock Grid */}
-      {loading && Object.keys(stockData).length === 0 ? (
+      {!error && loading && Object.keys(stockData).length === 0 ? (
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
           {Array(24).fill(0).map((_, i) => (
             <div key={i} className="p-3 rounded-lg bg-gray-800 animate-pulse">
@@ -1481,46 +1497,53 @@ function ExplorePage({ onSelectStock, darkMode }) {
             </div>
           ))}
         </div>
-      ) : (
+      ) : !error && (
         <div className="space-y-6">
-          {getFilteredStocks().map(([sector, symbols]) => (
-            <div key={sector} className="space-y-3">
-              <h3 className={`text-sm font-semibold ${SECTOR_COLORS[sector] || 'text-gray-300'}`}>
-                {sector} ({symbols.length})
-              </h3>
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
-                {symbols.map(symbol => {
-                  const quote = stockData[symbol]
-                  const change = quote?.pc ? ((quote.c - quote.pc) / quote.pc * 100) : 0
-                  const positive = change >= 0
-                  return (
-                    <button
-                      key={symbol}
-                      onClick={() => onSelectStock(symbol)}
-                      className={`p-2 rounded-lg border transition-all hover:scale-105 cursor-pointer text-left ${
-                        positive
-                          ? 'bg-green-900/20 border-green-500/30 hover:border-green-500'
-                          : 'bg-red-900/20 border-red-500/30 hover:border-red-500'
-                      }`}
-                    >
-                      <div className="text-xs font-bold text-white">{symbol}</div>
-                      <div className="text-[10px] text-gray-400 truncate">{quote?.name ? quote.name.split(' ')[0] : '—'}</div>
-                      {quote && quote.c ? (
-                        <>
-                          <div className="text-xs text-gray-300">${quote.c.toFixed(2)}</div>
-                          <div className={`text-xs font-medium ${positive ? 'text-green-400' : 'text-red-400'}`}>
-                            {positive ? '+' : ''}{change.toFixed(1)}%
-                          </div>
-                        </>
-                      ) : (
-                        <div className="h-8 bg-gray-700/50 rounded animate-pulse mt-1" />
-                      )}
-                    </button>
-                  )
-                })}
+          {getFilteredStocks().map(([sector, symbols]) => {
+            // Ensure symbols is always an array
+            const safeSymbols = Array.isArray(symbols) ? symbols : []
+            if (safeSymbols.length === 0) return null
+
+            return (
+              <div key={sector} className="space-y-3">
+                <h3 className={`text-sm font-semibold ${SECTOR_COLORS[sector] || 'text-gray-300'}`}>
+                  {sector} ({safeSymbols.length})
+                </h3>
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
+                  {safeSymbols.map(symbol => {
+                    if (!symbol) return null
+                    const quote = stockData[symbol]
+                    const change = quote?.pc ? ((quote.c - quote.pc) / quote.pc * 100) : 0
+                    const positive = change >= 0
+                    return (
+                      <button
+                        key={symbol}
+                        onClick={() => onSelectStock(symbol)}
+                        className={`p-2 rounded-lg border transition-all hover:scale-105 cursor-pointer text-left ${
+                          positive
+                            ? 'bg-green-900/20 border-green-500/30 hover:border-green-500'
+                            : 'bg-red-900/20 border-red-500/30 hover:border-red-500'
+                        }`}
+                      >
+                        <div className="text-xs font-bold text-white">{symbol}</div>
+                        <div className="text-[10px] text-gray-400 truncate">{quote?.name ? quote.name.split(' ')[0] : '—'}</div>
+                        {quote && quote.c ? (
+                          <>
+                            <div className="text-xs text-gray-300">${quote.c.toFixed(2)}</div>
+                            <div className={`text-xs font-medium ${positive ? 'text-green-400' : 'text-red-400'}`}>
+                              {positive ? '+' : ''}{change.toFixed(1)}%
+                            </div>
+                          </>
+                        ) : (
+                          <div className="h-8 bg-gray-700/50 rounded animate-pulse mt-1" />
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>
