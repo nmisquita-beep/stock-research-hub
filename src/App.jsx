@@ -1269,6 +1269,7 @@ function ExplorePage({ onSelectStock, darkMode }) {
   const [lastUpdated, setLastUpdated] = useState(null)
   const lastFetchRef = useRef(0)
   const isFetchingRef = useRef(false)
+  const stockDataRef = useRef({})
 
   const allStocks = useMemo(() => {
     const stocks = new Set()
@@ -1286,7 +1287,7 @@ function ExplorePage({ onSelectStock, darkMode }) {
     try {
       // Fetch in batches of 20
       const batchSize = 20
-      const newData = { ...stockData }
+      const newData = { ...stockDataRef.current }
 
       for (let i = 0; i < allStocks.length; i += batchSize) {
         const batch = allStocks.slice(i, i + batchSize)
@@ -1305,11 +1306,13 @@ function ExplorePage({ onSelectStock, darkMode }) {
 
         // Update state after each batch for progressive loading
         if (i === 0) {
+          stockDataRef.current = { ...newData }
           setStockData({ ...newData })
           setLoading(false)
         }
       }
 
+      stockDataRef.current = newData
       setStockData(newData)
       lastFetchRef.current = now
       setLastUpdated(new Date())
@@ -1319,30 +1322,35 @@ function ExplorePage({ onSelectStock, darkMode }) {
       isFetchingRef.current = false
       setLoading(false)
     }
-  }, [allStocks, stockData])
+  }, [allStocks])
 
   useEffect(() => {
     fetchStocks(true)
     const interval = setInterval(() => fetchStocks(), 60000)
     return () => clearInterval(interval)
-  }, []) // Only run on mount
+  }, [fetchStocks])
 
   const sectors = ['All', ...Object.keys(EXPLORE_STOCKS)]
 
   const getFilteredStocks = () => {
-    let stocks = activeSector === 'All'
-      ? Object.entries(EXPLORE_STOCKS)
-      : [[activeSector, EXPLORE_STOCKS[activeSector]]]
+    try {
+      let stocks = activeSector === 'All'
+        ? Object.entries(EXPLORE_STOCKS)
+        : [[activeSector, EXPLORE_STOCKS[activeSector] || []]]
 
-    if (searchQuery) {
-      const query = searchQuery.toUpperCase()
-      stocks = stocks.map(([sector, symbols]) => [
-        sector,
-        symbols.filter(s => s.includes(query) || (stockData[s]?.name || '').toUpperCase().includes(query))
-      ]).filter(([, symbols]) => symbols.length > 0)
+      if (searchQuery) {
+        const query = searchQuery.toUpperCase()
+        stocks = stocks.map(([sector, symbols]) => [
+          sector,
+          (symbols || []).filter(s => s.includes(query) || (stockData[s]?.name || '').toUpperCase().includes(query))
+        ]).filter(([, symbols]) => symbols && symbols.length > 0)
+      }
+
+      return stocks
+    } catch (err) {
+      console.error('getFilteredStocks error:', err)
+      return []
     }
-
-    return stocks
   }
 
   const getTimeAgo = () => {
@@ -1431,10 +1439,10 @@ function ExplorePage({ onSelectStock, darkMode }) {
                       }`}
                     >
                       <div className="text-xs font-bold text-white">{symbol}</div>
-                      <div className="text-[10px] text-gray-400 truncate">{quote?.name?.split(' ')[0] || '—'}</div>
-                      {quote ? (
+                      <div className="text-[10px] text-gray-400 truncate">{quote?.name ? quote.name.split(' ')[0] : '—'}</div>
+                      {quote && quote.c ? (
                         <>
-                          <div className="text-xs text-gray-300">${quote.c?.toFixed(2)}</div>
+                          <div className="text-xs text-gray-300">${quote.c.toFixed(2)}</div>
                           <div className={`text-xs font-medium ${positive ? 'text-green-400' : 'text-red-400'}`}>
                             {positive ? '+' : ''}{change.toFixed(1)}%
                           </div>
