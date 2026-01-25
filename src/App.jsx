@@ -518,51 +518,103 @@ function FearGreedIndicator({ value }) {
 }
 
 // ============ FRIENDLY GUIDED TOUR ============
-function OnboardingTour({ onComplete }) {
+function OnboardingTour({ onComplete, onOpenSearch }) {
   const [step, setStep] = useState(0)
   const [highlightRect, setHighlightRect] = useState(null)
   const [isAnimating, setIsAnimating] = useState(false)
 
-  // Step 0 = Welcome, Step 4 = Finish (both centered modals)
   const steps = [
     {
       type: 'welcome',
       title: 'Welcome to Stock Research Hub!',
-      description: 'Your personal dashboard for stock research, AI-powered insights, and real-time market news.',
+      description: 'Your personal dashboard for stock research and market insights.',
       emoji: '🚀'
     },
     {
       type: 'highlight',
       target: '[data-tour="dashboard"]',
       title: 'Dashboard',
-      description: 'Your home base - market indices, your watchlist, and top movers all in one place.',
+      description: 'View market indices, your watchlist, and sector performance at a glance.',
+      position: 'bottom'
+    },
+    {
+      type: 'highlight',
+      target: '[data-tour="watchlist"]',
+      title: 'Your Watchlist',
+      description: 'Track your favorite stocks - click any stock to see detailed charts and data.',
+      position: 'top'
+    },
+    {
+      type: 'highlight',
+      target: '[data-tour="explore"]',
+      title: 'Explore Stocks',
+      description: 'Browse 100+ stocks organized by sector - discover new investment opportunities.',
       position: 'bottom'
     },
     {
       type: 'highlight',
       target: '[data-tour="insights"]',
-      title: 'AI Stock Analysis',
-      description: 'Get AI-powered insights on any stock - risks, opportunities, and recommendations.',
+      title: 'AI Insights',
+      description: 'Get AI-powered analysis on any stock.',
+      position: 'bottom'
+    },
+    {
+      type: 'highlight',
+      target: '[data-tour="screener"]',
+      title: 'Stock Screener',
+      description: 'Find stocks using pre-built screens like Undervalued Growth and Dividend Champions.',
+      position: 'bottom'
+    },
+    {
+      type: 'highlight',
+      target: '[data-tour="earnings"]',
+      title: 'Earnings Calendar',
+      description: 'Track upcoming earnings reports with expected vs previous EPS.',
       position: 'bottom'
     },
     {
       type: 'highlight',
       target: '[data-tour="news"]',
-      title: 'Stock News',
-      description: 'Stay updated with real stock market news from companies you care about.',
+      title: 'Market News',
+      description: 'Stay updated with market-moving news for your watchlist and top movers.',
       position: 'bottom'
     },
     {
-      type: 'finish',
-      title: "You're All Set!",
-      description: 'Start exploring the market. Use the search (/) to find any stock instantly.',
-      emoji: '🎉'
+      type: 'highlight',
+      target: '[data-tour="search"]',
+      title: 'Quick Search',
+      description: 'Press / anytime to quickly search for any stock.',
+      position: 'bottom',
+      isFinal: true
     }
   ]
 
   const currentStep = steps[step]
-  const isModal = currentStep.type === 'welcome' || currentStep.type === 'finish'
+  const isModal = currentStep.type === 'welcome'
+  const isFinalStep = currentStep.isFinal
   const totalSteps = steps.length
+
+  // Keyboard navigation
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'ArrowRight' || e.key === ' ') {
+        e.preventDefault()
+        handleNext()
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        handleBack()
+      } else if (e.key === 'Escape') {
+        handleSkip()
+      } else if (e.key === '/' && isFinalStep) {
+        e.preventDefault()
+        handleSkip()
+        if (onOpenSearch) onOpenSearch()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [step, isFinalStep])
 
   useEffect(() => {
     if (isModal) {
@@ -685,7 +737,7 @@ function OnboardingTour({ onComplete }) {
         </>
       )}
 
-      {/* Welcome/Finish Modal (centered) */}
+      {/* Welcome Modal (centered) */}
       {isModal && (
         <div className="absolute inset-0 flex items-center justify-center p-4">
           <div className="bg-gray-800 rounded-2xl border border-gray-700 shadow-2xl max-w-md w-full overflow-hidden transform transition-all">
@@ -694,21 +746,22 @@ function OnboardingTour({ onComplete }) {
               <h2 className="text-2xl font-bold text-white mb-3">{currentStep.title}</h2>
               <p className="text-gray-400 leading-relaxed">{currentStep.description}</p>
             </div>
-            <div className="px-8 pb-8 flex flex-col gap-3">
+            <div className="px-8 pb-6 flex flex-col gap-3">
               <button
                 onClick={handleNext}
                 className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition-colors"
               >
-                {currentStep.type === 'welcome' ? "Let's Take a Tour" : 'Start Exploring'}
+                Let's go!
               </button>
-              {currentStep.type === 'welcome' && (
-                <button
-                  onClick={handleSkip}
-                  className="w-full py-2 text-gray-400 hover:text-gray-300 text-sm transition-colors"
-                >
-                  Skip tour, I'll explore on my own
-                </button>
-              )}
+              <button
+                onClick={handleSkip}
+                className="w-full py-2 text-gray-400 hover:text-gray-300 text-sm transition-colors"
+              >
+                Skip
+              </button>
+            </div>
+            <div className="px-8 pb-6 text-center text-xs text-gray-500">
+              Press <kbd className="px-1.5 py-0.5 bg-gray-700 rounded text-gray-400">Space</kbd> to continue
             </div>
           </div>
         </div>
@@ -732,26 +785,29 @@ function OnboardingTour({ onComplete }) {
           )}
 
           <div className="bg-gray-800 rounded-xl border border-gray-600 shadow-2xl overflow-hidden">
-            {/* Progress dots */}
-            <div className="flex justify-center gap-1.5 pt-4">
-              {steps.map((_, i) => (
-                <div
-                  key={i}
-                  className={`h-2 rounded-full transition-all duration-300 ${
-                    i === step ? 'bg-blue-500 w-6' : i < step ? 'bg-blue-400 w-2' : 'bg-gray-600 w-2'
-                  }`}
-                />
-              ))}
+            {/* Step indicator */}
+            <div className="flex items-center justify-between px-4 pt-3">
+              <span className="text-xs text-gray-500">Step {step} of {totalSteps - 1}</span>
+              <div className="flex gap-1">
+                {steps.slice(1).map((_, i) => (
+                  <div
+                    key={i}
+                    className={`h-1.5 w-1.5 rounded-full transition-all duration-300 ${
+                      i + 1 === step ? 'bg-blue-500' : i + 1 < step ? 'bg-blue-400' : 'bg-gray-600'
+                    }`}
+                  />
+                ))}
+              </div>
             </div>
 
             {/* Content */}
-            <div className="p-5">
-              <h3 className="text-lg font-bold text-white mb-2">{currentStep.title}</h3>
+            <div className="p-4 pt-2">
+              <h3 className="text-lg font-bold text-white mb-1">{currentStep.title}</h3>
               <p className="text-gray-400 text-sm leading-relaxed">{currentStep.description}</p>
             </div>
 
             {/* Actions */}
-            <div className="flex items-center justify-between px-5 pb-5">
+            <div className="flex items-center justify-between px-4 pb-3">
               <button
                 onClick={handleSkip}
                 className="text-sm text-gray-500 hover:text-gray-300 transition-colors"
@@ -762,18 +818,27 @@ function OnboardingTour({ onComplete }) {
                 {step > 1 && (
                   <button
                     onClick={handleBack}
-                    className="px-4 py-2 text-sm text-gray-300 hover:text-white transition-colors"
+                    className="px-3 py-1.5 text-sm text-gray-300 hover:text-white transition-colors"
                   >
-                    Back
+                    ← Back
                   </button>
                 )}
                 <button
                   onClick={handleNext}
-                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+                  className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
                 >
-                  {step === steps.length - 2 ? 'Finish' : 'Next'}
+                  {isFinalStep ? 'Start Exploring' : 'Next →'}
                 </button>
               </div>
+            </div>
+
+            {/* Keyboard hints */}
+            <div className="px-4 pb-3 flex justify-center gap-3 text-[10px] text-gray-500">
+              <span>← → navigate</span>
+              <span>•</span>
+              <span>Space continue</span>
+              <span>•</span>
+              <span>Esc skip</span>
             </div>
           </div>
 
@@ -1092,8 +1157,8 @@ function DesktopNav({ activePage, setActivePage, onSearchOpen, darkMode, toggleD
     { id: 'dashboard', label: 'Dashboard', icon: Home, tour: 'dashboard' },
     { id: 'explore', label: 'Explore', icon: Grid3X3, tour: 'explore' },
     { id: 'insights', label: 'AI Insights', icon: Brain, tour: 'insights' },
-    { id: 'screener', label: 'Screener', icon: Filter },
-    { id: 'earnings', label: 'Earnings', icon: Calendar },
+    { id: 'screener', label: 'Screener', icon: Filter, tour: 'screener' },
+    { id: 'earnings', label: 'Earnings', icon: Calendar, tour: 'earnings' },
     { id: 'news', label: 'News', icon: Newspaper, tour: 'news' },
     { id: 'settings', label: 'Settings', icon: Settings }
   ]
@@ -1950,7 +2015,7 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock, darkMode }) {
       </div>
 
       {/* Your Watchlist Section */}
-      <div className="space-y-4">
+      <div className="space-y-4" data-tour="watchlist">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold text-white flex items-center gap-2">
             <Star className="w-5 h-5 text-yellow-400" />
@@ -3287,7 +3352,7 @@ function AppContent() {
 
       {selectedStock && <StockDetail symbol={selectedStock} onClose={() => setSelectedStock(null)} darkMode={darkMode} />}
       {showSearch && <PredictiveSearch onSelect={setSelectedStock} onClose={() => setShowSearch(false)} />}
-      {showTour && <OnboardingTour onComplete={() => setShowTour(false)} />}
+      {showTour && <OnboardingTour onComplete={() => setShowTour(false)} onOpenSearch={() => setShowSearch(true)} />}
     </div>
   )
 }
