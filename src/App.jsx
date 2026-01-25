@@ -197,6 +197,7 @@ const normalizeYahooQuote = (data) => {
     name: data.shortName || data.longName || '',
     exchange: data.exchange || '',
     currency: data.currency || 'USD',
+    marketState: data.marketState || null,
     timestamp: new Date()
   }
 }
@@ -3225,8 +3226,19 @@ function StockDetail({ symbol, onClose }) {
               <span className="text-white font-bold text-base sm:text-lg">{symbol.charAt(0)}</span>
             </div>
             <div className="min-w-0">
-              <h2 className="text-lg sm:text-xl font-bold text-white">{symbol}</h2>
-              <p className="text-sm text-gray-400 truncate">{quote?.name || 'Loading...'}</p>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg sm:text-xl font-bold text-white">{symbol}</h2>
+                {quote?.marketState && (
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${
+                    quote.marketState === 'REGULAR'
+                      ? 'bg-green-500/20 text-green-400'
+                      : 'bg-yellow-500/20 text-yellow-400'
+                  }`}>
+                    {quote.marketState === 'REGULAR' ? 'Open' : quote.marketState === 'PRE' ? 'Pre-Market' : quote.marketState === 'POST' ? 'After Hours' : 'Closed'}
+                  </span>
+                )}
+              </div>
+              <p className="text-sm text-gray-400 truncate">{loading ? 'Loading...' : (quote?.name || symbol)}</p>
             </div>
           </div>
           <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
@@ -3285,41 +3297,30 @@ function StockDetail({ symbol, onClose }) {
               <StockChart symbol={symbol} range={chartRange} interval={currentRangeOption.interval} />
             </div>
 
-            {/* Key Metrics */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="rounded-lg p-4 bg-gray-700/30">
-                <div className="text-sm text-gray-400">Open</div>
-                <div className="font-medium text-white">{formatCurrency(quote?.o)}</div>
-              </div>
-              <div className="rounded-lg p-4 bg-gray-700/30">
-                <div className="text-sm text-gray-400">Day Range</div>
-                <div className="font-medium text-white">{formatCurrency(quote?.l)} - {formatCurrency(quote?.h)}</div>
-              </div>
-              <div className="rounded-lg p-4 bg-gray-700/30">
-                <div className="text-sm text-gray-400">52W Range</div>
-                <div className="font-medium text-white">{formatCurrency(quote?.weekLow52)} - {formatCurrency(quote?.weekHigh52)}</div>
-              </div>
-              <div className="rounded-lg p-4 bg-gray-700/30">
-                <div className="text-sm text-gray-400">Prev Close</div>
-                <div className="font-medium text-white">{formatCurrency(quote?.pc)}</div>
-              </div>
-              <div className="rounded-lg p-4 bg-gray-700/30">
-                <div className="text-sm text-gray-400">Volume</div>
-                <div className="font-medium text-white">{quote?.volume?.toLocaleString() || 'N/A'}</div>
-              </div>
-              <div className="rounded-lg p-4 bg-gray-700/30">
-                <div className="text-sm text-gray-400">Avg Volume</div>
-                <div className="font-medium text-white">{quote?.avgVolume?.toLocaleString() || 'N/A'}</div>
-              </div>
-              <div className="rounded-lg p-4 bg-gray-700/30">
-                <div className="text-sm text-gray-400">P/E Ratio</div>
-                <div className="font-medium text-white">{quote?.peRatio?.toFixed(2) || 'N/A'}</div>
-              </div>
-              <div className="rounded-lg p-4 bg-gray-700/30">
-                <div className="text-sm text-gray-400">Market Cap</div>
-                <div className="font-medium text-white">{formatLargeNumber(quote?.marketCap)}</div>
-              </div>
-            </div>
+            {/* Key Metrics - only show metrics with valid data */}
+            {(() => {
+              const metrics = [
+                { label: 'Open', value: quote?.o, format: v => formatCurrency(v) },
+                { label: 'Day Range', value: quote?.l && quote?.h ? [quote.l, quote.h] : null, format: v => `${formatCurrency(v[0])} - ${formatCurrency(v[1])}` },
+                { label: '52W Range', value: quote?.weekLow52 && quote?.weekHigh52 ? [quote.weekLow52, quote.weekHigh52] : null, format: v => `${formatCurrency(v[0])} - ${formatCurrency(v[1])}` },
+                { label: 'Prev Close', value: quote?.pc, format: v => formatCurrency(v) },
+                { label: 'Volume', value: quote?.volume, format: v => v.toLocaleString() },
+                { label: 'Avg Volume', value: quote?.avgVolume, format: v => v.toLocaleString() },
+                { label: 'P/E Ratio', value: quote?.peRatio, format: v => v.toFixed(2) },
+                { label: 'Market Cap', value: quote?.marketCap, format: v => formatLargeNumber(v) }
+              ].filter(m => m.value && (typeof m.value !== 'number' || m.value > 0))
+
+              return metrics.length > 0 ? (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {metrics.map(m => (
+                    <div key={m.label} className="rounded-lg p-4 bg-gray-700/30">
+                      <div className="text-sm text-gray-400">{m.label}</div>
+                      <div className="font-medium text-white">{m.format(m.value)}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : null
+            })()}
           </div>
         )}
       </div>
