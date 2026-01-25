@@ -18,36 +18,77 @@ const yahooFetch = async (symbol, type = 'quote', options = {}) => {
 // Normalize Yahoo quote data with enhanced fields
 const normalizeYahooQuote = (data) => {
   if (!data) return null
+
+  // Log raw data for debugging
+  console.log('Raw Yahoo quote data:', data)
+
   return {
     c: data.regularMarketPrice || data.price || 0,
-    pc: data.regularMarketPreviousClose || data.previousClose || 0,
+    pc: data.regularMarketPreviousClose || data.previousClose || data.chartPreviousClose || 0,
     h: data.regularMarketDayHigh || data.dayHigh || 0,
     l: data.regularMarketDayLow || data.dayLow || 0,
     o: data.regularMarketOpen || data.open || 0,
     change: data.regularMarketChange || 0,
     changePercent: data.regularMarketChangePercent || 0,
-    volume: data.regularMarketVolume || 0,
-    avgVolume: data.averageDailyVolume10Day || data.averageVolume || 0,
-    marketCap: data.marketCap || 0,
-    peRatio: data.trailingPE || null,
+    volume: data.regularMarketVolume || data.volume || 0,
+    avgVolume: data.averageDailyVolume10Day || data.averageVolume || data.averageDailyVolume3Month || 0,
+    marketCap: data.marketCap || data.sharesOutstanding * (data.regularMarketPrice || data.price) || 0,
+    peRatio: data.trailingPE || data.forwardPE || null,
     forwardPE: data.forwardPE || null,
-    eps: data.trailingEps || null,
+    eps: data.trailingEps || data.epsTrailingTwelveMonths || null,
     weekHigh52: data.fiftyTwoWeekHigh || null,
     weekLow52: data.fiftyTwoWeekLow || null,
     fiftyDayAvg: data.fiftyDayAverage || null,
     twoHundredDayAvg: data.twoHundredDayAverage || null,
     dividendYield: data.dividendYield || data.trailingAnnualDividendYield || null,
     beta: data.beta || null,
-    name: data.shortName || data.longName || '',
-    exchange: data.exchange || '',
+    name: data.shortName || data.longName || data.displayName || '',
+    exchange: data.exchange || data.exchangeName || '',
     sector: data.sector || '',
     industry: data.industry || '',
     targetPrice: data.targetMeanPrice || data.targetHighPrice || null,
-    recommendation: data.recommendationKey || null,
+    recommendation: data.recommendationKey || data.recommendationMean || null,
     earningsDate: data.earningsTimestamp || null,
     bookValue: data.bookValue || null,
-    priceToBook: data.priceToBook || null
+    priceToBook: data.priceToBook || null,
+    currency: data.currency || 'USD'
   }
+}
+
+// Format market cap to readable string
+const formatMarketCap = (cap) => {
+  if (!cap || cap === 0 || isNaN(cap)) return null
+  if (cap >= 1e12) return `$${(cap / 1e12).toFixed(2)}T`
+  if (cap >= 1e9) return `$${(cap / 1e9).toFixed(2)}B`
+  if (cap >= 1e6) return `$${(cap / 1e6).toFixed(2)}M`
+  return `$${cap.toLocaleString()}`
+}
+
+// Check if market is closed (weekend or after hours)
+const getMarketStatus = () => {
+  const now = new Date()
+  const day = now.getDay()
+  const hour = now.getHours()
+  const minute = now.getMinutes()
+  const currentTime = hour * 60 + minute
+
+  // Weekend
+  if (day === 0 || day === 6) {
+    return { isOpen: false, status: 'Weekend - markets closed' }
+  }
+
+  // Market hours: 9:30 AM - 4:00 PM ET (adjust for local timezone)
+  const marketOpen = 9 * 60 + 30  // 9:30 AM
+  const marketClose = 16 * 60     // 4:00 PM
+
+  if (currentTime < marketOpen) {
+    return { isOpen: false, status: 'Pre-market' }
+  }
+  if (currentTime >= marketClose) {
+    return { isOpen: false, status: 'After hours' }
+  }
+
+  return { isOpen: true, status: 'Market open' }
 }
 
 // Calculate technical indicators from price data
@@ -329,33 +370,66 @@ export default function AIInsights({ finnhubFetch }) {
       // STEP 2: Fetch 3-month chart data for comprehensive trend analysis
       let chartPrices = []
       let technicals = null
-      let weekChange = 0, monthChange = 0, threeMonthChange = 0
+      let weekChange = null, monthChange = null, threeMonthChange = null
       try {
         const chartData = await yahooFetch(sym, 'chart', { range: '3mo', interval: '1d' })
+        console.log('Chart data:', chartData)
+
+        // Handle different response formats
+        let closes = []
         if (chartData?.chart?.result?.[0]) {
           const result = chartData.chart.result[0]
-          const closes = result.indicators?.quote?.[0]?.close || []
-          chartPrices = closes.filter(c => c !== null)
+          closes = result.indicators?.quote?.[0]?.close || []
+        } else if (chartData?.data && Array.isArray(chartData.data)) {
+          closes = chartData.data.map(d => d.close).filter(Boolean)
+        } else if (Array.isArray(chartData)) {
+          closes = chartData.map(d => d.close || d.price).filter(Boolean)
+        }
 
+        chartPrices = closes.filter(c => c !== null && c !== undefined && !isNaN(c))
+        console.log(`Got ${chartPrices.length} price points`)
+
+        if (chartPrices.length >= 2) {
+          const latest = chartPrices[chartPrices.length - 1]
+          const len = chartPrices.length
+
+          // Calculate performance over different periods
+          // 1 Week (~5 trading days)
+          if (len >= 5) {
+            const weekAgoPrice = chartPrices[len - 5]
+            if (weekAgoPrice && weekAgoPrice > 0) {
+              weekChange = ((latest - weekAgoPrice) / weekAgoPrice * 100)
+            }
+          }
+
+          // 1 Month (~21 trading days)
+          if (len >= 21) {
+            const monthAgoPrice = chartPrices[len - 21]
+            if (monthAgoPrice && monthAgoPrice > 0) {
+              monthChange = ((latest - monthAgoPrice) / monthAgoPrice * 100)
+            }
+          } else if (len >= 10) {
+            // Fallback: use available data
+            const monthAgoPrice = chartPrices[0]
+            if (monthAgoPrice && monthAgoPrice > 0) {
+              monthChange = ((latest - monthAgoPrice) / monthAgoPrice * 100)
+            }
+          }
+
+          // 3 Months (use first data point)
+          const threeMonthAgoPrice = chartPrices[0]
+          if (threeMonthAgoPrice && threeMonthAgoPrice > 0) {
+            threeMonthChange = ((latest - threeMonthAgoPrice) / threeMonthAgoPrice * 100)
+          }
+
+          // Calculate technical indicators
           if (chartPrices.length >= 5) {
-            const latest = chartPrices[chartPrices.length - 1]
-
-            // Calculate performance over different periods
-            if (chartPrices.length >= 5) {
-              weekChange = ((latest - chartPrices[chartPrices.length - 5]) / chartPrices[chartPrices.length - 5] * 100)
-            }
-            if (chartPrices.length >= 21) {
-              monthChange = ((latest - chartPrices[chartPrices.length - 21]) / chartPrices[chartPrices.length - 21] * 100)
-            }
-            if (chartPrices.length >= 63) {
-              threeMonthChange = ((latest - chartPrices[0]) / chartPrices[0] * 100)
-            }
-
-            // Calculate technical indicators
             technicals = calculateTechnicalIndicators(chartPrices)
           }
         }
-      } catch {}
+      } catch (chartError) {
+        console.error('Chart fetch error:', chartError)
+      }
 
       setLoadingStep('Gathering latest news...')
 
@@ -414,7 +488,7 @@ export default function AIInsights({ finnhubFetch }) {
           changeToday: `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`
         },
         valuation: {
-          marketCap: quote.marketCap ? `$${(quote.marketCap / 1e9).toFixed(1)}B` : 'N/A',
+          marketCap: formatMarketCap(quote.marketCap) || 'N/A',
           peRatio: quote.peRatio?.toFixed(1) || 'N/A',
           forwardPE: quote.forwardPE?.toFixed(1) || 'N/A',
           eps: quote.eps?.toFixed(2) || 'N/A',
@@ -437,18 +511,18 @@ export default function AIInsights({ finnhubFetch }) {
           above200MA: quote.twoHundredDayAvg ? quote.c > quote.twoHundredDayAvg : null
         },
         performance: {
-          week: `${weekChange >= 0 ? '+' : ''}${weekChange.toFixed(1)}%`,
-          month: `${monthChange >= 0 ? '+' : ''}${monthChange.toFixed(1)}%`,
-          threeMonth: `${threeMonthChange >= 0 ? '+' : ''}${threeMonthChange.toFixed(1)}%`
+          week: weekChange,
+          month: monthChange,
+          threeMonth: threeMonthChange
         },
         technicals: technicals ? {
           rsi: technicals.rsi,
           rsiStatus: technicals.rsi > 70 ? 'overbought' : technicals.rsi < 30 ? 'oversold' : 'neutral',
-          momentum: `${technicals.momentum >= 0 ? '+' : ''}${technicals.momentum}%`,
-          volatility: `${technicals.volatility}%`,
+          momentum: technicals.momentum,
+          volatility: technicals.volatility,
           trend: technicals.trend,
-          support: `$${technicals.support}`,
-          resistance: `$${technicals.resistance}`
+          support: technicals.support,
+          resistance: technicals.resistance
         } : null,
         volume: {
           today: quote.volume?.toLocaleString() || 'N/A',
@@ -464,72 +538,68 @@ export default function AIInsights({ finnhubFetch }) {
         newsHeadlines: news.slice(0, 5).map(n => n.headline).filter(Boolean)
       }
 
-      // Build a comprehensive, powerful AI prompt
-      const prompt = `You are a senior Wall Street equity analyst. Provide a thorough, professional analysis of ${sym} (${quote.name || sym}).
+      // Get market status
+      const marketStatus = getMarketStatus()
 
-=== CURRENT MARKET DATA ===
+      // Build performance strings with fallbacks
+      const perfWeek = weekChange !== null ? `${weekChange >= 0 ? '+' : ''}${weekChange.toFixed(1)}%` : 'N/A'
+      const perfMonth = monthChange !== null ? `${monthChange >= 0 ? '+' : ''}${monthChange.toFixed(1)}%` : 'N/A'
+      const perf3Month = threeMonthChange !== null ? `${threeMonthChange >= 0 ? '+' : ''}${threeMonthChange.toFixed(1)}%` : 'N/A'
+
+      // Build a comprehensive, powerful AI prompt
+      const prompt = `You are an expert stock analyst. Analyze ${sym} (${quote.name || sym}) and provide clear, actionable insights.
+
+IMPORTANT RULES:
+1. Do NOT use asterisks or any markdown formatting
+2. Be specific - reference actual numbers from the data
+3. Be opinionated - give clear views, not wishy-washy statements
+4. Keep each section concise but informative
+
+${marketStatus.isOpen ? '' : `Note: ${marketStatus.status}. Prices shown are from last trading session.`}
+
+=== CURRENT DATA ===
 Price: $${quote.c?.toFixed(2)} (${change >= 0 ? '+' : ''}${change.toFixed(2)}% today)
-Market Cap: ${stockContext.valuation.marketCap}
+Market Cap: ${formatMarketCap(quote.marketCap) || 'N/A'}
 Sector: ${quote.sector || 'Unknown'} | Industry: ${quote.industry || 'Unknown'}
 
-=== VALUATION METRICS ===
-P/E Ratio: ${stockContext.valuation.peRatio} (Forward: ${stockContext.valuation.forwardPE})
-EPS: $${stockContext.valuation.eps}
-Price/Book: ${stockContext.valuation.priceToBook}
-Dividend Yield: ${stockContext.valuation.dividendYield}
+=== VALUATION ===
+P/E Ratio: ${quote.peRatio ? quote.peRatio.toFixed(1) : 'N/A'} | Forward P/E: ${quote.forwardPE ? quote.forwardPE.toFixed(1) : 'N/A'}
+EPS: ${quote.eps ? '$' + quote.eps.toFixed(2) : 'N/A'}
+Dividend Yield: ${quote.dividendYield ? (quote.dividendYield * 100).toFixed(2) + '%' : 'None'}
 
 === PRICE POSITION ===
-52-Week Range: $${stockContext.fiftyTwoWeek.low} - $${stockContext.fiftyTwoWeek.high}
-Position in Range: ${stockContext.fiftyTwoWeek.positionInRange}
-Distance from 50-Day MA: ${stockContext.movingAverages.distanceFrom50MA}
-Distance from 200-Day MA: ${stockContext.movingAverages.distanceFrom200MA}
+52-Week: $${weekLow52?.toFixed(2) || '?'} - $${weekHigh52?.toFixed(2) || '?'} (currently at ${pricePosition || '?'}% of range)
+50-Day MA: ${quote.fiftyDayAvg ? '$' + quote.fiftyDayAvg.toFixed(2) : 'N/A'} | 200-Day MA: ${quote.twoHundredDayAvg ? '$' + quote.twoHundredDayAvg.toFixed(2) : 'N/A'}
 
 === PERFORMANCE ===
-1 Week: ${stockContext.performance.week}
-1 Month: ${stockContext.performance.month}
-3 Month: ${stockContext.performance.threeMonth}
+1 Week: ${perfWeek} | 1 Month: ${perfMonth} | 3 Month: ${perf3Month}
 
-${technicals ? `=== TECHNICAL INDICATORS ===
-RSI(14): ${technicals.rsi} (${technicals.rsi > 70 ? 'OVERBOUGHT' : technicals.rsi < 30 ? 'OVERSOLD' : 'neutral'})
-5-Day Momentum: ${stockContext.technicals.momentum}
-Volatility: ${stockContext.technicals.volatility}
+${technicals ? `=== TECHNICALS ===
+RSI: ${technicals.rsi} (${technicals.rsi > 70 ? 'OVERBOUGHT' : technicals.rsi < 30 ? 'OVERSOLD' : 'neutral'})
 Trend: ${technicals.trend.toUpperCase()}
-Support: ${stockContext.technicals.support} | Resistance: ${stockContext.technicals.resistance}
+Support: $${technicals.support} | Resistance: $${technicals.resistance}
 ` : ''}
-=== VOLUME ANALYSIS ===
-Today vs Avg: ${stockContext.volume.ratio}x (${volumeStatus} volume)
+${quote.beta ? `Beta: ${quote.beta.toFixed(2)} (${quote.beta > 1.2 ? 'high volatility' : quote.beta < 0.8 ? 'low volatility' : 'market-like'})` : ''}
+${quote.targetPrice ? `Analyst Target: $${quote.targetPrice.toFixed(2)} (${((quote.targetPrice - quote.c) / quote.c * 100).toFixed(1)}% ${quote.targetPrice > quote.c ? 'upside' : 'downside'})` : ''}
 
-${quote.beta ? `=== RISK ===
-Beta: ${quote.beta.toFixed(2)} (${quote.beta > 1.2 ? 'High volatility vs market' : quote.beta < 0.8 ? 'Lower volatility vs market' : 'Market-like volatility'})
-` : ''}
-${quote.targetPrice ? `=== ANALYST CONSENSUS ===
-Target Price: $${quote.targetPrice.toFixed(2)} (${((quote.targetPrice - quote.c) / quote.c * 100).toFixed(1)}% ${quote.targetPrice > quote.c ? 'upside' : 'downside'})
-Rating: ${quote.recommendation || 'N/A'}
-` : ''}
 ${news.length > 0 ? `=== RECENT NEWS ===
-${news.slice(0, 5).map((n, i) => `${i + 1}. ${n.headline}`).join('\n')}
+${news.slice(0, 4).map((n, i) => `- ${n.headline}`).join('\n')}
 ` : ''}
 
-Based on ALL the data above, provide a comprehensive analysis. Be specific, reference the actual numbers, and give actionable insights.
-
-Respond with ONLY this JSON structure (no other text):
+Respond with ONLY valid JSON (no other text, no markdown):
 {
   "rating": "STRONG_BUY" or "BUY" or "HOLD" or "SELL" or "STRONG_SELL",
-  "confidenceScore": <number 1-100>,
-  "summary": "<2-3 sentence executive summary of the investment thesis>",
-  "technicalAnalysis": "<2-3 sentences analyzing price action, trend, momentum, RSI, support/resistance>",
-  "fundamentalAnalysis": "<2-3 sentences on valuation - is P/E reasonable? Growth outlook? Compare to sector>",
-  "sentimentAnalysis": "<1-2 sentences on news sentiment and what it signals>",
-  "strengths": ["<specific strength with data>", "<strength 2>", "<strength 3>"],
-  "risks": ["<specific risk with data>", "<risk 2>", "<risk 3>"],
-  "keyLevels": {
-    "support": "<price level to watch>",
-    "resistance": "<price level to watch>",
-    "stopLoss": "<suggested stop loss level>"
-  },
-  "catalyst": "<What specific event/trigger could move this stock in the near term>",
-  "timeHorizon": "<Is this a short-term trade or long-term hold and why>",
-  "bottomLine": "<One decisive sentence: exactly what an investor should do and why>"
+  "confidenceScore": 1-100,
+  "summary": "2-3 sentence executive summary",
+  "technicalAnalysis": "2-3 sentences on price action, trend, levels",
+  "fundamentalAnalysis": "2-3 sentences on valuation and growth",
+  "sentimentAnalysis": "1-2 sentences on news and market sentiment",
+  "strengths": ["strength 1 with specific data", "strength 2", "strength 3"],
+  "risks": ["risk 1 with specific data", "risk 2", "risk 3"],
+  "keyLevels": {"support": "$XX", "resistance": "$XX", "stopLoss": "$XX"},
+  "catalyst": "What could move this stock soon",
+  "timeHorizon": "Short-term trade or long-term hold",
+  "bottomLine": "One clear actionable sentence"
 }`
 
       const response = await fetch(GROQ_PROXY_URL, {
@@ -835,38 +905,21 @@ Respond with ONLY this JSON structure (no other text):
                 </div>
               </div>
 
-              {/* Quick Stats Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
-                <div className="bg-gray-800/50 rounded-lg p-3">
-                  <div className="text-xs text-gray-400 mb-1">Market Cap</div>
-                  <div className="text-white font-semibold">
-                    {currentAnalysis.marketCap ? `$${(currentAnalysis.marketCap / 1e9).toFixed(1)}B` : 'N/A'}
+              {/* Quick Stats Grid - Only show metrics with valid values */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                {[
+                  { label: 'Market Cap', value: formatMarketCap(currentAnalysis.marketCap) },
+                  { label: 'P/E Ratio', value: currentAnalysis.peRatio ? currentAnalysis.peRatio.toFixed(1) : null },
+                  { label: '52W Position', value: currentAnalysis.pricePosition != null ? `${currentAnalysis.pricePosition}%` : null },
+                  { label: 'Beta', value: currentAnalysis.beta ? currentAnalysis.beta.toFixed(2) : null },
+                  { label: 'Div Yield', value: currentAnalysis.dividendYield ? `${(currentAnalysis.dividendYield * 100).toFixed(2)}%` : null },
+                  { label: 'Analyst Target', value: currentAnalysis.targetPrice ? `$${currentAnalysis.targetPrice.toFixed(0)}` : null },
+                ].filter(m => m.value && m.value !== 'N/A' && m.value !== 'null' && m.value !== '$NaN').map(metric => (
+                  <div key={metric.label} className="bg-gray-800/50 rounded-lg p-3">
+                    <div className="text-xs text-gray-400 mb-1">{metric.label}</div>
+                    <div className="text-white font-semibold">{metric.value}</div>
                   </div>
-                </div>
-                <div className="bg-gray-800/50 rounded-lg p-3">
-                  <div className="text-xs text-gray-400 mb-1">P/E Ratio</div>
-                  <div className="text-white font-semibold">{currentAnalysis.peRatio?.toFixed(1) || 'N/A'}</div>
-                </div>
-                <div className="bg-gray-800/50 rounded-lg p-3">
-                  <div className="text-xs text-gray-400 mb-1">52W Position</div>
-                  <div className="text-white font-semibold">{currentAnalysis.pricePosition || 'N/A'}%</div>
-                </div>
-                <div className="bg-gray-800/50 rounded-lg p-3">
-                  <div className="text-xs text-gray-400 mb-1">Beta</div>
-                  <div className="text-white font-semibold">{currentAnalysis.beta?.toFixed(2) || 'N/A'}</div>
-                </div>
-                <div className="bg-gray-800/50 rounded-lg p-3">
-                  <div className="text-xs text-gray-400 mb-1">Div Yield</div>
-                  <div className="text-white font-semibold">
-                    {currentAnalysis.dividendYield ? `${(currentAnalysis.dividendYield * 100).toFixed(2)}%` : 'None'}
-                  </div>
-                </div>
-                <div className="bg-gray-800/50 rounded-lg p-3">
-                  <div className="text-xs text-gray-400 mb-1">Analyst Target</div>
-                  <div className="text-white font-semibold">
-                    {currentAnalysis.targetPrice ? `$${currentAnalysis.targetPrice.toFixed(0)}` : 'N/A'}
-                  </div>
-                </div>
+                ))}
               </div>
             </div>
           </div>
@@ -882,20 +935,35 @@ Respond with ONLY this JSON structure (no other text):
               <div className="grid grid-cols-3 gap-4">
                 <div className="text-center">
                   <div className="text-xs text-gray-400 mb-1">1 Week</div>
-                  <div className={`font-bold ${currentAnalysis.performance?.week >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                    {currentAnalysis.performance?.week >= 0 ? '+' : ''}{currentAnalysis.performance?.week?.toFixed(1) || 0}%
+                  <div className={`font-bold ${
+                    currentAnalysis.performance?.week == null ? 'text-gray-500' :
+                    currentAnalysis.performance.week >= 0 ? 'text-green-400' : 'text-red-400'
+                  }`}>
+                    {currentAnalysis.performance?.week != null
+                      ? `${currentAnalysis.performance.week >= 0 ? '+' : ''}${currentAnalysis.performance.week.toFixed(1)}%`
+                      : 'N/A'}
                   </div>
                 </div>
                 <div className="text-center">
                   <div className="text-xs text-gray-400 mb-1">1 Month</div>
-                  <div className={`font-bold ${currentAnalysis.performance?.month >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                    {currentAnalysis.performance?.month >= 0 ? '+' : ''}{currentAnalysis.performance?.month?.toFixed(1) || 0}%
+                  <div className={`font-bold ${
+                    currentAnalysis.performance?.month == null ? 'text-gray-500' :
+                    currentAnalysis.performance.month >= 0 ? 'text-green-400' : 'text-red-400'
+                  }`}>
+                    {currentAnalysis.performance?.month != null
+                      ? `${currentAnalysis.performance.month >= 0 ? '+' : ''}${currentAnalysis.performance.month.toFixed(1)}%`
+                      : 'N/A'}
                   </div>
                 </div>
                 <div className="text-center">
                   <div className="text-xs text-gray-400 mb-1">3 Month</div>
-                  <div className={`font-bold ${currentAnalysis.performance?.threeMonth >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                    {currentAnalysis.performance?.threeMonth >= 0 ? '+' : ''}{currentAnalysis.performance?.threeMonth?.toFixed(1) || 0}%
+                  <div className={`font-bold ${
+                    currentAnalysis.performance?.threeMonth == null ? 'text-gray-500' :
+                    currentAnalysis.performance.threeMonth >= 0 ? 'text-green-400' : 'text-red-400'
+                  }`}>
+                    {currentAnalysis.performance?.threeMonth != null
+                      ? `${currentAnalysis.performance.threeMonth >= 0 ? '+' : ''}${currentAnalysis.performance.threeMonth.toFixed(1)}%`
+                      : 'N/A'}
                   </div>
                 </div>
               </div>
