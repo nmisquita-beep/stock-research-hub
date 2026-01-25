@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Brain, Sparkles, Search, RefreshCw, TrendingUp, TrendingDown, Minus, X, Clock, AlertTriangle, BarChart3, CheckCircle, Target, Lightbulb, ChevronRight, Newspaper, DollarSign, Zap, Shield, Activity, PieChart, Award, ArrowUpRight, ArrowDownRight } from 'lucide-react'
+import { Brain, Sparkles, Search, RefreshCw, TrendingUp, TrendingDown, Minus, X, Clock, AlertTriangle, BarChart3, CheckCircle, Target, Zap, Shield, Activity, Award, ArrowUpRight, ArrowDownRight, ChevronRight, ExternalLink } from 'lucide-react'
 
 const GROQ_PROXY_URL = 'https://stock-api-proxy-seven.vercel.app/api/groq'
 const YAHOO_PROXY_URL = 'https://stock-api-proxy-seven.vercel.app/api/yahoo'
+const FINNHUB_PROXY_URL = 'https://stock-api-proxy-seven.vercel.app/api/finnhub'
 
 // Yahoo Finance API helper
 const yahooFetch = async (symbol, type = 'quote', options = {}) => {
@@ -15,150 +16,22 @@ const yahooFetch = async (symbol, type = 'quote', options = {}) => {
   return await response.json()
 }
 
-// Normalize Yahoo quote data with enhanced fields
-const normalizeYahooQuote = (data) => {
-  if (!data) return null
-
-  // Log raw data for debugging
-  console.log('Raw Yahoo quote data:', data)
-
-  return {
-    c: data.regularMarketPrice || data.price || 0,
-    pc: data.regularMarketPreviousClose || data.previousClose || data.chartPreviousClose || 0,
-    h: data.regularMarketDayHigh || data.dayHigh || 0,
-    l: data.regularMarketDayLow || data.dayLow || 0,
-    o: data.regularMarketOpen || data.open || 0,
-    change: data.regularMarketChange || 0,
-    changePercent: data.regularMarketChangePercent || 0,
-    volume: data.regularMarketVolume || data.volume || 0,
-    avgVolume: data.averageDailyVolume10Day || data.averageVolume || data.averageDailyVolume3Month || 0,
-    marketCap: data.marketCap || data.sharesOutstanding * (data.regularMarketPrice || data.price) || 0,
-    peRatio: data.trailingPE || data.forwardPE || null,
-    forwardPE: data.forwardPE || null,
-    eps: data.trailingEps || data.epsTrailingTwelveMonths || null,
-    weekHigh52: data.fiftyTwoWeekHigh || null,
-    weekLow52: data.fiftyTwoWeekLow || null,
-    fiftyDayAvg: data.fiftyDayAverage || null,
-    twoHundredDayAvg: data.twoHundredDayAverage || null,
-    dividendYield: data.dividendYield || data.trailingAnnualDividendYield || null,
-    beta: data.beta || null,
-    name: data.shortName || data.longName || data.displayName || '',
-    exchange: data.exchange || data.exchangeName || '',
-    sector: data.sector || '',
-    industry: data.industry || '',
-    targetPrice: data.targetMeanPrice || data.targetHighPrice || null,
-    recommendation: data.recommendationKey || data.recommendationMean || null,
-    earningsDate: data.earningsTimestamp || null,
-    bookValue: data.bookValue || null,
-    priceToBook: data.priceToBook || null,
-    currency: data.currency || 'USD'
-  }
+// Finnhub API helper
+const finnhubFetch = async (endpoint, params = {}) => {
+  const queryParams = new URLSearchParams(params).toString()
+  const url = `${FINNHUB_PROXY_URL}?endpoint=${encodeURIComponent(endpoint)}${queryParams ? '&' + queryParams : ''}`
+  const response = await fetch(url)
+  if (!response.ok) throw new Error(`Finnhub API Error: ${response.status}`)
+  return await response.json()
 }
 
-// Format market cap to readable string
-const formatMarketCap = (cap) => {
-  if (!cap || cap === 0 || isNaN(cap)) return null
-  if (cap >= 1e12) return `$${(cap / 1e12).toFixed(2)}T`
-  if (cap >= 1e9) return `$${(cap / 1e9).toFixed(2)}B`
-  if (cap >= 1e6) return `$${(cap / 1e6).toFixed(2)}M`
-  return `$${cap.toLocaleString()}`
-}
-
-// Check if market is closed (weekend or after hours)
-const getMarketStatus = () => {
-  const now = new Date()
-  const day = now.getDay()
-  const hour = now.getHours()
-  const minute = now.getMinutes()
-  const currentTime = hour * 60 + minute
-
-  // Weekend
-  if (day === 0 || day === 6) {
-    return { isOpen: false, status: 'Weekend - markets closed' }
-  }
-
-  // Market hours: 9:30 AM - 4:00 PM ET (adjust for local timezone)
-  const marketOpen = 9 * 60 + 30  // 9:30 AM
-  const marketClose = 16 * 60     // 4:00 PM
-
-  if (currentTime < marketOpen) {
-    return { isOpen: false, status: 'Pre-market' }
-  }
-  if (currentTime >= marketClose) {
-    return { isOpen: false, status: 'After hours' }
-  }
-
-  return { isOpen: true, status: 'Market open' }
-}
-
-// Calculate technical indicators from price data
-const calculateTechnicalIndicators = (prices) => {
-  if (!prices || prices.length < 5) return null
-
-  const latest = prices[prices.length - 1]
-  const len = prices.length
-
-  // Simple Moving Averages
-  const sma5 = prices.slice(-5).reduce((a, b) => a + b, 0) / 5
-  const sma10 = len >= 10 ? prices.slice(-10).reduce((a, b) => a + b, 0) / 10 : null
-  const sma20 = len >= 20 ? prices.slice(-20).reduce((a, b) => a + b, 0) / 20 : null
-
-  // Momentum (price change over last 5 days)
-  const momentum = ((latest - prices[len - 5]) / prices[len - 5] * 100).toFixed(2)
-
-  // Volatility (standard deviation of last 10 days)
-  const recentPrices = prices.slice(-10)
-  const mean = recentPrices.reduce((a, b) => a + b, 0) / recentPrices.length
-  const variance = recentPrices.reduce((sum, p) => sum + Math.pow(p - mean, 2), 0) / recentPrices.length
-  const volatility = (Math.sqrt(variance) / mean * 100).toFixed(2)
-
-  // RSI approximation (simplified)
-  let gains = 0, losses = 0
-  for (let i = Math.max(0, len - 14); i < len - 1; i++) {
-    const change = prices[i + 1] - prices[i]
-    if (change > 0) gains += change
-    else losses -= change
-  }
-  const avgGain = gains / 14
-  const avgLoss = losses / 14
-  const rs = avgLoss === 0 ? 100 : avgGain / avgLoss
-  const rsi = Math.round(100 - (100 / (1 + rs)))
-
-  // Trend detection
-  let trend = 'sideways'
-  if (latest > sma5 && sma5 > (sma10 || sma5)) trend = 'bullish'
-  else if (latest < sma5 && sma5 < (sma10 || sma5)) trend = 'bearish'
-
-  // Support/Resistance levels (simplified)
-  const sortedPrices = [...prices].sort((a, b) => a - b)
-  const support = sortedPrices[Math.floor(len * 0.1)]
-  const resistance = sortedPrices[Math.floor(len * 0.9)]
-
-  return {
-    sma5: sma5.toFixed(2),
-    sma10: sma10?.toFixed(2),
-    sma20: sma20?.toFixed(2),
-    momentum: parseFloat(momentum),
-    volatility: parseFloat(volatility),
-    rsi,
-    trend,
-    support: support.toFixed(2),
-    resistance: resistance.toFixed(2),
-    aboveSMA5: latest > sma5,
-    aboveSMA20: sma20 ? latest > sma20 : null
-  }
-}
-
-// Parse markdown-style formatting to JSX
-const parseMarkdown = (text) => {
-  if (!text) return null
-  const parts = text.split(/\*\*([^*]+)\*\*/g)
-  return parts.map((part, i) => {
-    if (i % 2 === 1) {
-      return <strong key={i} className="font-semibold text-white">{part}</strong>
-    }
-    return part.replace(/\*/g, '')
-  })
+// Format large numbers
+const formatLargeNumber = (value) => {
+  if (!value || value === 0 || isNaN(value)) return null
+  if (value >= 1e12) return `$${(value / 1e12).toFixed(2)}T`
+  if (value >= 1e9) return `$${(value / 1e9).toFixed(2)}B`
+  if (value >= 1e6) return `$${(value / 1e6).toFixed(2)}M`
+  return `$${value.toLocaleString()}`
 }
 
 // Debounce helper
@@ -170,13 +43,336 @@ const debounce = (func, wait) => {
   }
 }
 
-export default function AIInsights({ finnhubFetch }) {
+// Calculate detailed metrics from price/volume data
+const calculateMetrics = (prices, volumes, quote) => {
+  if (!prices || prices.length === 0) return null
+
+  const currentPrice = prices[prices.length - 1]
+  const len = prices.length
+  const weekAgo = prices[Math.max(0, len - 5)]
+  const monthAgo = prices[Math.max(0, len - 21)]
+  const threeMonthAgo = prices[0]
+
+  // Moving averages
+  const ma20 = prices.slice(-20).reduce((a, b) => a + b, 0) / Math.min(20, len)
+  const ma50 = len >= 50 ? prices.slice(-50).reduce((a, b) => a + b, 0) / 50 : ma20
+
+  // Volatility (standard deviation)
+  const mean = prices.reduce((a, b) => a + b, 0) / len
+  const volatility = Math.sqrt(prices.reduce((sum, p) => sum + Math.pow(p - mean, 2), 0) / len)
+
+  // Price momentum
+  const weekChange = weekAgo > 0 ? ((currentPrice - weekAgo) / weekAgo * 100) : null
+  const monthChange = monthAgo > 0 ? ((currentPrice - monthAgo) / monthAgo * 100) : null
+  const threeMonthChange = threeMonthAgo > 0 ? ((currentPrice - threeMonthAgo) / threeMonthAgo * 100) : null
+
+  // 52-week position
+  const fiftyTwoWeekPosition = quote.fiftyTwoWeekHigh && quote.fiftyTwoWeekLow
+    ? ((currentPrice - quote.fiftyTwoWeekLow) / (quote.fiftyTwoWeekHigh - quote.fiftyTwoWeekLow) * 100)
+    : null
+
+  // Volume analysis
+  const avgVolume = volumes && volumes.length > 0 ? volumes.reduce((a, b) => a + b, 0) / volumes.length : 0
+  const recentVolume = volumes && volumes.length >= 5 ? volumes.slice(-5).reduce((a, b) => a + b, 0) / 5 : avgVolume
+  const volumeTrend = avgVolume > 0 ? ((recentVolume - avgVolume) / avgVolume * 100) : 0
+
+  // Trend detection
+  const isUptrend = ma20 > ma50 && currentPrice > ma20
+  const isDowntrend = ma20 < ma50 && currentPrice < ma20
+  const trend = isUptrend ? 'UPTREND' : isDowntrend ? 'DOWNTREND' : 'SIDEWAYS'
+
+  // Support/resistance from recent prices
+  const recentHigh = Math.max(...prices.slice(-20))
+  const recentLow = Math.min(...prices.slice(-20))
+
+  // RSI calculation
+  let gains = 0, losses = 0
+  for (let i = Math.max(0, len - 14); i < len - 1; i++) {
+    const change = prices[i + 1] - prices[i]
+    if (change > 0) gains += change
+    else losses -= change
+  }
+  const avgGain = gains / 14
+  const avgLoss = losses / 14
+  const rs = avgLoss === 0 ? 100 : avgGain / avgLoss
+  const rsi = Math.round(100 - (100 / (1 + rs)))
+
+  return {
+    currentPrice,
+    weekChange: weekChange?.toFixed(2),
+    monthChange: monthChange?.toFixed(2),
+    threeMonthChange: threeMonthChange?.toFixed(2),
+    ma20: ma20.toFixed(2),
+    ma50: ma50.toFixed(2),
+    volatility: volatility.toFixed(2),
+    volatilityPercent: (volatility / mean * 100).toFixed(2),
+    fiftyTwoWeekPosition: fiftyTwoWeekPosition?.toFixed(0),
+    volumeTrend: volumeTrend.toFixed(0),
+    trend,
+    recentHigh: recentHigh.toFixed(2),
+    recentLow: recentLow.toFixed(2),
+    priceVsMa20: ((currentPrice - ma20) / ma20 * 100).toFixed(2),
+    priceVsMa50: ((currentPrice - ma50) / ma50 * 100).toFixed(2),
+    rsi,
+    rsiStatus: rsi > 70 ? 'overbought' : rsi < 30 ? 'oversold' : 'neutral'
+  }
+}
+
+// Analyze news for themes and sentiment
+const analyzeNews = (news) => {
+  if (!news || news.length === 0) return { themes: [], sentiment: 'neutral', headlines: [], positiveCount: 0, negativeCount: 0, totalArticles: 0 }
+
+  const headlines = news.slice(0, 15).map(n => n.headline)
+
+  // Keyword detection for themes
+  const themeKeywords = {
+    'earnings': ['earnings', 'revenue', 'profit', 'eps', 'quarterly', 'beat', 'miss', 'guidance', 'forecast'],
+    'product': ['launch', 'product', 'release', 'announce', 'new', 'unveil', 'introduce', 'rollout'],
+    'ai': ['ai', 'artificial intelligence', 'machine learning', 'chatgpt', 'openai', 'llm', 'generative'],
+    'legal': ['lawsuit', 'sue', 'legal', 'court', 'settlement', 'regulatory', 'sec', 'ftc', 'doj', 'antitrust'],
+    'leadership': ['ceo', 'cfo', 'executive', 'appoint', 'resign', 'hire', 'fired', 'management', 'board'],
+    'acquisition': ['acquire', 'merger', 'buy', 'deal', 'takeover', 'acquisition', 'bid'],
+    'layoffs': ['layoff', 'cut', 'reduce', 'workforce', 'job', 'restructur', 'downsize'],
+    'expansion': ['expand', 'growth', 'market', 'international', 'new market', 'scale'],
+    'partnership': ['partner', 'collaboration', 'alliance', 'deal', 'agreement', 'joint venture'],
+    'competition': ['compet', 'rival', 'market share', 'versus', 'against', 'battle']
+  }
+
+  const detectedThemes = []
+  const headlineLower = headlines.join(' ').toLowerCase()
+
+  for (const [theme, keywords] of Object.entries(themeKeywords)) {
+    if (keywords.some(kw => headlineLower.includes(kw))) {
+      detectedThemes.push(theme)
+    }
+  }
+
+  // Sentiment detection
+  const positiveWords = ['beat', 'surge', 'soar', 'gain', 'rise', 'growth', 'strong', 'bullish', 'upgrade', 'buy', 'outperform', 'record', 'profit', 'success', 'breakthrough', 'rally', 'jump', 'boom']
+  const negativeWords = ['miss', 'fall', 'drop', 'decline', 'down', 'weak', 'bearish', 'downgrade', 'sell', 'underperform', 'crash', 'plunge', 'loss', 'fail', 'concern', 'risk', 'slump', 'tumble', 'cut']
+
+  let positiveCount = 0
+  let negativeCount = 0
+
+  positiveWords.forEach(w => {
+    positiveCount += (headlineLower.match(new RegExp(`\\b${w}`, 'gi')) || []).length
+  })
+  negativeWords.forEach(w => {
+    negativeCount += (headlineLower.match(new RegExp(`\\b${w}`, 'gi')) || []).length
+  })
+
+  const sentiment = positiveCount > negativeCount + 2 ? 'positive'
+    : negativeCount > positiveCount + 2 ? 'negative'
+    : 'mixed'
+
+  return {
+    themes: detectedThemes.slice(0, 5),
+    sentiment,
+    headlines: headlines.slice(0, 8),
+    positiveCount,
+    negativeCount,
+    totalArticles: news.length
+  }
+}
+
+// Company context for major stocks
+const getCompanyContext = (symbol) => {
+  const contexts = {
+    'AAPL': 'Apple Inc. Consumer electronics giant. Key products: iPhone (50%+ revenue), Mac, iPad, Services (App Store, iCloud, Apple Music), Wearables (Watch, AirPods). CEO Tim Cook. Focus: AI integration, Vision Pro AR/VR, Services growth. Risks: iPhone dependency, China exposure, regulatory scrutiny. Market cap leader.',
+    'MSFT': 'Microsoft. Enterprise software leader. Key: Azure (cloud #2 behind AWS), Office 365, Windows, LinkedIn, Gaming (Xbox, Activision). CEO Satya Nadella. Focus: AI (OpenAI partnership, Copilot integration), Cloud growth. Risks: Cloud competition with AWS/Google, PC market decline.',
+    'GOOGL': 'Alphabet/Google. Digital advertising dominance (80%+ search market share). Key: Search, YouTube, Google Cloud (growing fast), Android, Waymo (autonomous vehicles). CEO Sundar Pichai. Focus: AI (Gemini), Cloud growth, YouTube monetization. Risks: AI disruption to search, regulatory antitrust.',
+    'AMZN': 'Amazon. E-commerce and cloud leader. Key: E-commerce (40%+ US market), AWS (cloud #1, profit driver), Advertising (fast-growing), Prime ecosystem. CEO Andy Jassy. Focus: AWS growth, cost efficiency, ads. Risks: Retail margin pressure, labor costs, competition.',
+    'NVDA': 'NVIDIA. AI chip dominance. Key: Data center GPUs (AI training), Gaming GPUs, AI software (CUDA). CEO Jensen Huang. Focus: AI infrastructure, data center expansion, automotive. Risks: Concentration in AI boom, competition from AMD/Intel/custom chips, China restrictions.',
+    'TSLA': 'Tesla. EV and energy leader. Key: Model 3/Y (volume), Model S/X (premium), Energy storage, FSD (Full Self-Driving). CEO Elon Musk. Focus: Volume growth, FSD development, Cybertruck ramp, robotaxi. Risks: Intensifying competition, margin pressure, Musk distraction, execution.',
+    'META': 'Meta Platforms. Social media dominance. Key: Facebook, Instagram, WhatsApp, Reality Labs (Quest, metaverse). CEO Mark Zuckerberg. Focus: AI integration, Reels growth, metaverse long-term bet. Risks: TikTok competition, regulatory, metaverse losses ($15B+/year).',
+    'NFLX': 'Netflix. Streaming leader with 250M+ subscribers globally. CEO Ted Sarandos. Focus: Ad tier growth, password sharing crackdown revenue, gaming expansion. Risks: Content costs ($17B+/year), streaming wars, market saturation.',
+    'AMD': 'Advanced Micro Devices. Chip competitor to Intel and NVIDIA. Key: Ryzen CPUs (consumer), EPYC (server, gaining share), Radeon GPUs, MI300 (AI). CEO Lisa Su. Focus: Data center growth, AI GPU competition. Risks: NVIDIA dominance in AI, Intel recovery.',
+    'GOOG': 'Alphabet Class C shares (no voting rights). Same company as GOOGL. Digital advertising, Search, YouTube, Cloud, AI. Trading at slight discount to GOOGL typically.',
+    'JPM': 'JPMorgan Chase. Largest US bank by assets. Key: Consumer banking, Investment banking (top tier), Asset management, Trading. CEO Jamie Dimon. Focus: Net interest income, credit quality, technology investment. Risks: Recession, credit losses, regulatory.',
+    'V': 'Visa. Payment network leader (60%+ global market). Key: Transaction processing, cross-border payments, new flows (B2B). Focus: New payment flows, crypto/blockchain, emerging markets. Risks: Regulation, Mastercard competition, fintech disruption.',
+    'MA': 'Mastercard. Payment network #2 (30%+ global market). Key: Transaction processing, cross-border, analytics. Focus: New payment flows, emerging markets. Risks: Regulation, Visa competition, fintech disruption.',
+    'JNJ': 'Johnson & Johnson. Healthcare conglomerate. Key: Pharmaceuticals (60%+ revenue), MedTech devices. Consumer health spun off (Kenvue). Focus: Pharma pipeline, acquisitions. Risks: Patent cliffs, litigation, drug pricing.',
+    'UNH': 'UnitedHealth Group. Healthcare giant. Key: Insurance (UnitedHealthcare), Optum (services, PBM, data). Largest US health insurer. Focus: Optum growth, Medicare Advantage. Risks: Regulatory, political risk, competition.',
+    'WMT': 'Walmart. Retail giant. Key: US stores (4,700+), E-commerce (Walmart+), International. Largest private employer. Focus: E-commerce growth, automation, advertising. Risks: Amazon competition, labor costs, margin pressure.',
+    'PG': 'Procter & Gamble. Consumer staples leader. Key brands: Tide, Pampers, Gillette, Oral-B, Bounty. Dividend aristocrat (65+ years of increases). Focus: Premiumization, emerging markets. Risks: Inflation, private label competition.',
+    'HD': 'Home Depot. Home improvement retail #1. Key: 2,300+ stores, Pro customers (growing), e-commerce. Focus: Pro market share, supply chain. Risks: Housing market slowdown, interest rates.',
+    'CRM': 'Salesforce. Cloud CRM leader. Key: Sales Cloud, Service Cloud, Marketing Cloud, Slack, Tableau. CEO Marc Benioff. Focus: AI (Einstein), profitability. Risks: Competition (Microsoft, Oracle), growth slowdown.',
+    'COST': 'Costco. Membership warehouse retail. Key: Membership model (high renewal 90%+), Kirkland brand. Focus: E-commerce, international expansion. Risks: Inflation, competition, labor.',
+    'AVGO': 'Broadcom. Semiconductor and infrastructure software. Key: Data center chips, networking, storage, VMware acquisition. Focus: AI networking, software recurring revenue. Risks: Integration, cyclicality.',
+    'LLY': 'Eli Lilly. Pharmaceutical leader. Key drugs: Mounjaro/Zepbound (diabetes/obesity blockbusters), Verzenio (cancer). Focus: Obesity drug ramp, pipeline. Risks: Competition, drug pricing, supply constraints.',
+    'NVO': 'Novo Nordisk. Pharmaceutical (Denmark). Key drugs: Ozempic, Wegovy (GLP-1 obesity/diabetes). Leader in diabetes care. Focus: Obesity market expansion, manufacturing scale. Risks: Competition (Lilly), supply, pricing.',
+    'ABBV': 'AbbVie. Pharmaceutical. Key drugs: Skyrizi, Rinvoq (immunology, replacing Humira), Botox (Allergan). Focus: Immunology growth, pipeline. Risks: Humira biosimilar competition, patent cliffs.',
+    'ORCL': 'Oracle. Enterprise software and cloud. Key: Cloud infrastructure (OCI), Database, ERP (Fusion). CEO Safra Catz. Focus: Cloud growth, AI workloads. Risks: AWS/Azure competition, legacy transition.',
+    'MRK': 'Merck. Pharmaceutical. Key drugs: Keytruda (cancer immunotherapy, biggest drug globally), Gardasil (HPV vaccine). Focus: Keytruda indications, pipeline. Risks: Keytruda patent cliff (2028), concentration.',
+    'ADBE': 'Adobe. Creative and document software. Key: Creative Cloud (Photoshop, Premiere), Document Cloud (Acrobat), Experience Cloud. Focus: AI (Firefly), pricing power. Risks: Competition, AI disruption to creative tools.',
+    'KO': 'Coca-Cola. Beverage leader. Key brands: Coca-Cola, Sprite, Fanta, Minute Maid, Costa Coffee. Dividend king (60+ years of increases). Focus: Premiumization, zero-sugar growth. Risks: Health trends, sugar taxes.',
+    'PEP': 'PepsiCo. Beverages and snacks. Key brands: Pepsi, Gatorade, Frito-Lay (Doritos, Lays), Quaker. More diversified than KO with snacks. Focus: Snack growth, emerging markets. Risks: Health trends, competition.',
+    'TMO': 'Thermo Fisher Scientific. Life sciences equipment leader. Key: Lab equipment, reagents, clinical trials, pharma services. Focus: Biopharma, diagnostics. Risks: Biotech funding cycles, competition.',
+    'INTC': 'Intel. Legacy chip giant in turnaround. Key: PC chips (declining share), Data center, Foundry services (new). CEO Pat Gelsinger. Focus: Foundry, process technology catch-up. Risks: AMD/NVIDIA competition, execution, capital intensity.',
+    'DIS': 'Walt Disney. Entertainment conglomerate. Key: Disney+/Hulu (streaming), Parks (profit driver), ESPN, Studios. CEO Bob Iger. Focus: Streaming profitability, parks expansion. Risks: Streaming losses, cord-cutting, content costs.',
+    'CSCO': 'Cisco. Networking equipment leader. Key: Routers, switches, security, collaboration (Webex). Focus: Software/subscription transition, security. Risks: Cloud shift, competition, IT spending.',
+    'ACN': 'Accenture. IT consulting leader. Key: Consulting, technology services, outsourcing. Global footprint. Focus: AI services, cloud migration. Risks: IT spending cycles, competition.',
+    'IBM': 'IBM. Legacy tech in transformation. Key: Hybrid cloud (Red Hat), AI (watsonx), Consulting. CEO Arvind Krishna. Focus: Red Hat growth, AI enterprise. Risks: Declining legacy, competition.',
+    'QCOM': 'Qualcomm. Mobile chip leader. Key: Snapdragon (smartphone), 5G modems, licensing (patent royalties). Focus: Auto, IoT diversification, PC chips. Risks: Apple modem development, China risk, smartphone cycle.',
+    'NOW': 'ServiceNow. Enterprise workflow software. Key: IT service management, HR, customer service automation. CEO Bill McDermott. Focus: AI automation, platform expansion. Risks: Competition, IT spending.',
+    'INTU': 'Intuit. Financial software. Key: TurboTax, QuickBooks (SMB accounting), Credit Karma, Mailchimp. Focus: AI-powered tax/accounting, SMB ecosystem. Risks: Competition, IRS free file threat.',
+    'TXN': 'Texas Instruments. Analog semiconductor leader. Key: Analog chips (auto, industrial), embedded processors. Focus: Auto/industrial growth, in-house manufacturing. Risks: Cyclicality, China, inventory.',
+    'AMAT': 'Applied Materials. Semiconductor equipment leader. Key: Chip manufacturing equipment, services. Focus: Leading-edge tools, China exposure management. Risks: Cyclicality, China restrictions, competition.',
+    'BKNG': 'Booking Holdings. Online travel leader. Key: Booking.com, Priceline, Kayak, OpenTable. Focus: Connected trip, payments. Risks: Economic sensitivity, competition (Airbnb, Google).',
+    'ISRG': 'Intuitive Surgical. Robotic surgery leader. Key: da Vinci surgical robots, recurring instruments/services. Focus: Procedure growth, new systems. Risks: Competition entering, capital equipment cycles.',
+    'AXP': 'American Express. Premium credit cards. Key: Card fees, travel services, high-spend customers. Focus: Millennial/Gen Z acquisition, travel recovery. Risks: Economic sensitivity, competition, regulation.',
+    'SPGI': 'S&P Global. Financial data and ratings. Key: Credit ratings, Market Intelligence (data), Indices (S&P 500). Focus: Data/analytics growth, ESG. Risks: Debt issuance cycles, regulation.',
+    'GS': 'Goldman Sachs. Investment bank. Key: Trading, Investment banking, Asset management. CEO David Solomon. Focus: Asset management growth, consumer exit. Risks: Market volatility, trading revenue, regulation.',
+    'BLK': 'BlackRock. Asset management giant ($10T+ AUM). Key: iShares ETFs, Aladdin platform. CEO Larry Fink. Focus: ETF flows, Aladdin licensing. Risks: Fee pressure, market downturn, ESG backlash.',
+    'BA': 'Boeing. Aerospace and defense. Key: Commercial aircraft (737, 787), Defense, Services. Focus: 737 MAX recovery, quality control, supply chain. Risks: Safety issues, Airbus competition, execution, China.',
+    'CAT': 'Caterpillar. Construction and mining equipment. Key: Construction machines, mining trucks, engines. Focus: Infrastructure, electrification. Risks: Cyclicality, commodity prices, China.',
+    'DE': 'Deere & Company. Agricultural equipment leader. Key: Tractors, combines, precision agriculture technology. Focus: Precision ag tech, autonomy. Risks: Farm income cycles, commodity prices, interest rates.',
+    'RTX': 'RTX Corporation (Raytheon). Defense and aerospace. Key: Missiles (Patriot), Jet engines (Pratt & Whitney), Collins Aerospace. Focus: Defense spending, commercial aero recovery. Risks: Engine issues, government budgets.',
+    'UNP': 'Union Pacific. Railroad. Key: Western US freight rail network. Focus: Efficiency (Precision Scheduled Railroading), volume growth. Risks: Economic sensitivity, regulation, labor.',
+    'NEE': 'NextEra Energy. Utility and renewables leader. Key: Florida Power & Light (regulated), NextEra Energy Resources (renewables). Focus: Renewables growth, transmission. Risks: Interest rates, policy changes.',
+    'T': 'AT&T. Telecom. Key: Wireless (postpaid focus), Fiber broadband. Spun off WarnerMedia. Focus: Wireless growth, fiber expansion, debt reduction. Risks: Competition (Verizon, T-Mobile), capital intensity.',
+    'VZ': 'Verizon. Telecom. Key: Wireless (premium network), FiOS. Focus: 5G, fixed wireless, cost efficiency. Risks: Competition, capital intensity, consumer wireless saturation.',
+    'CVX': 'Chevron. Oil and gas major. Key: Upstream (production), Downstream (refining), Hess acquisition. Focus: Permian Basin, LNG, lower carbon. Risks: Oil prices, energy transition, Hess litigation.',
+    'XOM': 'Exxon Mobil. Largest US oil company. Key: Upstream, Downstream, Chemical, Pioneer acquisition. Focus: Permian Basin, LNG, carbon capture. Risks: Oil prices, energy transition, regulatory.',
+    'COP': 'ConocoPhillips. Independent E&P (exploration/production). Key: Permian, Alaska, LNG. Focus: Low-cost production, capital returns. Risks: Oil prices, commodity cycles.',
+    'LIN': 'Linde. Industrial gases leader. Key: Oxygen, nitrogen, hydrogen for manufacturing, healthcare. Focus: Clean hydrogen, electronics. Risks: Industrial demand, energy costs.',
+    'LOW': 'Lowes. Home improvement retail #2. Key: 1,700+ stores, Pro market (growing). Focus: Pro market share, omnichannel. Risks: Housing market, HD competition, rates.',
+    'MCD': 'McDonalds. Fast food leader. Key: 40,000+ global locations, mostly franchised. Focus: Digital/delivery, value menu, international. Risks: Labor costs, competition, consumer sentiment.',
+    'SBUX': 'Starbucks. Coffee chain leader. Key: 35,000+ global stores, loyalty program. New CEO Brian Niccol (from Chipotle). Focus: Store experience, China recovery, efficiency. Risks: Competition, labor, China slowdown.',
+    'NKE': 'Nike. Athletic footwear/apparel leader. Key: Nike brand, Jordan, Converse. DTC focus. Focus: DTC growth, innovation, China recovery. Risks: Competition (Adidas, On, Hoka), inventory, China.',
+    'CMG': 'Chipotle Mexican Grill. Fast casual leader. Key: 3,400+ locations, digital sales. Former CEO Brian Niccol now at Starbucks. Focus: Store growth, throughput. Risks: Food costs, labor, execution post-Niccol.',
+    'PANW': 'Palo Alto Networks. Cybersecurity leader. Key: Firewall, cloud security, SOC platform. Focus: Platformization, AI security. Risks: Competition (CrowdStrike), IT spending.',
+    'CRWD': 'CrowdStrike. Endpoint security leader. Key: Falcon platform, cloud-native. Focus: Platform expansion, AI. July 2024 outage impact. Risks: Outage reputation, competition, IT spending.',
+    'ZS': 'Zscaler. Cloud security (Zero Trust). Key: Secure web gateway, Zero Trust architecture. Focus: Platform expansion, large enterprises. Risks: Competition, IT spending cycles.',
+    'SNOW': 'Snowflake. Cloud data platform. Key: Data warehouse, data lake, sharing. Focus: Product expansion, consumption growth. Risks: Databricks competition, IT spending, profitability.',
+    'DDOG': 'Datadog. Cloud monitoring/observability. Key: Infrastructure monitoring, APM, logs. Focus: Platform expansion, AI ops. Risks: Competition, IT spending, expansion.',
+    'PLTR': 'Palantir. Data analytics/AI platform. Key: Government (Gotham), Commercial (Foundry), AIP (AI). Focus: Commercial growth, AI platform. Risks: Government concentration, profitability, competition.',
+    'COIN': 'Coinbase. Crypto exchange. Key: Trading fees, staking, custody, Base blockchain. Focus: Regulatory clarity, stablecoin revenue, Base. Risks: Crypto prices, regulation, competition.',
+    'SQ': 'Block (Square). Fintech. Key: Square (merchant services), Cash App (consumer), Bitcoin. CEO Jack Dorsey. Focus: Cash App growth, Bitcoin strategy. Risks: Competition, credit losses, Bitcoin volatility.',
+    'PYPL': 'PayPal. Digital payments. Key: PayPal checkout, Venmo, Braintree. Focus: Checkout improvement, Venmo monetization. Risks: Apple Pay competition, growth slowdown.',
+    'SHOP': 'Shopify. E-commerce platform. Key: Merchant tools, payments, fulfillment. Focus: Enterprise growth, Shop app. Risks: Amazon competition, SMB sensitivity.',
+    'UBER': 'Uber. Ride-hailing and delivery. Key: Mobility, Delivery (Uber Eats), Freight. Focus: Profitability, autonomous partnerships. Risks: Competition (Lyft), driver classification, autonomous disruption.',
+    'ABNB': 'Airbnb. Short-term rentals. Key: 7M+ listings globally, Experiences. Focus: Quality, long-term stays, experiences. Risks: Regulation, economic sensitivity, competition.',
+    'DASH': 'DoorDash. Food delivery leader (US). Key: Restaurant delivery, grocery, retail. Focus: New verticals, international, advertising. Risks: Competition (Uber), profitability, gig economy regulation.',
+    'RBLX': 'Roblox. Gaming/metaverse platform. Key: User-generated games, 70M+ DAU (mostly kids/teens). Focus: Aging up users, advertising, international. Risks: User growth, monetization, safety concerns.',
+    'U': 'Unity. Game engine/tools. Key: Game development tools, advertising, monetization. Focus: AI tools, runtime fees. Risks: Competition (Unreal), developer relations.',
+    'AI': 'C3.ai. Enterprise AI software. Key: AI applications for enterprise (energy, manufacturing, government). Focus: Generative AI, consumption pricing. Risks: Competition, sales cycles, profitability.',
+    'RIVN': 'Rivian. EV startup. Key: R1T truck, R1S SUV, Amazon vans. Focus: Production ramp, cost reduction, R2 development. Risks: Cash burn, competition, execution.',
+    'LCID': 'Lucid Motors. Luxury EV startup. Key: Lucid Air sedan, Saudi backing. Focus: Production ramp, Gravity SUV. Risks: Cash burn, competition, limited scale.',
+    'F': 'Ford. Legacy automaker. Key: F-150 (bestselling), Mustang, Transit, EVs (F-150 Lightning, Mach-E). Focus: EV transition, cost cuts. Risks: EV losses, UAW costs, competition.',
+    'GM': 'General Motors. Legacy automaker. Key: Trucks (Silverado), SUVs, Ultium EVs, Cruise (autonomous). Focus: EV transition, Cruise restart. Risks: EV losses, Cruise challenges, competition.',
+    'SOFI': 'SoFi Technologies. Digital bank/fintech. Key: Student loans, personal loans, investing, bank charter. Focus: Bank growth, member ARPU. Risks: Credit quality, competition, rate sensitivity.'
+  }
+
+  return contexts[symbol] || `${symbol} - Analyze based on available market data and news. Consider the company's market position, recent developments, and technical setup.`
+}
+
+// Build comprehensive AI prompt
+const buildComprehensivePrompt = (symbol, quote, metrics, newsAnalysis, news) => {
+  const companyInfo = getCompanyContext(symbol)
+  const hasNews = newsAnalysis.totalArticles > 0
+
+  return `You are a senior equity research analyst providing an in-depth analysis of ${symbol} (${quote.shortName || quote.longName || symbol}).
+
+=== COMPANY CONTEXT ===
+${companyInfo}
+
+=== CURRENT MARKET DATA ===
+Price: $${quote.regularMarketPrice?.toFixed(2) || quote.price?.toFixed(2) || 'N/A'}
+Today's Change: ${quote.regularMarketChangePercent?.toFixed(2) || 0}%
+Market Cap: ${formatLargeNumber(quote.marketCap) || 'N/A'}
+P/E Ratio: ${quote.trailingPE?.toFixed(2) || 'N/A'} | Forward P/E: ${quote.forwardPE?.toFixed(2) || 'N/A'}
+EPS: $${quote.trailingEps?.toFixed(2) || 'N/A'}
+Dividend Yield: ${quote.dividendYield ? (quote.dividendYield * 100).toFixed(2) + '%' : 'None'}
+
+=== TECHNICAL ANALYSIS ===
+${metrics ? `Trend: ${metrics.trend}
+RSI (14): ${metrics.rsi} (${metrics.rsiStatus})
+1-Week Performance: ${metrics.weekChange}%
+1-Month Performance: ${metrics.monthChange}%
+3-Month Performance: ${metrics.threeMonthChange}%
+52-Week Position: ${metrics.fiftyTwoWeekPosition}% (0%=low, 100%=high)
+52-Week Range: $${quote.fiftyTwoWeekLow?.toFixed(2) || '?'} - $${quote.fiftyTwoWeekHigh?.toFixed(2) || '?'}
+20-Day MA: $${metrics.ma20} (Price is ${metrics.priceVsMa20}% vs MA)
+50-Day MA: $${metrics.ma50} (Price is ${metrics.priceVsMa50}% vs MA)
+Recent Support: $${metrics.recentLow}
+Recent Resistance: $${metrics.recentHigh}
+Volatility: ${metrics.volatilityPercent}%
+Volume Trend: ${metrics.volumeTrend > 0 ? '+' : ''}${metrics.volumeTrend}% vs average` : 'Limited technical data available'}
+
+${hasNews ? `=== NEWS & SENTIMENT ANALYSIS ===
+Total Articles (30 days): ${newsAnalysis.totalArticles}
+Detected Themes: ${newsAnalysis.themes.length > 0 ? newsAnalysis.themes.join(', ') : 'General market news'}
+News Sentiment: ${newsAnalysis.sentiment.toUpperCase()} (${newsAnalysis.positiveCount} positive vs ${newsAnalysis.negativeCount} negative signals)
+
+Recent Headlines:
+${newsAnalysis.headlines.map((h, i) => `${i + 1}. ${h}`).join('\n')}` : '=== NEWS ===\nNo recent company-specific news found.'}
+
+=== YOUR ANALYSIS TASK ===
+
+Provide a DEEP, SPECIFIC analysis. Be opinionated and take a clear stance.
+
+Format your response as JSON with these exact fields:
+{
+  "verdict": "BULLISH" or "BEARISH" or "NEUTRAL",
+  "verdictStrength": "STRONG" or "MODERATE" or "WEAK",
+  "confidence": 1-100,
+  "summary": "2-3 sentence executive summary of your thesis",
+  "whatsHappening": "What's driving the stock right now? Connect news to price action. 2-3 sentences.",
+  "bullCase": "The strongest bull argument with specific price target. 2-3 sentences.",
+  "bearCase": "The biggest bear risks with downside target. 2-3 sentences.",
+  "technicalSetup": "Key support/resistance levels, trend analysis. 2 sentences.",
+  "keyLevels": {"support": "$XX.XX", "resistance": "$XX.XX", "stopLoss": "$XX.XX"},
+  "catalyst": "What upcoming event could move this stock?",
+  "timeHorizon": "Short-term trade, swing trade, or long-term investment?",
+  "actionableInsight": "One clear, specific action recommendation"
+}
+
+IMPORTANT RULES:
+1. Do NOT use asterisks, bullet points, or any markdown formatting
+2. Be SPECIFIC - reference actual numbers, prices, percentages from the data
+3. Be OPINIONATED - take a clear stance, no wishy-washy hedging
+4. Keep each field concise but packed with insight
+5. Return ONLY valid JSON, no other text`
+}
+
+// Popular stocks for search supplementation
+const POPULAR_STOCKS = {
+  'A': ['AAPL', 'AMZN', 'AMD', 'ABBV', 'AVGO', 'ADBE', 'ABT', 'ACN', 'ABNB', 'AXP'],
+  'B': ['BRK-B', 'BAC', 'BA', 'BMY', 'BLK', 'BKNG', 'BX', 'BSX', 'BIIB', 'BDX'],
+  'C': ['COST', 'CRM', 'CVX', 'CSCO', 'C', 'CAT', 'CMCSA', 'COP', 'CI', 'CRWD'],
+  'D': ['DIS', 'DHR', 'DE', 'DXCM', 'DUK', 'D', 'DASH', 'DVN', 'DG', 'DKNG'],
+  'E': ['XOM', 'ETN', 'EMR', 'ELV', 'EOG', 'ENPH', 'EL', 'EA', 'EW', 'EBAY'],
+  'F': ['F', 'FDX', 'FCX', 'FSLR', 'FISV', 'FIS', 'FTNT', 'FI', 'FAST', 'FTV'],
+  'G': ['GOOGL', 'GOOG', 'GS', 'GE', 'GM', 'GILD', 'GD', 'GPN', 'GIS', 'GLW'],
+  'H': ['HD', 'HON', 'HUM', 'HCA', 'HPQ', 'HSBC', 'HLT', 'HPE', 'HAL', 'HOOD'],
+  'I': ['INTC', 'IBM', 'INTU', 'ISRG', 'ICE', 'ITW', 'IDXX', 'IQV', 'IR', 'ILMN'],
+  'J': ['JPM', 'JNJ', 'JBHT', 'JCI', 'JD', 'JWN', 'JNPR', 'J', 'JAZZ', 'JLL'],
+  'K': ['KO', 'KHC', 'KLAC', 'KMB', 'KMI', 'KDP', 'K', 'KR', 'KSS', 'KEYS'],
+  'L': ['LLY', 'LMT', 'LOW', 'LRCX', 'LIN', 'LVS', 'LULU', 'LUV', 'LYFT', 'LEN'],
+  'M': ['MSFT', 'META', 'MA', 'MCD', 'MRK', 'MMM', 'MO', 'MS', 'MDLZ', 'MU'],
+  'N': ['NVDA', 'NFLX', 'NKE', 'NOW', 'NEE', 'NEM', 'NSC', 'NDAQ', 'NOC', 'NUE'],
+  'O': ['ORCL', 'OXY', 'ON', 'ODFL', 'OMC', 'ORLY', 'OKE', 'OTIS', 'O', 'OKTA'],
+  'P': ['PG', 'PFE', 'PEP', 'PYPL', 'PM', 'PANW', 'PNC', 'PSX', 'PLD', 'PLTR'],
+  'Q': ['QCOM', 'QQQ', 'QRVO', 'QSR'],
+  'R': ['RTX', 'REGN', 'ROP', 'ROST', 'RCL', 'RSG', 'RIVN', 'RBLX', 'RF', 'RMD'],
+  'S': ['SPY', 'SBUX', 'SCHW', 'SLB', 'SO', 'SNOW', 'SHOP', 'SQ', 'SNAP', 'SOFI'],
+  'T': ['TSLA', 'T', 'TGT', 'TMO', 'TXN', 'TJX', 'TMUS', 'TTWO', 'TFC', 'TWLO'],
+  'U': ['UNH', 'UPS', 'USB', 'UBER', 'ULTA', 'UAL', 'U', 'URI', 'UNP', 'UPST'],
+  'V': ['V', 'VZ', 'VRTX', 'VLO', 'VMW', 'VFC', 'VRSK', 'VOO', 'VTI', 'VNQ'],
+  'W': ['WMT', 'WFC', 'WBA', 'WBD', 'WM', 'WDAY', 'W', 'WDC', 'WST', 'WELL'],
+  'X': ['XOM', 'XLK', 'XLF', 'XLE', 'XLV', 'XLY', 'XLP', 'XLI', 'XLNX', 'XYL'],
+  'Y': ['YUM', 'YELP', 'YUMC'],
+  'Z': ['ZTS', 'ZM', 'ZS', 'Z', 'ZG', 'ZBH', 'ZBRA', 'ZI']
+}
+
+export default function AIInsights() {
   const [symbol, setSymbol] = useState('')
   const [loading, setLoading] = useState(false)
-  const [currentAnalysis, setCurrentAnalysis] = useState(null)
+  const [analysisResult, setAnalysisResult] = useState(null)
   const [history, setHistory] = useState(() => {
     try {
-      const saved = localStorage.getItem('ai_analysis_history')
+      const saved = localStorage.getItem('ai_analysis_history_v2')
       return saved ? JSON.parse(saved) : []
     } catch {
       return []
@@ -190,10 +386,10 @@ export default function AIInsights({ finnhubFetch }) {
   const [loadingStep, setLoadingStep] = useState('')
   const inputRef = useRef(null)
   const dropdownRef = useRef(null)
-  const isSelectingRef = useRef(false) // Prevent dropdown flickering
+  const isSelectingRef = useRef(false)
 
   useEffect(() => {
-    localStorage.setItem('ai_analysis_history', JSON.stringify(history.slice(0, 5)))
+    localStorage.setItem('ai_analysis_history_v2', JSON.stringify(history.slice(0, 5)))
   }, [history])
 
   useEffect(() => {
@@ -206,40 +402,8 @@ export default function AIInsights({ finnhubFetch }) {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  // Popular stocks for supplementing short searches
-  const POPULAR_STOCKS = {
-    'A': ['AAPL', 'AMZN', 'AMD', 'ABBV', 'AVGO', 'ADBE', 'ABT', 'ACN', 'ABNB', 'AXP'],
-    'B': ['BRK-B', 'BAC', 'BA', 'BMY', 'BLK', 'BKNG', 'BX', 'BSX', 'BIIB', 'BDX'],
-    'C': ['COST', 'CRM', 'CVX', 'CSCO', 'C', 'CAT', 'CMCSA', 'COP', 'CI', 'CRWD'],
-    'D': ['DIS', 'DHR', 'DE', 'DXCM', 'DUK', 'D', 'DASH', 'DVN', 'DG', 'DKNG'],
-    'E': ['XOM', 'ETN', 'EMR', 'ELV', 'EOG', 'ENPH', 'EL', 'EA', 'EW', 'EBAY'],
-    'F': ['F', 'FDX', 'FCX', 'FSLR', 'FISV', 'FIS', 'FTNT', 'FI', 'FAST', 'FTV'],
-    'G': ['GOOGL', 'GOOG', 'GS', 'GE', 'GM', 'GILD', 'GD', 'GPN', 'GIS', 'GLW'],
-    'H': ['HD', 'HON', 'HUM', 'HCA', 'HPQ', 'HSBC', 'HLT', 'HPE', 'HAL', 'HOOD'],
-    'I': ['INTC', 'IBM', 'INTU', 'ISRG', 'ICE', 'ITW', 'IDXX', 'IQV', 'IR', 'ILMN'],
-    'J': ['JPM', 'JNJ', 'JBHT', 'JCI', 'JD', 'JWN', 'JNPR', 'J', 'JAZZ', 'JLL'],
-    'K': ['KO', 'KHC', 'KLAC', 'KMB', 'KMI', 'KDP', 'K', 'KR', 'KSS', 'KEYS'],
-    'L': ['LLY', 'LMT', 'LOW', 'LRCX', 'LIN', 'LVS', 'LULU', 'LUV', 'LYFT', 'LEN'],
-    'M': ['MSFT', 'META', 'MA', 'MCD', 'MRK', 'MMM', 'MO', 'MS', 'MDLZ', 'MU'],
-    'N': ['NVDA', 'NFLX', 'NKE', 'NOW', 'NEE', 'NEM', 'NSC', 'NDAQ', 'NOC', 'NUE'],
-    'O': ['ORCL', 'OXY', 'ON', 'ODFL', 'OMC', 'ORLY', 'OKE', 'OTIS', 'O', 'OKTA'],
-    'P': ['PG', 'PFE', 'PEP', 'PYPL', 'PM', 'PANW', 'PNC', 'PSX', 'PLD', 'PLTR'],
-    'Q': ['QCOM', 'QQQ', 'QRVO', 'QSR'],
-    'R': ['RTX', 'REGN', 'ROP', 'ROST', 'RCL', 'RSG', 'RIVN', 'RBLX', 'RF', 'RMD'],
-    'S': ['SPY', 'SBUX', 'SCHW', 'SLB', 'SO', 'SNOW', 'SHOP', 'SQ', 'SNAP', 'SOFI'],
-    'T': ['TSLA', 'T', 'TGT', 'TMO', 'TXN', 'TJX', 'TMUS', 'TTWO', 'TFC', 'TWLO'],
-    'U': ['UNH', 'UPS', 'USB', 'UBER', 'ULTA', 'UAL', 'U', 'URI', 'UNP', 'UPST'],
-    'V': ['V', 'VZ', 'VRTX', 'VLO', 'VMW', 'VFC', 'VRSK', 'VOO', 'VTI', 'VNQ'],
-    'W': ['WMT', 'WFC', 'WBA', 'WBD', 'WM', 'WDAY', 'W', 'WDC', 'WST', 'WELL'],
-    'X': ['XOM', 'XLK', 'XLF', 'XLE', 'XLV', 'XLY', 'XLP', 'XLI', 'XLNX', 'XYL'],
-    'Y': ['YUM', 'YELP', 'YUMC'],
-    'Z': ['ZTS', 'ZM', 'ZS', 'Z', 'ZG', 'ZBH', 'ZBRA', 'ZI']
-  }
-
   const searchStocks = useCallback(debounce(async (q) => {
-    // Don't search if we're in the middle of selecting a stock
     if (isSelectingRef.current) return
-
     if (!q.trim() || q.length < 1) {
       setSearchResults([])
       setShowDropdown(false)
@@ -247,9 +411,7 @@ export default function AIInsights({ finnhubFetch }) {
     }
     setSearchLoading(true)
     try {
-      // Use Yahoo search - no rate limits
       const data = await yahooFetch(q, 'search')
-      // Handle both API response formats
       const items = data?.results || data?.quotes || []
       let results = items
         .filter(r => {
@@ -262,21 +424,17 @@ export default function AIInsights({ finnhubFetch }) {
           type: r.type || r.quoteType || 'EQUITY'
         }))
 
-      // Supplement with popular stocks for short queries
       if (results.length < 5 && q.length <= 2) {
         const firstLetter = q.charAt(0).toUpperCase()
         const popularSymbols = POPULAR_STOCKS[firstLetter] || []
         const queryUpper = q.toUpperCase()
-
         const matchingPopular = popularSymbols
           .filter(sym => sym.startsWith(queryUpper))
           .filter(sym => !results.some(r => r.symbol === sym))
           .map(sym => ({ symbol: sym, name: sym, type: 'EQUITY' }))
-
         results = [...results, ...matchingPopular]
       }
 
-      // Deduplicate and limit
       const seen = new Set()
       results = results.filter(r => {
         if (seen.has(r.symbol)) return false
@@ -284,7 +442,6 @@ export default function AIInsights({ finnhubFetch }) {
         return true
       }).slice(0, 10)
 
-      // Only show dropdown if not selecting
       if (!isSelectingRef.current) {
         setSearchResults(results)
         setShowDropdown(true)
@@ -313,7 +470,6 @@ export default function AIInsights({ finnhubFetch }) {
       }
       return
     }
-
     if (e.key === 'ArrowDown') {
       e.preventDefault()
       setSelectedIndex(i => Math.min(i + 1, searchResults.length - 1))
@@ -333,16 +489,12 @@ export default function AIInsights({ finnhubFetch }) {
   }
 
   const selectStock = (sym) => {
-    // Prevent dropdown from reopening
     isSelectingRef.current = true
     setShowDropdown(false)
     setSearchResults([])
     setSymbol(sym)
-
-    // Start analysis after a brief delay
     setTimeout(() => {
       analyzeStock(sym)
-      // Reset the flag after analysis starts
       setTimeout(() => { isSelectingRef.current = false }, 500)
     }, 50)
   }
@@ -353,271 +505,82 @@ export default function AIInsights({ finnhubFetch }) {
 
     setLoading(true)
     setError(null)
-    setCurrentAnalysis(null)
+    setAnalysisResult(null)
     setShowDropdown(false)
-    setLoadingStep('Fetching quote data...')
+    setLoadingStep('Fetching market data...')
 
     try {
-      // STEP 1: Fetch comprehensive quote data from Yahoo
-      const yahooData = await yahooFetch(sym)
-      const quote = normalizeYahooQuote(yahooData)
-      if (!quote || quote.c === 0) {
+      // 1. Fetch basic quote data
+      const quoteData = await yahooFetch(sym)
+      if (!quoteData || (!quoteData.regularMarketPrice && !quoteData.price)) {
         throw new Error(`Invalid symbol: ${sym}`)
       }
 
       setLoadingStep('Analyzing price history...')
 
-      // STEP 2: Fetch 3-month chart data for comprehensive trend analysis
-      let chartPrices = []
-      let technicals = null
-      let weekChange = null, monthChange = null, threeMonthChange = null
+      // 2. Fetch 3-month chart data
+      let prices = []
+      let volumes = []
       try {
         const chartData = await yahooFetch(sym, 'chart', { range: '3mo', interval: '1d' })
-        console.log('Chart data:', chartData)
-
-        // Handle different response formats
-        let closes = []
         if (chartData?.chart?.result?.[0]) {
           const result = chartData.chart.result[0]
-          closes = result.indicators?.quote?.[0]?.close || []
+          prices = (result.indicators?.quote?.[0]?.close || []).filter(c => c !== null && !isNaN(c))
+          volumes = (result.indicators?.quote?.[0]?.volume || []).filter(v => v !== null && !isNaN(v))
         } else if (chartData?.data && Array.isArray(chartData.data)) {
-          closes = chartData.data.map(d => d.close).filter(Boolean)
-        } else if (Array.isArray(chartData)) {
-          closes = chartData.map(d => d.close || d.price).filter(Boolean)
+          prices = chartData.data.map(d => d.close).filter(Boolean)
+          volumes = chartData.data.map(d => d.volume).filter(Boolean)
         }
-
-        chartPrices = closes.filter(c => c !== null && c !== undefined && !isNaN(c))
-        console.log(`Got ${chartPrices.length} price points`)
-
-        if (chartPrices.length >= 2) {
-          const latest = chartPrices[chartPrices.length - 1]
-          const len = chartPrices.length
-
-          // Calculate performance over different periods
-          // 1 Week (~5 trading days)
-          if (len >= 5) {
-            const weekAgoPrice = chartPrices[len - 5]
-            if (weekAgoPrice && weekAgoPrice > 0) {
-              weekChange = ((latest - weekAgoPrice) / weekAgoPrice * 100)
-            }
-          }
-
-          // 1 Month (~21 trading days)
-          if (len >= 21) {
-            const monthAgoPrice = chartPrices[len - 21]
-            if (monthAgoPrice && monthAgoPrice > 0) {
-              monthChange = ((latest - monthAgoPrice) / monthAgoPrice * 100)
-            }
-          } else if (len >= 10) {
-            // Fallback: use available data
-            const monthAgoPrice = chartPrices[0]
-            if (monthAgoPrice && monthAgoPrice > 0) {
-              monthChange = ((latest - monthAgoPrice) / monthAgoPrice * 100)
-            }
-          }
-
-          // 3 Months (use first data point)
-          const threeMonthAgoPrice = chartPrices[0]
-          if (threeMonthAgoPrice && threeMonthAgoPrice > 0) {
-            threeMonthChange = ((latest - threeMonthAgoPrice) / threeMonthAgoPrice * 100)
-          }
-
-          // Calculate technical indicators
-          if (chartPrices.length >= 5) {
-            technicals = calculateTechnicalIndicators(chartPrices)
-          }
-        }
-      } catch (chartError) {
-        console.error('Chart fetch error:', chartError)
+      } catch (e) {
+        console.error('Chart fetch error:', e)
       }
 
-      setLoadingStep('Gathering latest news...')
+      setLoadingStep('Scanning 30 days of news...')
 
-      // STEP 3: Fetch company news from Finnhub
-      const today = new Date()
-      const twoWeeksAgo = new Date(today.getTime() - 14 * 24 * 60 * 60 * 1000)
-      const fromDate = twoWeeksAgo.toISOString().split('T')[0]
-      const toDate = today.toISOString().split('T')[0]
-
+      // 3. Fetch 30 days of company news
       let news = []
       try {
-        const newsData = await finnhubFetch(`/company-news?symbol=${sym}&from=${fromDate}&to=${toDate}`)
+        const today = new Date()
+        const monthAgo = new Date(today - 30 * 24 * 60 * 60 * 1000)
+        const newsData = await finnhubFetch('company-news', {
+          symbol: sym,
+          from: monthAgo.toISOString().split('T')[0],
+          to: today.toISOString().split('T')[0]
+        })
         if (Array.isArray(newsData)) {
-          news = newsData.slice(0, 8)
-        } else if (newsData && typeof newsData === 'object') {
-          news = Object.values(newsData).filter(n => n && n.headline).slice(0, 8)
+          news = newsData.slice(0, 30)
         }
-      } catch {}
-
-      setLoadingStep('Running AI analysis...')
-
-      // Calculate key metrics
-      const change = quote.changePercent || 0
-      const weekHigh52 = quote.weekHigh52
-      const weekLow52 = quote.weekLow52
-
-      // Calculate position in 52-week range
-      let pricePosition = null
-      if (weekHigh52 && weekLow52 && quote.c) {
-        const range = weekHigh52 - weekLow52
-        if (range > 0) {
-          pricePosition = Math.round((quote.c - weekLow52) / range * 100)
-        }
+      } catch (e) {
+        console.error('News fetch error:', e)
       }
 
-      // Volume analysis
-      const volumeRatio = quote.avgVolume ? (quote.volume / quote.avgVolume) : null
-      const volumeStatus = volumeRatio ? (volumeRatio > 1.5 ? 'heavy' : volumeRatio < 0.5 ? 'light' : 'normal') : 'unknown'
+      setLoadingStep('Calculating technical indicators...')
 
-      // Distance from moving averages
-      const distFrom50MA = quote.fiftyDayAvg ? ((quote.c - quote.fiftyDayAvg) / quote.fiftyDayAvg * 100).toFixed(1) : null
-      const distFrom200MA = quote.twoHundredDayAvg ? ((quote.c - quote.twoHundredDayAvg) / quote.twoHundredDayAvg * 100).toFixed(1) : null
+      // 4. Calculate detailed metrics
+      const metrics = calculateMetrics(prices, volumes, quoteData)
 
-      // Build comprehensive stock context for AI
-      const stockContext = {
-        symbol: sym,
-        name: quote.name || sym,
-        sector: quote.sector || 'Unknown',
-        industry: quote.industry || 'Unknown',
-        price: {
-          current: quote.c,
-          open: quote.o,
-          high: quote.h,
-          low: quote.l,
-          previousClose: quote.pc,
-          changeToday: `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`
-        },
-        valuation: {
-          marketCap: formatMarketCap(quote.marketCap) || 'N/A',
-          peRatio: quote.peRatio?.toFixed(1) || 'N/A',
-          forwardPE: quote.forwardPE?.toFixed(1) || 'N/A',
-          eps: quote.eps?.toFixed(2) || 'N/A',
-          priceToBook: quote.priceToBook?.toFixed(2) || 'N/A',
-          dividendYield: quote.dividendYield ? `${(quote.dividendYield * 100).toFixed(2)}%` : 'None'
-        },
-        fiftyTwoWeek: {
-          high: weekHigh52?.toFixed(2) || 'N/A',
-          low: weekLow52?.toFixed(2) || 'N/A',
-          positionInRange: pricePosition !== null ? `${pricePosition}%` : 'N/A',
-          nearHigh: pricePosition !== null && pricePosition > 85,
-          nearLow: pricePosition !== null && pricePosition < 15
-        },
-        movingAverages: {
-          fiftyDay: quote.fiftyDayAvg?.toFixed(2) || 'N/A',
-          twoHundredDay: quote.twoHundredDayAvg?.toFixed(2) || 'N/A',
-          distanceFrom50MA: distFrom50MA ? `${distFrom50MA}%` : 'N/A',
-          distanceFrom200MA: distFrom200MA ? `${distFrom200MA}%` : 'N/A',
-          above50MA: quote.fiftyDayAvg ? quote.c > quote.fiftyDayAvg : null,
-          above200MA: quote.twoHundredDayAvg ? quote.c > quote.twoHundredDayAvg : null
-        },
-        performance: {
-          week: weekChange,
-          month: monthChange,
-          threeMonth: threeMonthChange
-        },
-        technicals: technicals ? {
-          rsi: technicals.rsi,
-          rsiStatus: technicals.rsi > 70 ? 'overbought' : technicals.rsi < 30 ? 'oversold' : 'neutral',
-          momentum: technicals.momentum,
-          volatility: technicals.volatility,
-          trend: technicals.trend,
-          support: technicals.support,
-          resistance: technicals.resistance
-        } : null,
-        volume: {
-          today: quote.volume?.toLocaleString() || 'N/A',
-          average: quote.avgVolume?.toLocaleString() || 'N/A',
-          ratio: volumeRatio?.toFixed(2) || 'N/A',
-          status: volumeStatus
-        },
-        risk: {
-          beta: quote.beta?.toFixed(2) || 'N/A'
-        },
-        analystTargetPrice: quote.targetPrice?.toFixed(2) || null,
-        analystRating: quote.recommendation || null,
-        newsHeadlines: news.slice(0, 5).map(n => n.headline).filter(Boolean)
-      }
+      // 5. Analyze news sentiment & themes
+      const newsAnalysis = analyzeNews(news)
 
-      // Get market status
-      const marketStatus = getMarketStatus()
+      setLoadingStep('Running deep AI analysis...')
 
-      // Build performance strings with fallbacks
-      const perfWeek = weekChange !== null ? `${weekChange >= 0 ? '+' : ''}${weekChange.toFixed(1)}%` : 'N/A'
-      const perfMonth = monthChange !== null ? `${monthChange >= 0 ? '+' : ''}${monthChange.toFixed(1)}%` : 'N/A'
-      const perf3Month = threeMonthChange !== null ? `${threeMonthChange >= 0 ? '+' : ''}${threeMonthChange.toFixed(1)}%` : 'N/A'
+      // 6. Build comprehensive prompt
+      const prompt = buildComprehensivePrompt(sym, quoteData, metrics, newsAnalysis, news)
 
-      // Build a comprehensive, powerful AI prompt
-      const prompt = `You are an expert stock analyst. Analyze ${sym} (${quote.name || sym}) and provide clear, actionable insights.
-
-IMPORTANT RULES:
-1. Do NOT use asterisks or any markdown formatting
-2. Be specific - reference actual numbers from the data
-3. Be opinionated - give clear views, not wishy-washy statements
-4. Keep each section concise but informative
-
-${marketStatus.isOpen ? '' : `Note: ${marketStatus.status}. Prices shown are from last trading session.`}
-
-=== CURRENT DATA ===
-Price: $${quote.c?.toFixed(2)} (${change >= 0 ? '+' : ''}${change.toFixed(2)}% today)
-Market Cap: ${formatMarketCap(quote.marketCap) || 'N/A'}
-Sector: ${quote.sector || 'Unknown'} | Industry: ${quote.industry || 'Unknown'}
-
-=== VALUATION ===
-P/E Ratio: ${quote.peRatio ? quote.peRatio.toFixed(1) : 'N/A'} | Forward P/E: ${quote.forwardPE ? quote.forwardPE.toFixed(1) : 'N/A'}
-EPS: ${quote.eps ? '$' + quote.eps.toFixed(2) : 'N/A'}
-Dividend Yield: ${quote.dividendYield ? (quote.dividendYield * 100).toFixed(2) + '%' : 'None'}
-
-=== PRICE POSITION ===
-52-Week: $${weekLow52?.toFixed(2) || '?'} - $${weekHigh52?.toFixed(2) || '?'} (currently at ${pricePosition || '?'}% of range)
-50-Day MA: ${quote.fiftyDayAvg ? '$' + quote.fiftyDayAvg.toFixed(2) : 'N/A'} | 200-Day MA: ${quote.twoHundredDayAvg ? '$' + quote.twoHundredDayAvg.toFixed(2) : 'N/A'}
-
-=== PERFORMANCE ===
-1 Week: ${perfWeek} | 1 Month: ${perfMonth} | 3 Month: ${perf3Month}
-
-${technicals ? `=== TECHNICALS ===
-RSI: ${technicals.rsi} (${technicals.rsi > 70 ? 'OVERBOUGHT' : technicals.rsi < 30 ? 'OVERSOLD' : 'neutral'})
-Trend: ${technicals.trend.toUpperCase()}
-Support: $${technicals.support} | Resistance: $${technicals.resistance}
-` : ''}
-${quote.beta ? `Beta: ${quote.beta.toFixed(2)} (${quote.beta > 1.2 ? 'high volatility' : quote.beta < 0.8 ? 'low volatility' : 'market-like'})` : ''}
-${quote.targetPrice ? `Analyst Target: $${quote.targetPrice.toFixed(2)} (${((quote.targetPrice - quote.c) / quote.c * 100).toFixed(1)}% ${quote.targetPrice > quote.c ? 'upside' : 'downside'})` : ''}
-
-${news.length > 0 ? `=== RECENT NEWS ===
-${news.slice(0, 4).map((n, i) => `- ${n.headline}`).join('\n')}
-` : ''}
-
-Respond with ONLY valid JSON (no other text, no markdown):
-{
-  "rating": "STRONG_BUY" or "BUY" or "HOLD" or "SELL" or "STRONG_SELL",
-  "confidenceScore": 1-100,
-  "summary": "2-3 sentence executive summary",
-  "technicalAnalysis": "2-3 sentences on price action, trend, levels",
-  "fundamentalAnalysis": "2-3 sentences on valuation and growth",
-  "sentimentAnalysis": "1-2 sentences on news and market sentiment",
-  "strengths": ["strength 1 with specific data", "strength 2", "strength 3"],
-  "risks": ["risk 1 with specific data", "risk 2", "risk 3"],
-  "keyLevels": {"support": "$XX", "resistance": "$XX", "stopLoss": "$XX"},
-  "catalyst": "What could move this stock soon",
-  "timeHorizon": "Short-term trade or long-term hold",
-  "bottomLine": "One clear actionable sentence"
-}`
-
+      // 7. Call Groq API
       const response = await fetch(GROQ_PROXY_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, stockData: stockContext })
+        body: JSON.stringify({
+          prompt,
+          stockData: { symbol: sym, ...quoteData },
+          maxTokens: 1500
+        })
       })
 
       if (!response.ok) {
         const errorText = await response.text()
-        let errorMessage = 'AI analysis failed'
-        try {
-          const errorData = JSON.parse(errorText)
-          errorMessage = errorData.error || errorMessage
-        } catch {
-          errorMessage = errorText || errorMessage
-        }
-        throw new Error(errorMessage)
+        throw new Error(errorText || 'AI analysis failed')
       }
 
       const data = await response.json()
@@ -625,78 +588,47 @@ Respond with ONLY valid JSON (no other text, no markdown):
         throw new Error('No analysis generated')
       }
 
-      // Clean and parse response
-      const rawText = (data.insight || '').replace(/\*\*/g, '').replace(/\*/g, '').trim()
-
-      // Try to parse JSON response
+      // Parse AI response
       let aiJson = null
-      let sentiment = 'neutral'
       try {
-        const jsonMatch = rawText.match(/\{[\s\S]*\}/)
+        const jsonMatch = data.insight.match(/\{[\s\S]*\}/)
         if (jsonMatch) {
           aiJson = JSON.parse(jsonMatch[0])
-          if (aiJson.rating) {
-            const rating = aiJson.rating.toLowerCase()
-            if (rating.includes('strong_buy') || rating.includes('buy')) sentiment = 'bullish'
-            else if (rating.includes('strong_sell') || rating.includes('sell')) sentiment = 'bearish'
-            else sentiment = 'neutral'
-          }
         }
       } catch (e) {
-        console.log('JSON parse failed, using text fallback')
+        console.error('JSON parse error:', e)
       }
 
-      // Fallback: extract from text if no JSON
-      if (!aiJson) {
-        const lower = rawText.toLowerCase()
-        if (lower.includes('strong buy') || lower.includes('bullish') || lower.includes('buy')) sentiment = 'bullish'
-        else if (lower.includes('strong sell') || lower.includes('bearish') || lower.includes('sell') || lower.includes('avoid')) sentiment = 'bearish'
-      }
-
-      const analysis = {
+      const result = {
         symbol: sym,
-        name: quote.name || sym,
-        sector: quote.sector,
-        industry: quote.industry,
-        price: quote.c,
-        previousClose: quote.pc,
-        dayHigh: quote.h,
-        dayLow: quote.l,
-        open: quote.o,
-        change,
-        volume: quote.volume,
-        avgVolume: quote.avgVolume,
-        weekHigh52,
-        weekLow52,
-        pricePosition,
-        fiftyDayAvg: quote.fiftyDayAvg,
-        twoHundredDayAvg: quote.twoHundredDayAvg,
-        peRatio: quote.peRatio,
-        forwardPE: quote.forwardPE,
-        eps: quote.eps,
-        marketCap: quote.marketCap,
-        dividendYield: quote.dividendYield,
-        beta: quote.beta,
-        targetPrice: quote.targetPrice,
-        priceToBook: quote.priceToBook,
-        performance: {
-          week: weekChange,
-          month: monthChange,
-          threeMonth: threeMonthChange
+        name: quoteData.shortName || quoteData.longName || sym,
+        quote: {
+          price: quoteData.regularMarketPrice || quoteData.price,
+          change: quoteData.regularMarketChange || 0,
+          changePercent: quoteData.regularMarketChangePercent || 0,
+          marketCap: quoteData.marketCap,
+          peRatio: quoteData.trailingPE,
+          forwardPE: quoteData.forwardPE,
+          eps: quoteData.trailingEps,
+          dividendYield: quoteData.dividendYield,
+          fiftyTwoWeekHigh: quoteData.fiftyTwoWeekHigh,
+          fiftyTwoWeekLow: quoteData.fiftyTwoWeekLow,
+          beta: quoteData.beta,
+          volume: quoteData.regularMarketVolume,
+          avgVolume: quoteData.averageDailyVolume3Month
         },
-        technicals,
-        news: news.slice(0, 5),
-        analysis: rawText,
+        metrics,
+        newsAnalysis,
+        news: news.slice(0, 10),
         aiJson,
-        sentiment,
-        confidenceScore: aiJson?.confidenceScore || null,
+        rawInsight: data.insight,
         timestamp: new Date().toISOString()
       }
 
-      setCurrentAnalysis(analysis)
+      setAnalysisResult(result)
       setHistory(prev => {
         const filtered = prev.filter(h => h.symbol !== sym)
-        return [analysis, ...filtered].slice(0, 10)
+        return [result, ...filtered].slice(0, 10)
       })
       setSymbol('')
 
@@ -709,41 +641,22 @@ Respond with ONLY valid JSON (no other text, no markdown):
     setLoadingStep('')
   }
 
-  const getSentimentDisplay = (sentiment, rating) => {
-    // Map rating to display
-    const ratingUpper = (rating || '').toUpperCase()
-    if (ratingUpper.includes('STRONG_BUY') || ratingUpper === 'STRONG BUY') {
-      return { icon: TrendingUp, color: 'text-emerald-400', bg: 'bg-emerald-500/20', border: 'border-emerald-500/40', label: 'STRONG BUY', bgSolid: 'bg-emerald-600', gradient: 'from-emerald-600 to-green-600' }
+  const getVerdictDisplay = (verdict, strength) => {
+    const v = (verdict || '').toUpperCase()
+    const s = (strength || '').toUpperCase()
+
+    if (v === 'BULLISH') {
+      if (s === 'STRONG') return { icon: TrendingUp, color: 'text-emerald-400', bg: 'bg-emerald-500/20', border: 'border-emerald-500', label: 'STRONG BUY', gradient: 'from-emerald-600 to-green-500' }
+      return { icon: TrendingUp, color: 'text-green-400', bg: 'bg-green-500/20', border: 'border-green-500', label: 'BUY', gradient: 'from-green-600 to-green-500' }
     }
-    if (ratingUpper === 'BUY' || sentiment === 'bullish') {
-      return { icon: TrendingUp, color: 'text-green-400', bg: 'bg-green-500/20', border: 'border-green-500/30', label: 'BUY', bgSolid: 'bg-green-600', gradient: 'from-green-600 to-green-500' }
+    if (v === 'BEARISH') {
+      if (s === 'STRONG') return { icon: TrendingDown, color: 'text-red-400', bg: 'bg-red-500/20', border: 'border-red-500', label: 'STRONG SELL', gradient: 'from-red-600 to-red-500' }
+      return { icon: TrendingDown, color: 'text-orange-400', bg: 'bg-orange-500/20', border: 'border-orange-500', label: 'SELL', gradient: 'from-orange-600 to-red-500' }
     }
-    if (ratingUpper.includes('STRONG_SELL') || ratingUpper === 'STRONG SELL') {
-      return { icon: TrendingDown, color: 'text-red-400', bg: 'bg-red-500/20', border: 'border-red-500/40', label: 'STRONG SELL', bgSolid: 'bg-red-600', gradient: 'from-red-600 to-red-500' }
-    }
-    if (ratingUpper === 'SELL' || sentiment === 'bearish') {
-      return { icon: TrendingDown, color: 'text-orange-400', bg: 'bg-orange-500/20', border: 'border-orange-500/30', label: 'SELL', bgSolid: 'bg-orange-600', gradient: 'from-orange-600 to-red-600' }
-    }
-    return { icon: Minus, color: 'text-yellow-400', bg: 'bg-yellow-500/20', border: 'border-yellow-500/30', label: 'HOLD', bgSolid: 'bg-yellow-600', gradient: 'from-yellow-600 to-amber-600' }
+    return { icon: Minus, color: 'text-yellow-400', bg: 'bg-yellow-500/20', border: 'border-yellow-500', label: 'HOLD', gradient: 'from-yellow-600 to-amber-500' }
   }
 
-  const getRatingColor = (rating) => {
-    const r = (rating || '').toUpperCase()
-    if (r.includes('STRONG_BUY') || r === 'STRONG BUY') return 'text-emerald-400'
-    if (r === 'BUY') return 'text-green-400'
-    if (r.includes('STRONG_SELL') || r === 'STRONG SELL') return 'text-red-400'
-    if (r === 'SELL') return 'text-orange-400'
-    return 'text-yellow-400'
-  }
-
-  const getConfidenceColor = (score) => {
-    if (score >= 80) return 'text-emerald-400'
-    if (score >= 60) return 'text-green-400'
-    if (score >= 40) return 'text-yellow-400'
-    return 'text-orange-400'
-  }
-
-  const s = currentAnalysis ? getSentimentDisplay(currentAnalysis.sentiment, currentAnalysis.aiJson?.rating) : null
+  const v = analysisResult?.aiJson ? getVerdictDisplay(analysisResult.aiJson.verdict, analysisResult.aiJson.verdictStrength) : null
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -754,21 +667,15 @@ Respond with ONLY valid JSON (no other text, no markdown):
             <div className="p-2 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500">
               <Brain className="w-6 h-6 text-white" />
             </div>
-            AI Stock Analysis
+            AI Deep Analysis
           </h2>
-          <p className="text-gray-400 mt-2">Professional-grade analysis powered by AI. Technical, fundamental, and sentiment insights.</p>
+          <p className="text-gray-400 mt-2">Professional-grade research with technical, fundamental, and sentiment analysis.</p>
         </div>
-        {history.length > 0 && !currentAnalysis && !loading && (
-          <div className="flex items-center gap-2 text-sm text-gray-500">
-            <Sparkles className="w-4 h-4" />
-            <span>{history.length} recent {history.length === 1 ? 'analysis' : 'analyses'}</span>
-          </div>
-        )}
       </div>
 
       {/* Search Bar */}
       <div className="relative" ref={dropdownRef} data-tour="ai-search">
-        <div className="flex items-center gap-3 p-4 rounded-xl border transition-all bg-gray-800 border-gray-700 focus-within:border-purple-500">
+        <div className="flex items-center gap-3 p-4 rounded-xl border transition-all bg-gray-800/80 border-gray-700 focus-within:border-purple-500 focus-within:bg-gray-800">
           <Search className="w-5 h-5 text-gray-400" />
           <input
             ref={inputRef}
@@ -777,7 +684,7 @@ Respond with ONLY valid JSON (no other text, no markdown):
             onChange={(e) => setSymbol(e.target.value.toUpperCase())}
             onKeyDown={handleKeyDown}
             onFocus={() => symbol.length >= 1 && searchResults.length > 0 && setShowDropdown(true)}
-            placeholder="Search stock symbol (e.g., AAPL, MSFT, TSLA)"
+            placeholder="Enter any stock symbol (AAPL, MSFT, NVDA...)"
             className="flex-1 bg-transparent outline-none text-lg text-white placeholder-gray-500"
             disabled={loading}
           />
@@ -789,20 +696,11 @@ Respond with ONLY valid JSON (no other text, no markdown):
             className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-medium transition-all ${
               loading || !symbol.trim()
                 ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                : 'bg-purple-600 hover:bg-purple-700 text-white'
+                : 'bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white shadow-lg shadow-purple-500/25'
             }`}
           >
-            {loading ? (
-              <>
-                <RefreshCw className="w-4 h-4 animate-spin" />
-                Analyzing...
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-4 h-4" />
-                Analyze
-              </>
-            )}
+            {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+            {loading ? 'Analyzing...' : 'Analyze'}
           </button>
         </div>
 
@@ -845,405 +743,296 @@ Respond with ONLY valid JSON (no other text, no markdown):
         </div>
       )}
 
-      {/* Loading */}
+      {/* Loading State */}
       {loading && (
-        <div className="p-8 rounded-xl border bg-gradient-to-br from-gray-800/80 to-gray-900/80 border-purple-500/30 text-center">
-          <div className="relative w-16 h-16 mx-auto mb-4">
+        <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl p-12 text-center border border-purple-500/30">
+          <div className="relative w-20 h-20 mx-auto mb-6">
             <div className="absolute inset-0 rounded-full border-4 border-purple-500/20"></div>
             <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-purple-500 animate-spin"></div>
-            <Brain className="absolute inset-0 m-auto w-8 h-8 text-purple-400" />
+            <div className="absolute inset-0 flex items-center justify-center text-4xl">🔍</div>
           </div>
-          <p className="text-white font-medium text-lg">Analyzing {symbol}...</p>
-          <p className="text-purple-400 text-sm mt-2 animate-pulse">{loadingStep}</p>
-          <div className="flex justify-center gap-2 mt-4">
-            <div className="w-2 h-2 rounded-full bg-purple-500 animate-bounce" style={{ animationDelay: '0ms' }}></div>
-            <div className="w-2 h-2 rounded-full bg-purple-500 animate-bounce" style={{ animationDelay: '150ms' }}></div>
-            <div className="w-2 h-2 rounded-full bg-purple-500 animate-bounce" style={{ animationDelay: '300ms' }}></div>
+          <div className="text-xl font-semibold text-white mb-2">Analyzing {symbol}...</div>
+          <div className="text-purple-400 animate-pulse mb-6">{loadingStep}</div>
+          <div className="flex flex-col items-center gap-2 text-sm text-gray-500">
+            <p>Fetching real-time market data</p>
+            <p>Scanning 30 days of news coverage</p>
+            <p>Generating deep AI analysis</p>
           </div>
         </div>
       )}
 
       {/* Analysis Result */}
-      {currentAnalysis && !loading && (
-        <div className="space-y-4">
-          {/* Hero Header Card */}
-          <div className={`rounded-2xl border-2 ${s.border} bg-gradient-to-br ${s.bg} overflow-hidden`}>
-            {/* Rating Banner */}
-            <div className={`bg-gradient-to-r ${s.gradient} px-5 py-3 flex items-center justify-between`}>
+      {analysisResult && !loading && (
+        <div className="space-y-5">
+          {/* Hero Verdict Card */}
+          <div className={`rounded-2xl border-2 ${v?.border} overflow-hidden`}>
+            {/* Verdict Banner */}
+            <div className={`bg-gradient-to-r ${v?.gradient} px-5 py-4 flex items-center justify-between`}>
               <div className="flex items-center gap-3">
-                <s.icon className="w-6 h-6 text-white" />
-                <span className="text-white font-bold text-lg tracking-wide">{s.label}</span>
-                {currentAnalysis.confidenceScore && (
-                  <span className="bg-white/20 px-2 py-0.5 rounded text-white text-sm">
-                    {currentAnalysis.confidenceScore}% confidence
+                {v && <v.icon className="w-7 h-7 text-white" />}
+                <span className="text-white font-bold text-xl tracking-wide">{v?.label}</span>
+                {analysisResult.aiJson?.confidence && (
+                  <span className="bg-white/20 px-3 py-1 rounded-full text-white text-sm font-medium">
+                    {analysisResult.aiJson.confidence}% confidence
                   </span>
                 )}
               </div>
-              <button onClick={() => setCurrentAnalysis(null)} className="p-1.5 rounded-lg hover:bg-white/20 text-white/80 hover:text-white transition-colors">
+              <button onClick={() => setAnalysisResult(null)} className="p-2 rounded-lg hover:bg-white/20 text-white/80 hover:text-white transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-5">
-              {/* Stock Info */}
-              <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-5">
+            <div className={`p-6 ${v?.bg}`}>
+              {/* Stock Header */}
+              <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-6">
                 <div>
-                  <h3 className="text-3xl font-bold text-white mb-1">{currentAnalysis.symbol}</h3>
-                  <p className="text-gray-300 text-lg">{currentAnalysis.name}</p>
-                  {(currentAnalysis.sector || currentAnalysis.industry) && (
-                    <p className="text-gray-500 text-sm mt-1">
-                      {currentAnalysis.sector}{currentAnalysis.industry ? ` • ${currentAnalysis.industry}` : ''}
-                    </p>
-                  )}
+                  <h3 className="text-3xl font-bold text-white mb-1">{analysisResult.symbol}</h3>
+                  <p className="text-gray-300 text-lg">{analysisResult.name}</p>
                 </div>
                 <div className="text-left md:text-right">
-                  <div className="text-3xl font-bold text-white">${currentAnalysis.price?.toFixed(2)}</div>
-                  <div className={`text-lg font-semibold flex items-center gap-1 md:justify-end ${currentAnalysis.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                    {currentAnalysis.change >= 0 ? <ArrowUpRight className="w-5 h-5" /> : <ArrowDownRight className="w-5 h-5" />}
-                    {currentAnalysis.change >= 0 ? '+' : ''}{currentAnalysis.change?.toFixed(2)}% today
+                  <div className="text-3xl font-bold text-white">${analysisResult.quote?.price?.toFixed(2)}</div>
+                  <div className={`text-lg font-semibold flex items-center gap-1 md:justify-end ${analysisResult.quote?.changePercent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    {analysisResult.quote?.changePercent >= 0 ? <ArrowUpRight className="w-5 h-5" /> : <ArrowDownRight className="w-5 h-5" />}
+                    {analysisResult.quote?.changePercent >= 0 ? '+' : ''}{analysisResult.quote?.changePercent?.toFixed(2)}% today
                   </div>
                 </div>
               </div>
 
-              {/* Quick Stats Grid - Only show metrics with valid values */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                {[
-                  { label: 'Market Cap', value: formatMarketCap(currentAnalysis.marketCap) },
-                  { label: 'P/E Ratio', value: currentAnalysis.peRatio ? currentAnalysis.peRatio.toFixed(1) : null },
-                  { label: '52W Position', value: currentAnalysis.pricePosition != null ? `${currentAnalysis.pricePosition}%` : null },
-                  { label: 'Beta', value: currentAnalysis.beta ? currentAnalysis.beta.toFixed(2) : null },
-                  { label: 'Div Yield', value: currentAnalysis.dividendYield ? `${(currentAnalysis.dividendYield * 100).toFixed(2)}%` : null },
-                  { label: 'Analyst Target', value: currentAnalysis.targetPrice ? `$${currentAnalysis.targetPrice.toFixed(0)}` : null },
-                ].filter(m => m.value && m.value !== 'N/A' && m.value !== 'null' && m.value !== '$NaN').map(metric => (
-                  <div key={metric.label} className="bg-gray-800/50 rounded-lg p-3">
-                    <div className="text-xs text-gray-400 mb-1">{metric.label}</div>
-                    <div className="text-white font-semibold">{metric.value}</div>
+              {/* Quick Stats */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {analysisResult.metrics?.weekChange && (
+                  <div className="bg-gray-800/60 rounded-xl p-3 text-center">
+                    <div className={`text-xl font-bold ${parseFloat(analysisResult.metrics.weekChange) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {parseFloat(analysisResult.metrics.weekChange) >= 0 ? '+' : ''}{analysisResult.metrics.weekChange}%
+                    </div>
+                    <div className="text-xs text-gray-400 mt-1">1 Week</div>
                   </div>
-                ))}
+                )}
+                {analysisResult.metrics?.monthChange && (
+                  <div className="bg-gray-800/60 rounded-xl p-3 text-center">
+                    <div className={`text-xl font-bold ${parseFloat(analysisResult.metrics.monthChange) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {parseFloat(analysisResult.metrics.monthChange) >= 0 ? '+' : ''}{analysisResult.metrics.monthChange}%
+                    </div>
+                    <div className="text-xs text-gray-400 mt-1">1 Month</div>
+                  </div>
+                )}
+                {analysisResult.metrics?.fiftyTwoWeekPosition && (
+                  <div className="bg-gray-800/60 rounded-xl p-3 text-center">
+                    <div className="text-xl font-bold text-white">{analysisResult.metrics.fiftyTwoWeekPosition}%</div>
+                    <div className="text-xs text-gray-400 mt-1">52W Position</div>
+                  </div>
+                )}
+                {analysisResult.metrics?.trend && (
+                  <div className="bg-gray-800/60 rounded-xl p-3 text-center">
+                    <div className={`text-lg font-bold ${
+                      analysisResult.metrics.trend === 'UPTREND' ? 'text-green-400' :
+                      analysisResult.metrics.trend === 'DOWNTREND' ? 'text-red-400' : 'text-yellow-400'
+                    }`}>
+                      {analysisResult.metrics.trend}
+                    </div>
+                    <div className="text-xs text-gray-400 mt-1">Trend</div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
 
-          {/* Performance & Technicals Row */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Performance Card */}
-            <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4">
-              <div className="flex items-center gap-2 mb-4">
-                <Activity className="w-5 h-5 text-blue-400" />
-                <h4 className="font-semibold text-white">Performance</h4>
-              </div>
-              <div className="grid grid-cols-3 gap-4">
-                <div className="text-center">
-                  <div className="text-xs text-gray-400 mb-1">1 Week</div>
-                  <div className={`font-bold ${
-                    currentAnalysis.performance?.week == null ? 'text-gray-500' :
-                    currentAnalysis.performance.week >= 0 ? 'text-green-400' : 'text-red-400'
-                  }`}>
-                    {currentAnalysis.performance?.week != null
-                      ? `${currentAnalysis.performance.week >= 0 ? '+' : ''}${currentAnalysis.performance.week.toFixed(1)}%`
-                      : 'N/A'}
-                  </div>
-                </div>
-                <div className="text-center">
-                  <div className="text-xs text-gray-400 mb-1">1 Month</div>
-                  <div className={`font-bold ${
-                    currentAnalysis.performance?.month == null ? 'text-gray-500' :
-                    currentAnalysis.performance.month >= 0 ? 'text-green-400' : 'text-red-400'
-                  }`}>
-                    {currentAnalysis.performance?.month != null
-                      ? `${currentAnalysis.performance.month >= 0 ? '+' : ''}${currentAnalysis.performance.month.toFixed(1)}%`
-                      : 'N/A'}
-                  </div>
-                </div>
-                <div className="text-center">
-                  <div className="text-xs text-gray-400 mb-1">3 Month</div>
-                  <div className={`font-bold ${
-                    currentAnalysis.performance?.threeMonth == null ? 'text-gray-500' :
-                    currentAnalysis.performance.threeMonth >= 0 ? 'text-green-400' : 'text-red-400'
-                  }`}>
-                    {currentAnalysis.performance?.threeMonth != null
-                      ? `${currentAnalysis.performance.threeMonth >= 0 ? '+' : ''}${currentAnalysis.performance.threeMonth.toFixed(1)}%`
-                      : 'N/A'}
-                  </div>
-                </div>
-              </div>
-              {/* 52-Week Range Bar */}
-              <div className="mt-4 pt-4 border-t border-gray-700">
-                <div className="flex justify-between text-xs text-gray-400 mb-2">
-                  <span>52W Low: ${currentAnalysis.weekLow52?.toFixed(2) || 'N/A'}</span>
-                  <span>52W High: ${currentAnalysis.weekHigh52?.toFixed(2) || 'N/A'}</span>
-                </div>
-                <div className="relative h-2 bg-gray-700 rounded-full">
-                  <div
-                    className="absolute h-full bg-gradient-to-r from-red-500 via-yellow-500 to-green-500 rounded-full"
-                    style={{ width: '100%' }}
-                  ></div>
-                  {currentAnalysis.pricePosition !== null && (
-                    <div
-                      className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full border-2 border-gray-900 shadow-lg"
-                      style={{ left: `calc(${currentAnalysis.pricePosition}% - 6px)` }}
-                    ></div>
-                  )}
-                </div>
-              </div>
+          {/* News Themes Tags */}
+          {(analysisResult.newsAnalysis?.themes?.length > 0 || analysisResult.newsAnalysis?.sentiment) && (
+            <div className="flex flex-wrap gap-2">
+              {analysisResult.newsAnalysis.themes.map(theme => (
+                <span key={theme} className="px-3 py-1.5 bg-purple-900/50 text-purple-300 rounded-full text-sm font-medium">
+                  #{theme}
+                </span>
+              ))}
+              <span className={`px-3 py-1.5 rounded-full text-sm font-medium ${
+                analysisResult.newsAnalysis.sentiment === 'positive' ? 'bg-green-900/50 text-green-300' :
+                analysisResult.newsAnalysis.sentiment === 'negative' ? 'bg-red-900/50 text-red-300' :
+                'bg-gray-700 text-gray-300'
+              }`}>
+                {analysisResult.newsAnalysis.sentiment} news sentiment
+              </span>
+              <span className="px-3 py-1.5 bg-gray-700 text-gray-300 rounded-full text-sm">
+                {analysisResult.newsAnalysis.totalArticles} articles analyzed
+              </span>
             </div>
+          )}
 
-            {/* Technicals Card */}
-            {currentAnalysis.technicals && (
-              <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4">
-                <div className="flex items-center gap-2 mb-4">
-                  <BarChart3 className="w-5 h-5 text-purple-400" />
-                  <h4 className="font-semibold text-white">Technical Indicators</h4>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <div className="text-xs text-gray-400 mb-1">RSI (14)</div>
-                    <div className={`font-bold ${
-                      currentAnalysis.technicals.rsi > 70 ? 'text-red-400' :
-                      currentAnalysis.technicals.rsi < 30 ? 'text-green-400' : 'text-gray-300'
-                    }`}>
-                      {currentAnalysis.technicals.rsi}
-                      <span className="text-xs text-gray-500 ml-1">
-                        ({currentAnalysis.technicals.rsi > 70 ? 'Overbought' : currentAnalysis.technicals.rsi < 30 ? 'Oversold' : 'Neutral'})
-                      </span>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-gray-400 mb-1">Trend</div>
-                    <div className={`font-bold capitalize ${
-                      currentAnalysis.technicals.trend === 'bullish' ? 'text-green-400' :
-                      currentAnalysis.technicals.trend === 'bearish' ? 'text-red-400' : 'text-gray-300'
-                    }`}>
-                      {currentAnalysis.technicals.trend}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-gray-400 mb-1">Momentum (5D)</div>
-                    <div className={`font-bold ${currentAnalysis.technicals.momentum >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                      {currentAnalysis.technicals.momentum >= 0 ? '+' : ''}{currentAnalysis.technicals.momentum}%
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-gray-400 mb-1">Volatility</div>
-                    <div className="font-bold text-gray-300">{currentAnalysis.technicals.volatility}%</div>
-                  </div>
-                </div>
-                <div className="mt-3 pt-3 border-t border-gray-700 flex justify-between text-sm">
-                  <span className="text-gray-400">Support: <span className="text-green-400 font-medium">${currentAnalysis.technicals.support}</span></span>
-                  <span className="text-gray-400">Resistance: <span className="text-red-400 font-medium">${currentAnalysis.technicals.resistance}</span></span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* AI Analysis Content */}
-          {currentAnalysis.aiJson && (
-            <>
+          {/* AI Analysis Section */}
+          {analysisResult.aiJson && (
+            <div className="space-y-4">
               {/* Executive Summary */}
-              {currentAnalysis.aiJson.summary && (
-                <div className="rounded-xl border border-purple-500/30 bg-purple-500/5 p-5">
+              {analysisResult.aiJson.summary && (
+                <div className="rounded-2xl bg-gradient-to-br from-purple-900/30 to-blue-900/30 border border-purple-500/30 p-5">
                   <div className="flex items-start gap-3">
-                    <Brain className="w-6 h-6 text-purple-400 flex-shrink-0 mt-0.5" />
+                    <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-blue-500 rounded-xl flex items-center justify-center flex-shrink-0">
+                      <Brain className="w-5 h-5 text-white" />
+                    </div>
                     <div>
-                      <h4 className="font-semibold text-purple-300 mb-2">AI Summary</h4>
-                      <p className="text-gray-200 text-base leading-relaxed">{currentAnalysis.aiJson.summary}</p>
+                      <h4 className="font-semibold text-purple-300 mb-2">Executive Summary</h4>
+                      <p className="text-gray-200 text-lg leading-relaxed">{analysisResult.aiJson.summary}</p>
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* Analysis Cards Grid */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                {/* Technical Analysis */}
-                {currentAnalysis.aiJson.technicalAnalysis && (
-                  <div className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-4">
+              {/* What's Happening */}
+              {analysisResult.aiJson.whatsHappening && (
+                <div className="rounded-xl bg-gray-800/50 border border-gray-700 p-5">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Activity className="w-5 h-5 text-blue-400" />
+                    <h4 className="font-semibold text-white">What's Happening Now</h4>
+                  </div>
+                  <p className="text-gray-300 leading-relaxed">{analysisResult.aiJson.whatsHappening}</p>
+                </div>
+              )}
+
+              {/* Bull vs Bear Case */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {analysisResult.aiJson.bullCase && (
+                  <div className="rounded-xl bg-green-900/20 border border-green-500/30 p-5">
                     <div className="flex items-center gap-2 mb-3">
-                      <BarChart3 className="w-5 h-5 text-blue-400" />
-                      <h4 className="font-semibold text-blue-300">Technical Analysis</h4>
+                      <TrendingUp className="w-5 h-5 text-green-400" />
+                      <h4 className="font-semibold text-green-400">The Bull Case</h4>
                     </div>
-                    <p className="text-gray-300 text-sm leading-relaxed">{currentAnalysis.aiJson.technicalAnalysis}</p>
+                    <p className="text-gray-300 leading-relaxed">{analysisResult.aiJson.bullCase}</p>
                   </div>
                 )}
-
-                {/* Fundamental Analysis */}
-                {currentAnalysis.aiJson.fundamentalAnalysis && (
-                  <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/5 p-4">
+                {analysisResult.aiJson.bearCase && (
+                  <div className="rounded-xl bg-red-900/20 border border-red-500/30 p-5">
                     <div className="flex items-center gap-2 mb-3">
-                      <PieChart className="w-5 h-5 text-cyan-400" />
-                      <h4 className="font-semibold text-cyan-300">Fundamental Analysis</h4>
+                      <TrendingDown className="w-5 h-5 text-red-400" />
+                      <h4 className="font-semibold text-red-400">The Bear Case</h4>
                     </div>
-                    <p className="text-gray-300 text-sm leading-relaxed">{currentAnalysis.aiJson.fundamentalAnalysis}</p>
-                  </div>
-                )}
-
-                {/* Sentiment Analysis */}
-                {currentAnalysis.aiJson.sentimentAnalysis && (
-                  <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Newspaper className="w-5 h-5 text-amber-400" />
-                      <h4 className="font-semibold text-amber-300">News Sentiment</h4>
-                    </div>
-                    <p className="text-gray-300 text-sm leading-relaxed">{currentAnalysis.aiJson.sentimentAnalysis}</p>
+                    <p className="text-gray-300 leading-relaxed">{analysisResult.aiJson.bearCase}</p>
                   </div>
                 )}
               </div>
 
-              {/* Strengths & Risks */}
+              {/* Technical Setup & Key Levels */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Strengths */}
-                {currentAnalysis.aiJson.strengths && currentAnalysis.aiJson.strengths.length > 0 && (
-                  <div className="rounded-xl border border-green-500/30 bg-green-500/5 p-4">
+                {analysisResult.aiJson.technicalSetup && (
+                  <div className="rounded-xl bg-gray-800/50 border border-gray-700 p-5">
                     <div className="flex items-center gap-2 mb-3">
-                      <CheckCircle className="w-5 h-5 text-green-400" />
-                      <h4 className="font-semibold text-green-400">Strengths</h4>
+                      <BarChart3 className="w-5 h-5 text-purple-400" />
+                      <h4 className="font-semibold text-white">Technical Setup</h4>
                     </div>
-                    <ul className="space-y-2">
-                      {currentAnalysis.aiJson.strengths.map((str, i) => (
-                        <li key={i} className="flex items-start gap-2 text-sm text-gray-300">
-                          <span className="text-green-400 mt-0.5 font-bold">+</span>
-                          <span>{str}</span>
-                        </li>
-                      ))}
-                    </ul>
+                    <p className="text-gray-300 leading-relaxed">{analysisResult.aiJson.technicalSetup}</p>
                   </div>
                 )}
-
-                {/* Risks */}
-                {currentAnalysis.aiJson.risks && currentAnalysis.aiJson.risks.length > 0 && (
-                  <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-4">
+                {analysisResult.aiJson.keyLevels && (
+                  <div className="rounded-xl bg-gray-800/50 border border-gray-700 p-5">
                     <div className="flex items-center gap-2 mb-3">
-                      <Shield className="w-5 h-5 text-red-400" />
-                      <h4 className="font-semibold text-red-400">Risks</h4>
-                    </div>
-                    <ul className="space-y-2">
-                      {currentAnalysis.aiJson.risks.map((risk, i) => (
-                        <li key={i} className="flex items-start gap-2 text-sm text-gray-300">
-                          <span className="text-red-400 mt-0.5 font-bold">!</span>
-                          <span>{risk}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-
-              {/* Key Levels & Catalyst Row */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Key Price Levels */}
-                {currentAnalysis.aiJson.keyLevels && (
-                  <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Target className="w-5 h-5 text-purple-400" />
+                      <Target className="w-5 h-5 text-cyan-400" />
                       <h4 className="font-semibold text-white">Key Price Levels</h4>
                     </div>
                     <div className="grid grid-cols-3 gap-4 text-center">
                       <div>
                         <div className="text-xs text-gray-400 mb-1">Support</div>
-                        <div className="text-green-400 font-bold">{currentAnalysis.aiJson.keyLevels.support || 'N/A'}</div>
+                        <div className="text-green-400 font-bold text-lg">{analysisResult.aiJson.keyLevels.support || 'N/A'}</div>
                       </div>
                       <div>
                         <div className="text-xs text-gray-400 mb-1">Resistance</div>
-                        <div className="text-red-400 font-bold">{currentAnalysis.aiJson.keyLevels.resistance || 'N/A'}</div>
+                        <div className="text-red-400 font-bold text-lg">{analysisResult.aiJson.keyLevels.resistance || 'N/A'}</div>
                       </div>
                       <div>
                         <div className="text-xs text-gray-400 mb-1">Stop Loss</div>
-                        <div className="text-orange-400 font-bold">{currentAnalysis.aiJson.keyLevels.stopLoss || 'N/A'}</div>
+                        <div className="text-orange-400 font-bold text-lg">{analysisResult.aiJson.keyLevels.stopLoss || 'N/A'}</div>
                       </div>
                     </div>
                   </div>
                 )}
-
-                {/* Catalyst & Time Horizon */}
-                <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4">
-                  <div className="space-y-4">
-                    {currentAnalysis.aiJson.catalyst && (
-                      <div>
-                        <div className="flex items-center gap-2 mb-2">
-                          <Zap className="w-4 h-4 text-yellow-400" />
-                          <span className="text-xs text-gray-400 uppercase tracking-wide">Catalyst</span>
-                        </div>
-                        <p className="text-gray-300 text-sm">{currentAnalysis.aiJson.catalyst}</p>
-                      </div>
-                    )}
-                    {currentAnalysis.aiJson.timeHorizon && (
-                      <div>
-                        <div className="flex items-center gap-2 mb-2">
-                          <Clock className="w-4 h-4 text-blue-400" />
-                          <span className="text-xs text-gray-400 uppercase tracking-wide">Time Horizon</span>
-                        </div>
-                        <p className="text-gray-300 text-sm">{currentAnalysis.aiJson.timeHorizon}</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
               </div>
 
-              {/* Bottom Line - Hero */}
-              {currentAnalysis.aiJson.bottomLine && (
-                <div className={`rounded-xl border-2 ${s.border} bg-gradient-to-r ${s.bg} p-5`}>
-                  <div className="flex items-start gap-3">
-                    <Award className={`w-7 h-7 ${s.color} flex-shrink-0`} />
+              {/* Catalyst & Time Horizon */}
+              {(analysisResult.aiJson.catalyst || analysisResult.aiJson.timeHorizon) && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {analysisResult.aiJson.catalyst && (
+                    <div className="rounded-xl bg-yellow-900/20 border border-yellow-500/30 p-5">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Zap className="w-5 h-5 text-yellow-400" />
+                        <h4 className="font-semibold text-yellow-400">Catalyst to Watch</h4>
+                      </div>
+                      <p className="text-gray-300">{analysisResult.aiJson.catalyst}</p>
+                    </div>
+                  )}
+                  {analysisResult.aiJson.timeHorizon && (
+                    <div className="rounded-xl bg-blue-900/20 border border-blue-500/30 p-5">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Clock className="w-5 h-5 text-blue-400" />
+                        <h4 className="font-semibold text-blue-400">Time Horizon</h4>
+                      </div>
+                      <p className="text-gray-300">{analysisResult.aiJson.timeHorizon}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Actionable Insight - Hero */}
+              {analysisResult.aiJson.actionableInsight && (
+                <div className={`rounded-2xl border-2 ${v?.border} bg-gradient-to-r ${v?.bg} p-6`}>
+                  <div className="flex items-start gap-4">
+                    <Award className={`w-8 h-8 ${v?.color} flex-shrink-0`} />
                     <div>
-                      <h4 className="font-bold text-white text-lg mb-2">Bottom Line</h4>
-                      <p className="text-white text-base font-medium leading-relaxed">{currentAnalysis.aiJson.bottomLine}</p>
+                      <h4 className="font-bold text-white text-xl mb-2">Bottom Line</h4>
+                      <p className="text-white text-lg font-medium leading-relaxed">{analysisResult.aiJson.actionableInsight}</p>
                     </div>
                   </div>
                 </div>
               )}
-            </>
+            </div>
           )}
 
           {/* Fallback for non-JSON response */}
-          {!currentAnalysis.aiJson && currentAnalysis.analysis && (
-            <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-5">
+          {!analysisResult.aiJson && analysisResult.rawInsight && (
+            <div className="rounded-xl bg-gray-800/50 border border-gray-700 p-5">
               <div className="flex items-center gap-2 mb-3">
                 <Brain className="w-5 h-5 text-purple-400" />
                 <h4 className="font-semibold text-white">AI Analysis</h4>
               </div>
-              <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap">{currentAnalysis.analysis}</p>
+              <p className="text-gray-300 leading-relaxed whitespace-pre-wrap">{analysisResult.rawInsight}</p>
             </div>
           )}
 
-          {/* News Headlines */}
-          {currentAnalysis.news && currentAnalysis.news.length > 0 && (
-            <div className="rounded-xl border border-gray-700 bg-gray-800/30 p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <Newspaper className="w-4 h-4 text-gray-400" />
-                <h4 className="text-sm font-medium text-gray-400">News Sources Analyzed</h4>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                {currentAnalysis.news.map((article, i) => (
+          {/* Recent Headlines */}
+          {analysisResult.news?.length > 0 && (
+            <div className="rounded-xl bg-gray-800/30 border border-gray-700 p-5">
+              <h4 className="text-white font-semibold mb-4 flex items-center gap-2">
+                <span>📰</span> News Driving This Analysis
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {analysisResult.news.slice(0, 6).map((article, i) => (
                   <a
                     key={i}
                     href={article.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-start gap-2 text-sm text-gray-400 hover:text-blue-400 transition-colors group"
+                    className="flex items-start gap-3 p-3 bg-gray-700/30 hover:bg-gray-700/50 rounded-lg transition-colors group"
                   >
-                    <ChevronRight className="w-4 h-4 flex-shrink-0 mt-0.5 group-hover:translate-x-0.5 transition-transform" />
-                    <span className="line-clamp-1">{article.headline}</span>
+                    <ExternalLink className="w-4 h-4 text-gray-500 group-hover:text-blue-400 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <div className="text-white group-hover:text-blue-400 transition-colors line-clamp-2 text-sm">
+                        {article.headline}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        {article.source} • {new Date(article.datetime * 1000).toLocaleDateString()}
+                      </div>
+                    </div>
                   </a>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Disclaimer Footer */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs text-gray-500 px-1 pt-2 border-t border-gray-800">
-            <div className="flex items-center gap-1.5">
-              <AlertTriangle className="w-3.5 h-3.5" />
-              <span>AI-generated analysis for informational purposes only. Not financial advice. Always do your own research.</span>
-            </div>
-            <div className="flex items-center gap-1.5 text-gray-600">
-              <Clock className="w-3.5 h-3.5" />
-              <span>{new Date(currentAnalysis.timestamp).toLocaleString()}</span>
-            </div>
+          {/* Minimal Footer */}
+          <div className="text-center text-xs text-gray-600 pt-2">
+            Analysis generated {new Date(analysisResult.timestamp).toLocaleString()} • For informational purposes only
           </div>
         </div>
       )}
 
       {/* History */}
-      {history.length > 0 && !loading && !currentAnalysis && (
+      {history.length > 0 && !loading && !analysisResult && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-medium text-gray-400 flex items-center gap-2">
@@ -1251,46 +1040,40 @@ Respond with ONLY valid JSON (no other text, no markdown):
               Recent Analyses
             </h3>
             <button
-              onClick={() => { setHistory([]); localStorage.removeItem('ai_analysis_history') }}
+              onClick={() => { setHistory([]); localStorage.removeItem('ai_analysis_history_v2') }}
               className="text-xs text-gray-500 hover:text-red-400 transition-colors"
             >
               Clear All
             </button>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {history.map((item) => {
-              const hs = getSentimentDisplay(item.sentiment, item.aiJson?.rating)
+              const hv = item.aiJson ? getVerdictDisplay(item.aiJson.verdict, item.aiJson.verdictStrength) : { color: 'text-gray-400', bg: 'bg-gray-700/50', border: 'border-gray-600', label: 'VIEW', gradient: 'from-gray-600 to-gray-500' }
               return (
                 <button
                   key={`${item.symbol}-${item.timestamp}`}
-                  onClick={() => setCurrentAnalysis(item)}
-                  className={`p-4 rounded-xl border-2 ${hs.border} ${hs.bg} hover:scale-[1.02] text-left transition-all group`}
+                  onClick={() => setAnalysisResult(item)}
+                  className={`p-4 rounded-xl border-2 ${hv.border} ${hv.bg} hover:scale-[1.02] text-left transition-all`}
                 >
                   <div className="flex items-center justify-between mb-3">
                     <span className="font-bold text-white text-xl">{item.symbol}</span>
-                    <span className={`px-2.5 py-1 rounded-lg text-xs font-bold text-white bg-gradient-to-r ${hs.gradient}`}>
-                      {hs.label}
+                    <span className={`px-2.5 py-1 rounded-lg text-xs font-bold text-white bg-gradient-to-r ${hv.gradient}`}>
+                      {hv.label}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
                     <div>
-                      <div className="text-white font-semibold">${item.price?.toFixed(2)}</div>
-                      <div className={`text-sm font-medium ${item.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                        {item.change >= 0 ? '+' : ''}{item.change?.toFixed(2)}%
+                      <div className="text-white font-semibold">${item.quote?.price?.toFixed(2)}</div>
+                      <div className={`text-sm font-medium ${item.quote?.changePercent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {item.quote?.changePercent >= 0 ? '+' : ''}{item.quote?.changePercent?.toFixed(2)}%
                       </div>
                     </div>
-                    {item.confidenceScore && (
+                    {item.aiJson?.confidence && (
                       <div className="text-right">
-                        <div className={`text-lg font-bold ${getConfidenceColor(item.confidenceScore)}`}>
-                          {item.confidenceScore}%
-                        </div>
+                        <div className="text-lg font-bold text-purple-400">{item.aiJson.confidence}%</div>
                         <div className="text-xs text-gray-500">confidence</div>
                       </div>
                     )}
-                  </div>
-                  <div className="mt-3 pt-3 border-t border-gray-700/50 flex items-center justify-between text-xs text-gray-500">
-                    <span>{item.sector || 'Stock'}</span>
-                    <span>{new Date(item.timestamp).toLocaleDateString()}</span>
                   </div>
                 </button>
               )
@@ -1300,21 +1083,18 @@ Respond with ONLY valid JSON (no other text, no markdown):
       )}
 
       {/* Empty State */}
-      {!currentAnalysis && !loading && history.length === 0 && (
-        <div className="rounded-2xl p-10 border-2 border-dashed border-purple-500/30 bg-gradient-to-br from-purple-500/5 to-blue-500/5 text-center">
-          <div className="relative w-20 h-20 mx-auto mb-6">
-            <div className="absolute inset-0 rounded-full bg-purple-500/20 animate-pulse"></div>
-            <Brain className="absolute inset-0 m-auto w-10 h-10 text-purple-400" />
-          </div>
-          <h3 className="text-xl font-bold mb-3 text-white">AI-Powered Stock Analysis</h3>
-          <p className="text-gray-400 max-w-lg mx-auto mb-6 leading-relaxed">
-            Get comprehensive, professional-grade analysis on any stock. Our AI examines fundamentals, technicals, news sentiment, and market positioning to deliver actionable insights.
+      {!analysisResult && !loading && history.length === 0 && (
+        <div className="rounded-2xl p-10 border-2 border-dashed border-purple-500/30 bg-gradient-to-br from-purple-900/10 to-blue-900/10 text-center">
+          <div className="text-5xl mb-6">🧠</div>
+          <h3 className="text-2xl font-bold mb-3 text-white">AI-Powered Deep Analysis</h3>
+          <p className="text-gray-400 max-w-xl mx-auto mb-8 leading-relaxed">
+            Get institutional-quality research on any stock. Our AI analyzes technicals, fundamentals, news sentiment, and market positioning to deliver actionable insights with clear buy/sell recommendations.
           </p>
           <div className="flex flex-wrap justify-center gap-3 text-sm">
-            <span className="px-3 py-1.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20">Technical Analysis</span>
-            <span className="px-3 py-1.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">Fundamental Metrics</span>
-            <span className="px-3 py-1.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">News Sentiment</span>
-            <span className="px-3 py-1.5 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20">Price Targets</span>
+            <span className="px-4 py-2 rounded-full bg-green-500/10 text-green-400 border border-green-500/20">Bull & Bear Cases</span>
+            <span className="px-4 py-2 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">Technical Levels</span>
+            <span className="px-4 py-2 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20">News Sentiment</span>
+            <span className="px-4 py-2 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">Catalyst Alerts</span>
           </div>
         </div>
       )}
