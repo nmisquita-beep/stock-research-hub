@@ -868,55 +868,62 @@ function PredictiveSearch({ onSelect, onClose, placeholder = "Search stocks...",
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
   const [selectedIndex, setSelectedIndex] = useState(0)
-  const [isOpen, setIsOpen] = useState(false)
   const inputRef = useRef(null)
   const wrapperRef = useRef(null)
+  const timeoutRef = useRef(null)
 
   useEffect(() => { inputRef.current?.focus() }, [])
 
-  // Click outside to close (for inline mode)
+  // Click outside to close
   useEffect(() => {
-    if (!inline) return
     const handleClickOutside = (e) => {
       if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
-        setIsOpen(false)
+        if (inline) setResults([])
+        else onClose?.()
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [inline])
+  }, [inline, onClose])
 
-  const searchStocks = useCallback(debounce(async (q) => {
-    if (!q.trim()) { setResults([]); setIsOpen(false); return }
-    setLoading(true)
-    try {
-      const data = await yahooFetch(q, 'search')
-      let resultArray = []
-      if (data && data.quotes && Array.isArray(data.quotes)) {
-        resultArray = data.quotes
-          .filter(r => r.quoteType === 'EQUITY' || r.quoteType === 'ETF')
-          .slice(0, 8)
-          .map(r => ({
-            symbol: r.symbol,
-            name: r.shortname || r.longname || r.symbol,
-            type: r.quoteType || 'EQUITY',
-            exchange: r.exchange || ''
-          }))
+  // Search with debounce
+  const handleSearch = (q) => {
+    setQuery(q)
+    clearTimeout(timeoutRef.current)
+
+    if (!q.trim()) {
+      setResults([])
+      return
+    }
+
+    timeoutRef.current = setTimeout(async () => {
+      setLoading(true)
+      try {
+        const data = await yahooFetch(q, 'search')
+        if (data?.quotes) {
+          const filtered = data.quotes
+            .filter(r => r.quoteType === 'EQUITY' || r.quoteType === 'ETF')
+            .slice(0, 8)
+            .map(r => ({
+              symbol: r.symbol,
+              name: r.shortname || r.longname || r.symbol,
+              type: r.quoteType || 'EQUITY'
+            }))
+          setResults(filtered)
+          setSelectedIndex(0)
+        }
+      } catch (err) {
+        console.error('Search error:', err)
+        setResults([])
       }
-      setResults(resultArray)
-      setSelectedIndex(0)
-      setIsOpen(resultArray.length > 0)
-    } catch { setResults([]) }
-    finally { setLoading(false) }
-  }, 150), [])
-
-  useEffect(() => { searchStocks(query) }, [query, searchStocks])
+      setLoading(false)
+    }, 200)
+  }
 
   const handleSelect = (item) => {
     onSelect(item.symbol)
     setQuery('')
     setResults([])
-    setIsOpen(false)
     if (!inline) onClose?.()
   }
 
@@ -927,14 +934,15 @@ function PredictiveSearch({ onSelect, onClose, placeholder = "Search stocks...",
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
       setSelectedIndex(i => Math.max(i - 1, 0))
-    } else if (e.key === 'Enter') {
+    } else if (e.key === 'Enter' && results[selectedIndex]) {
       e.preventDefault()
-      if (results[selectedIndex]) handleSelect(results[selectedIndex])
+      handleSelect(results[selectedIndex])
     } else if (e.key === 'Escape') {
-      setIsOpen(false)
       onClose?.()
     }
   }
+
+  const showDropdown = query && (loading || results.length > 0 || (!loading && query.length > 0))
 
   if (inline) {
     return (
@@ -945,49 +953,37 @@ function PredictiveSearch({ onSelect, onClose, placeholder = "Search stocks...",
             ref={inputRef}
             type="text"
             value={query}
-            onChange={e => { setQuery(e.target.value.toUpperCase()); setIsOpen(true) }}
-            onFocus={() => query && results.length > 0 && setIsOpen(true)}
+            onChange={e => handleSearch(e.target.value.toUpperCase())}
             onKeyDown={handleKeyDown}
             placeholder={placeholder}
             className="bg-transparent text-white placeholder-gray-400 outline-none flex-1 text-sm"
           />
           {loading && <RefreshCw className="w-4 h-4 text-gray-400 animate-spin" />}
         </div>
-        {isOpen && results.length > 0 && (
+        {showDropdown && (
           <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 rounded-lg border border-gray-700 shadow-xl z-50 overflow-hidden max-h-64 overflow-y-auto">
-            {results.map((item, i) => (
-              <button
-                key={item.symbol}
-                onClick={() => handleSelect(item)}
-                onMouseEnter={() => setSelectedIndex(i)}
-                className={`w-full flex items-center justify-between p-3 text-left transition-colors ${
-                  i === selectedIndex ? 'bg-blue-600/30' : 'hover:bg-gray-700'
-                }`}
-              >
-                <div className="flex-1 min-w-0">
-                  <span className="text-white font-medium">{item.symbol}</span>
-                  <span className="text-gray-400 text-sm ml-2 truncate">{item.name}</span>
-                </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                    item.type === 'ETF' ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'
-                  }`}>
-                    {item.type}
-                  </span>
+            {loading ? (
+              <div className="p-3 text-center text-gray-400">Searching...</div>
+            ) : results.length > 0 ? (
+              results.map((item, i) => (
+                <button
+                  key={item.symbol}
+                  onClick={() => handleSelect(item)}
+                  onMouseEnter={() => setSelectedIndex(i)}
+                  className={`w-full flex items-center justify-between p-3 text-left transition-colors ${
+                    i === selectedIndex ? 'bg-blue-600/30' : 'hover:bg-gray-700'
+                  }`}
+                >
+                  <div>
+                    <span className="text-white font-medium">{item.symbol}</span>
+                    <span className="text-gray-400 text-sm ml-2">{item.name}</span>
+                  </div>
                   <Plus className="w-4 h-4 text-gray-400" />
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
-        {isOpen && loading && query && (
-          <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 rounded-lg border border-gray-700 shadow-xl z-50 p-3 text-center">
-            <RefreshCw className="w-4 h-4 text-gray-400 animate-spin mx-auto" />
-          </div>
-        )}
-        {isOpen && !loading && query && results.length === 0 && (
-          <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 rounded-lg border border-gray-700 shadow-xl z-50 p-3 text-center text-gray-400 text-sm">
-            No results for "{query}"
+                </button>
+              ))
+            ) : (
+              <div className="p-3 text-center text-gray-400">No results</div>
+            )}
           </div>
         )}
       </div>
@@ -996,14 +992,14 @@ function PredictiveSearch({ onSelect, onClose, placeholder = "Search stocks...",
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-start justify-center pt-20 z-50" onClick={onClose}>
-      <div className="bg-gray-800 rounded-xl w-full max-w-lg mx-4 shadow-2xl border border-gray-700 overflow-hidden" onClick={e => e.stopPropagation()}>
+      <div ref={wrapperRef} className="bg-gray-800 rounded-xl w-full max-w-lg mx-4 shadow-2xl border border-gray-700 overflow-hidden" onClick={e => e.stopPropagation()}>
         <div className="flex items-center gap-3 p-4 border-b border-gray-700">
           <Search className="w-5 h-5 text-gray-400" />
           <input
             ref={inputRef}
             type="text"
             value={query}
-            onChange={e => setQuery(e.target.value.toUpperCase())}
+            onChange={e => handleSearch(e.target.value.toUpperCase())}
             onKeyDown={handleKeyDown}
             placeholder={placeholder}
             className="flex-1 bg-transparent text-white placeholder-gray-400 outline-none text-lg"
@@ -1011,53 +1007,47 @@ function PredictiveSearch({ onSelect, onClose, placeholder = "Search stocks...",
           <kbd className="px-2 py-1 text-xs bg-gray-700 rounded text-gray-300">ESC</kbd>
         </div>
         <div className="max-h-80 overflow-y-auto">
-          {loading && (
+          {loading ? (
             <div className="p-4 text-center">
               <RefreshCw className="w-5 h-5 animate-spin mx-auto text-gray-400" />
+              <p className="text-gray-400 mt-2">Searching...</p>
             </div>
-          )}
-          {!loading && results.map((item, i) => (
-            <button
-              key={item.symbol}
-              onClick={() => handleSelect(item)}
-              onMouseEnter={() => setSelectedIndex(i)}
-              className={`w-full flex items-center justify-between p-4 transition-colors ${
-                i === selectedIndex ? 'bg-blue-600/30' : 'hover:bg-gray-700'
-              }`}
-            >
-              <div className="text-left flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-white font-medium">{item.symbol}</span>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                    item.type === 'ETF' ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'
-                  }`}>
-                    {item.type}
-                  </span>
+          ) : results.length > 0 ? (
+            results.map((item, i) => (
+              <button
+                key={item.symbol}
+                onClick={() => handleSelect(item)}
+                onMouseEnter={() => setSelectedIndex(i)}
+                className={`w-full flex items-center justify-between p-4 transition-colors ${
+                  i === selectedIndex ? 'bg-blue-600/30' : 'hover:bg-gray-700'
+                }`}
+              >
+                <div className="text-left">
+                  <div className="flex items-center gap-2">
+                    <span className="text-white font-medium">{item.symbol}</span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                      item.type === 'ETF' ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'
+                    }`}>
+                      {item.type}
+                    </span>
+                  </div>
+                  <div className="text-gray-400 text-sm">{item.name}</div>
                 </div>
-                <div className="text-gray-400 text-sm truncate">{item.name}</div>
-              </div>
-              <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
-            </button>
-          ))}
-          {!loading && query && results.length === 0 && (
-            <div className="p-8 text-center text-gray-400">
-              No results for "{query}"
-            </div>
-          )}
-          {!loading && !query && (
+                <ChevronRight className="w-4 h-4 text-gray-400" />
+              </button>
+            ))
+          ) : query ? (
+            <div className="p-8 text-center text-gray-400">No results for "{query}"</div>
+          ) : (
             <div className="p-6 text-center text-gray-500">
               <Search className="w-8 h-8 mx-auto mb-2 opacity-50" />
-              <p>Type to search by symbol or name</p>
-              <p className="text-xs mt-1">e.g., AAPL, Apple, Tesla</p>
+              <p>Type to search stocks</p>
             </div>
           )}
         </div>
         <div className="p-3 border-t border-gray-700 flex items-center justify-between text-xs text-gray-500">
-          <div className="flex items-center gap-3">
-            <span><kbd className="px-1.5 py-0.5 bg-gray-700 rounded">↑↓</kbd> navigate</span>
-            <span><kbd className="px-1.5 py-0.5 bg-gray-700 rounded">↵</kbd> select</span>
-          </div>
-          <span><kbd className="px-1.5 py-0.5 bg-gray-700 rounded">esc</kbd> close</span>
+          <span><kbd className="px-1 bg-gray-700 rounded">↑↓</kbd> navigate <kbd className="px-1 bg-gray-700 rounded ml-2">↵</kbd> select</span>
+          <span><kbd className="px-1 bg-gray-700 rounded">esc</kbd> close</span>
         </div>
       </div>
     </div>
@@ -1407,134 +1397,94 @@ function SectorPerformance({ onSelectStock, sectorData, loading }) {
 }
 
 // ============ EXPLORE PAGE ============
-// Comprehensive stock universe - 250+ stocks organized by sector
+// Stock universe organized by sector
 const STOCK_UNIVERSE = {
-  'Technology': ['AAPL', 'MSFT', 'GOOGL', 'GOOG', 'AMZN', 'META', 'NVDA', 'TSLA', 'AMD', 'INTC', 'CRM', 'ORCL', 'ADBE', 'CSCO', 'IBM', 'QCOM', 'TXN', 'AVGO', 'NOW', 'SNOW', 'PLTR', 'NET', 'SHOP', 'SQ', 'PYPL', 'UBER', 'ABNB', 'COIN', 'RBLX', 'DDOG', 'ZS', 'CRWD', 'OKTA', 'MDB', 'TEAM', 'DOCU', 'ZM', 'TWLO', 'PINS', 'SNAP', 'SPOT', 'ROKU', 'TTD', 'BILL', 'HUBS', 'PANW', 'FTNT', 'PATH', 'APP', 'AI'],
-  'Finance': ['JPM', 'BAC', 'GS', 'MS', 'WFC', 'C', 'USB', 'PNC', 'SCHW', 'BLK', 'AXP', 'V', 'MA', 'COF', 'SPGI', 'MCO', 'ICE', 'CME', 'TFC', 'KEY', 'RF', 'CFG', 'FITB', 'DFS', 'SYF', 'ALLY', 'AIG', 'MET', 'PRU', 'AFL', 'TRV', 'ALL', 'PGR', 'CB', 'MMC', 'AON', 'HOOD', 'SOFI'],
-  'Healthcare': ['JNJ', 'UNH', 'PFE', 'ABBV', 'MRK', 'LLY', 'TMO', 'ABT', 'DHR', 'BMY', 'AMGN', 'GILD', 'CVS', 'CI', 'HUM', 'ISRG', 'REGN', 'VRTX', 'BIIB', 'MRNA', 'ZTS', 'BDX', 'SYK', 'BSX', 'MDT', 'EW', 'DXCM', 'ALGN', 'IDXX', 'IQV', 'A', 'MTD', 'WAT', 'HOLX', 'TDOC', 'HIMS'],
-  'Consumer Discretionary': ['HD', 'LOW', 'TGT', 'MCD', 'SBUX', 'NKE', 'DIS', 'NFLX', 'CMG', 'YUM', 'DG', 'DLTR', 'ROST', 'TJX', 'BKNG', 'MAR', 'HLT', 'EXPE', 'LVS', 'WYNN', 'MGM', 'CCL', 'RCL', 'F', 'GM', 'RIVN', 'LCID', 'ORLY', 'AZO', 'BBY', 'W', 'ETSY', 'CHWY', 'CVNA', 'LULU', 'DECK', 'CROX'],
-  'Consumer Staples': ['WMT', 'COST', 'PG', 'KO', 'PEP', 'PM', 'MO', 'MDLZ', 'CL', 'KMB', 'GIS', 'K', 'HSY', 'HRL', 'SJM', 'CAG', 'CPB', 'CHD', 'CLX', 'EL', 'KHC', 'KR', 'SYY', 'ADM', 'TSN'],
-  'Energy': ['XOM', 'CVX', 'COP', 'SLB', 'EOG', 'PXD', 'MPC', 'VLO', 'PSX', 'OXY', 'DVN', 'HES', 'FANG', 'APA', 'MRO', 'HAL', 'BKR', 'TRGP', 'WMB', 'KMI', 'OKE', 'ET', 'LNG', 'AR', 'EQT'],
-  'Industrials': ['CAT', 'DE', 'BA', 'HON', 'UPS', 'FDX', 'LMT', 'RTX', 'GE', 'MMM', 'UNP', 'CSX', 'NSC', 'PCAR', 'ODFL', 'GD', 'NOC', 'LHX', 'TDG', 'ITW', 'EMR', 'ROK', 'PH', 'ETN', 'AME', 'IR', 'DOV', 'FAST', 'GWW'],
-  'Communication': ['T', 'VZ', 'TMUS', 'CHTR', 'CMCSA', 'WBD', 'PARA', 'OMC', 'LYV', 'MTCH', 'EA', 'TTWO'],
-  'Real Estate': ['AMT', 'PLD', 'CCI', 'EQIX', 'PSA', 'SPG', 'O', 'WELL', 'DLR', 'AVB', 'EQR', 'VTR', 'ARE', 'MAA', 'UDR', 'INVH', 'SUI'],
-  'Utilities': ['NEE', 'DUK', 'SO', 'D', 'AEP', 'XEL', 'SRE', 'EXC', 'WEC', 'ED', 'PEG', 'ES', 'DTE', 'FE', 'ETR'],
-  'Materials': ['LIN', 'APD', 'SHW', 'ECL', 'DD', 'NEM', 'FCX', 'NUE', 'STLD', 'VMC', 'MLM', 'ALB', 'CF', 'MOS', 'PPG'],
-  'ETFs': ['SPY', 'QQQ', 'DIA', 'IWM', 'VTI', 'VOO', 'VEA', 'VWO', 'EFA', 'EEM', 'XLK', 'XLV', 'XLF', 'XLE', 'XLY', 'XLP', 'XLI', 'XLB', 'XLRE', 'XLU', 'XLC', 'VNQ', 'GLD', 'SLV', 'TLT', 'ARKK']
+  'Technology': ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NVDA', 'TSLA', 'AMD', 'INTC', 'CRM', 'ORCL', 'ADBE', 'CSCO', 'IBM', 'QCOM'],
+  'Finance': ['JPM', 'BAC', 'GS', 'MS', 'WFC', 'V', 'MA', 'AXP', 'BLK', 'SCHW', 'C', 'USB', 'PNC', 'COF', 'SPGI'],
+  'Healthcare': ['JNJ', 'UNH', 'PFE', 'ABBV', 'MRK', 'LLY', 'TMO', 'ABT', 'DHR', 'BMY', 'AMGN', 'GILD', 'CVS', 'CI', 'HUM'],
+  'Consumer': ['WMT', 'COST', 'HD', 'LOW', 'TGT', 'MCD', 'SBUX', 'NKE', 'DIS', 'NFLX', 'CMG', 'YUM', 'BKNG', 'MAR', 'HLT'],
+  'Energy': ['XOM', 'CVX', 'COP', 'SLB', 'EOG', 'OXY', 'MPC', 'VLO', 'PSX', 'HAL', 'DVN', 'HES', 'KMI', 'WMB', 'ET'],
+  'Industrials': ['CAT', 'DE', 'BA', 'HON', 'UPS', 'FDX', 'LMT', 'RTX', 'GE', 'MMM', 'UNP', 'CSX', 'GD', 'NOC', 'EMR'],
+  'ETFs': ['SPY', 'QQQ', 'DIA', 'IWM', 'VTI', 'VOO', 'XLK', 'XLV', 'XLF', 'XLE', 'GLD', 'TLT', 'ARKK', 'VNQ', 'EEM']
 }
 
 const SECTOR_COLORS = {
   'Technology': 'text-blue-400',
   'Finance': 'text-yellow-400',
   'Healthcare': 'text-green-400',
-  'Consumer Discretionary': 'text-pink-400',
-  'Consumer Staples': 'text-rose-400',
+  'Consumer': 'text-pink-400',
   'Energy': 'text-orange-400',
   'Industrials': 'text-slate-400',
-  'Communication': 'text-purple-400',
-  'Real Estate': 'text-indigo-400',
-  'Utilities': 'text-teal-400',
-  'Materials': 'text-amber-400',
   'ETFs': 'text-cyan-400'
 }
 
 function ExplorePage({ onSelectStock }) {
   const [stockData, setStockData] = useState({})
   const [loading, setLoading] = useState(true)
-  const [progress, setProgress] = useState({ loaded: 0, total: 0 })
   const [activeSector, setActiveSector] = useState('All')
   const [searchQuery, setSearchQuery] = useState('')
-  const [sortBy, setSortBy] = useState('default') // default, alpha, price, change
-  const [expandedSectors, setExpandedSectors] = useState({})
-  const [lastUpdated, setLastUpdated] = useState(null)
 
-  const allSymbols = useMemo(() => {
-    const symbols = new Set()
-    Object.values(STOCK_UNIVERSE).forEach(arr => arr.forEach(s => symbols.add(s)))
-    return Array.from(symbols)
-  }, [])
+  // Fetch all stocks on mount
+  useEffect(() => {
+    let cancelled = false
 
-  const fetchAllStocks = useCallback(async () => {
-    setLoading(true)
-    setProgress({ loaded: 0, total: allSymbols.length })
+    const fetchStocks = async () => {
+      const allSymbols = Object.values(STOCK_UNIVERSE).flat()
+      const data = {}
 
-    const data = {}
-    const batchSize = 25
+      // Fetch in batches of 15
+      for (let i = 0; i < allSymbols.length; i += 15) {
+        if (cancelled) return
+        const batch = allSymbols.slice(i, i + 15)
 
-    for (let i = 0; i < allSymbols.length; i += batchSize) {
-      const batch = allSymbols.slice(i, i + batchSize)
+        try {
+          const results = await Promise.allSettled(
+            batch.map(s => yahooFetch(s))
+          )
 
-      const results = await Promise.allSettled(
-        batch.map(s => yahooFetch(s))
-      )
+          results.forEach((r, idx) => {
+            if (r.status === 'fulfilled' && r.value) {
+              const n = normalizeYahooQuote(r.value)
+              if (n?.c > 0) data[batch[idx]] = n
+            }
+          })
 
-      results.forEach((r, idx) => {
-        if (r.status === 'fulfilled' && r.value) {
-          const n = normalizeYahooQuote(r.value)
-          if (n?.c > 0) data[batch[idx]] = n
+          if (!cancelled) {
+            setStockData({ ...data })
+            if (i === 0) setLoading(false)
+          }
+        } catch (err) {
+          console.error('Batch fetch error:', err)
         }
-      })
+      }
 
-      setStockData({ ...data })
-      setProgress({ loaded: Math.min(i + batchSize, allSymbols.length), total: allSymbols.length })
-
-      if (i === 0) setLoading(false)
+      if (!cancelled) setLoading(false)
     }
 
-    setLastUpdated(new Date())
-    setLoading(false)
-  }, [allSymbols])
-
-  useEffect(() => {
-    fetchAllStocks()
-  }, [fetchAllStocks])
+    fetchStocks()
+    return () => { cancelled = true }
+  }, [])
 
   const sectors = ['All', ...Object.keys(STOCK_UNIVERSE)]
 
-  const toggleSectorExpand = (sector) => {
-    setExpandedSectors(prev => ({ ...prev, [sector]: !prev[sector] }))
-  }
-
-  const getFilteredStocks = () => {
-    let result = activeSector === 'All'
+  // Get stocks to display
+  const getDisplayStocks = () => {
+    let entries = activeSector === 'All'
       ? Object.entries(STOCK_UNIVERSE)
       : [[activeSector, STOCK_UNIVERSE[activeSector] || []]]
 
+    // Filter by search query
     if (searchQuery) {
       const q = searchQuery.toUpperCase()
-      result = result
-        .map(([sec, syms]) => [sec, (syms || []).filter(s =>
-          s.includes(q) || (stockData[s]?.name || '').toUpperCase().includes(q)
-        )])
+      entries = entries
+        .map(([sec, syms]) => [
+          sec,
+          syms.filter(s => s.includes(q) || (stockData[s]?.name || '').toUpperCase().includes(q))
+        ])
         .filter(([, syms]) => syms.length > 0)
     }
 
-    // Sort stocks within each sector
-    if (sortBy !== 'default') {
-      result = result.map(([sec, syms]) => {
-        const sorted = [...syms].sort((a, b) => {
-          const qa = stockData[a], qb = stockData[b]
-          if (sortBy === 'alpha') return a.localeCompare(b)
-          if (sortBy === 'price') return (qb?.c || 0) - (qa?.c || 0)
-          if (sortBy === 'change') {
-            const ca = qa?.pc ? ((qa.c - qa.pc) / qa.pc * 100) : 0
-            const cb = qb?.pc ? ((qb.c - qb.pc) / qb.pc * 100) : 0
-            return cb - ca
-          }
-          return 0
-        })
-        return [sec, sorted]
-      })
-    }
-
-    return result
-  }
-
-  const getTimeAgo = () => {
-    if (!lastUpdated) return ''
-    const mins = Math.floor((Date.now() - lastUpdated.getTime()) / 60000)
-    if (mins < 1) return 'Just now'
-    return `${mins}m ago`
+    return entries
   }
 
   const loadedCount = Object.keys(stockData).length
@@ -1542,64 +1492,26 @@ function ExplorePage({ onSelectStock }) {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Grid3X3 className="w-7 h-7 text-purple-400" />
-            Explore Stocks
-          </h2>
-          <p className="text-gray-400 mt-1">
-            {loadedCount > 0 ? `${loadedCount} stocks loaded` : 'Loading stocks...'}
-            {progress.loaded < progress.total && ` (${progress.loaded}/${progress.total})`}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          {lastUpdated && (
-            <span className="text-xs text-gray-500">Updated {getTimeAgo()}</span>
-          )}
-          <button
-            onClick={fetchAllStocks}
-            disabled={loading}
-            className="flex items-center gap-2 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm text-gray-200 transition-colors"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
-        </div>
+      <div>
+        <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+          <Grid3X3 className="w-7 h-7 text-purple-400" />
+          Explore Stocks
+        </h2>
+        <p className="text-gray-400 mt-1">
+          {loading ? 'Loading...' : `${loadedCount} stocks loaded`}
+        </p>
       </div>
 
-      {/* Progress Bar */}
-      {progress.loaded < progress.total && (
-        <div className="w-full bg-gray-700 rounded-full h-1.5">
-          <div
-            className="bg-blue-500 h-1.5 rounded-full transition-all duration-300"
-            style={{ width: `${(progress.loaded / progress.total) * 100}%` }}
-          />
-        </div>
-      )}
-
-      {/* Search and Sort */}
-      <div className="flex gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Search by symbol or name..."
-            className="w-full pl-10 pr-4 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
-          />
-        </div>
-        <select
-          value={sortBy}
-          onChange={e => setSortBy(e.target.value)}
-          className="px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white focus:outline-none focus:border-blue-500"
-        >
-          <option value="default">Default Order</option>
-          <option value="alpha">A-Z</option>
-          <option value="price">Highest Price</option>
-          <option value="change">Best Performers</option>
-        </select>
+      {/* Search */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          placeholder="Search by symbol or name..."
+          className="w-full pl-10 pr-4 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+        />
       </div>
 
       {/* Sector Pills */}
@@ -1619,40 +1531,26 @@ function ExplorePage({ onSelectStock }) {
 
       {/* Stock Grid */}
       {loading && loadedCount === 0 ? (
-        <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-8 lg:grid-cols-10 gap-2">
-          {[...Array(40)].map((_, i) => (
-            <div key={i} className="p-2 rounded-lg bg-gray-800 animate-pulse">
-              <div className="h-3 bg-gray-700 rounded mb-1.5" />
-              <div className="h-2 bg-gray-700 rounded mb-1.5" />
-              <div className="h-3 bg-gray-700 rounded" />
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
+          {[...Array(24)].map((_, i) => (
+            <div key={i} className="p-3 rounded-lg bg-gray-800 animate-pulse">
+              <div className="h-4 bg-gray-700 rounded mb-2" />
+              <div className="h-3 bg-gray-700 rounded mb-2" />
+              <div className="h-4 bg-gray-700 rounded" />
             </div>
           ))}
         </div>
       ) : (
         <div className="space-y-6">
-          {getFilteredStocks().map(([sector, symbols]) => {
+          {getDisplayStocks().map(([sector, symbols]) => {
             if (!symbols || symbols.length === 0) return null
-            const isExpanded = expandedSectors[sector]
-            const displaySymbols = isExpanded ? symbols : symbols.slice(0, 16)
-            const hasMore = symbols.length > 16
-
             return (
               <div key={sector} className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className={`text-sm font-semibold ${SECTOR_COLORS[sector] || 'text-gray-300'}`}>
-                    {sector} ({symbols.length})
-                  </h3>
-                  {hasMore && (
-                    <button
-                      onClick={() => toggleSectorExpand(sector)}
-                      className="text-xs text-blue-400 hover:text-blue-300"
-                    >
-                      {isExpanded ? 'Show less' : `Show all ${symbols.length}`}
-                    </button>
-                  )}
-                </div>
-                <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-8 lg:grid-cols-10 gap-2">
-                  {displaySymbols.map(symbol => {
+                <h3 className={`text-sm font-semibold ${SECTOR_COLORS[sector] || 'text-gray-300'}`}>
+                  {sector} ({symbols.length})
+                </h3>
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
+                  {symbols.map(symbol => {
                     const quote = stockData[symbol]
                     const change = quote?.pc ? ((quote.c - quote.pc) / quote.pc * 100) : 0
                     const pos = change >= 0
@@ -1660,24 +1558,24 @@ function ExplorePage({ onSelectStock }) {
                       <button
                         key={symbol}
                         onClick={() => onSelectStock(symbol)}
-                        className={`p-2 rounded-lg border transition-all hover:scale-105 text-left ${
+                        className={`p-3 rounded-lg border transition-all hover:scale-105 text-left ${
                           pos ? 'bg-green-900/20 border-green-500/30 hover:border-green-500'
                             : 'bg-red-900/20 border-red-500/30 hover:border-red-500'
                         }`}
                       >
-                        <div className="text-xs font-bold text-white">{symbol}</div>
-                        <div className="text-[10px] text-gray-400 truncate">
+                        <div className="text-sm font-bold text-white">{symbol}</div>
+                        <div className="text-xs text-gray-400 truncate">
                           {quote?.name ? quote.name.split(' ')[0] : '—'}
                         </div>
                         {quote?.c ? (
                           <>
-                            <div className="text-[11px] text-gray-300">${quote.c.toFixed(2)}</div>
-                            <div className={`text-[11px] font-medium ${pos ? 'text-green-400' : 'text-red-400'}`}>
+                            <div className="text-sm text-gray-300">${quote.c.toFixed(2)}</div>
+                            <div className={`text-sm font-medium ${pos ? 'text-green-400' : 'text-red-400'}`}>
                               {pos ? '+' : ''}{change.toFixed(1)}%
                             </div>
                           </>
                         ) : (
-                          <div className="h-7 bg-gray-700/50 rounded animate-pulse mt-1" />
+                          <div className="h-10 bg-gray-700/50 rounded animate-pulse mt-1" />
                         )}
                       </button>
                     )
