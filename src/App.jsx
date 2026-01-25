@@ -180,6 +180,7 @@ const finnhubFetch = async (endpoint, timeout = 10000) => {
 const normalizeYahooQuote = (data) => {
   if (!data) return null
   // Use nullish coalescing (??) for numbers to preserve 0 and negative values
+  // API returns: changePercent, change, price (not regularMarket* variants)
   const changePercent = data.regularMarketChangePercent ?? data.changePercent ?? 0
   const change = data.regularMarketChange ?? data.change ?? 0
   return {
@@ -244,7 +245,7 @@ const analyzeSentiment = (text) => {
 
 const calculateMarketMood = (stocksData) => {
   if (!stocksData || Object.keys(stocksData).length === 0) return 50
-  const changes = Object.values(stocksData).map(d => d && d.pc ? ((d.c - d.pc) / d.pc) * 100 : 0)
+  const changes = Object.values(stocksData).map(d => d?.changePercent ?? 0)
   const avgChange = changes.reduce((a, b) => a + b, 0) / changes.length
   return Math.max(0, Math.min(100, 50 + avgChange * 10))
 }
@@ -1438,9 +1439,9 @@ function EarningsCalendar({ onSelect }) {
 function WatchlistInsights({ watchlist, quotes }) {
   if (!watchlist || watchlist.length === 0) return null
 
-  const validQuotes = watchlist.filter(s => quotes[s] && quotes[s].pc).map(s => ({
+  const validQuotes = watchlist.filter(s => quotes[s] && quotes[s].c > 0).map(s => ({
     symbol: s,
-    change: ((quotes[s].c - quotes[s].pc) / quotes[s].pc) * 100
+    change: quotes[s].changePercent ?? 0
   }))
 
   if (validQuotes.length === 0) return null
@@ -1759,7 +1760,7 @@ function SectorPerformance({ onSelectStock, sectorData, loading }) {
       <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-11 gap-2">
         {SECTORS.map(sector => {
           const data = sectorData[sector.symbol]
-          const change = data?.pc ? ((data.c - data.pc) / data.pc * 100) : 0
+          const change = data?.changePercent ?? 0
           const isPositive = change >= 0
           return (
             <button
@@ -2708,11 +2709,11 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock }) {
 
     // Calculate movers from popular stocks
     const stockData = popularStocks
-      .filter(s => allData[s] && allData[s].pc > 0)
+      .filter(s => allData[s] && allData[s].c > 0)
       .map(s => ({
         symbol: s,
         price: allData[s].c,
-        change: ((allData[s].c - allData[s].pc) / allData[s].pc) * 100
+        change: allData[s].changePercent ?? 0
       }))
       .sort((a, b) => b.change - a.change)
 
@@ -2782,9 +2783,8 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock }) {
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         {indices.map(symbol => {
           const data = marketData[symbol]
-          const change = data ? data.c - data.pc : 0
-          const pctChange = data?.pc ? (change / data.pc) * 100 : 0
-          const positive = change >= 0
+          const pct = data?.changePercent ?? 0
+          const positive = pct >= 0
           const sparkData = data ? generateSparklineData(data.c, data.pc) : []
           return (
             <div key={symbol} onClick={() => onSelectStock(symbol)}
@@ -2797,7 +2797,7 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock }) {
                 <div className="flex items-end justify-between">
                   <div>
                     <div className="text-xl font-bold text-white">{formatCurrency(data?.c)}</div>
-                    <div className={`text-sm font-medium ${positive ? 'text-green-400' : 'text-red-400'}`}>{positive ? '+' : ''}{pctChange.toFixed(2)}%</div>
+                    <div className={`text-sm font-medium ${positive ? 'text-green-400' : 'text-red-400'}`}>{positive ? '+' : ''}{pct.toFixed(2)}%</div>
                   </div>
                   <MiniSparkline data={sparkData} positive={positive} />
                 </div>
@@ -2985,9 +2985,8 @@ function MarketOverview({ onSelectStock }) {
         <div className="lg:col-span-3 grid grid-cols-2 md:grid-cols-4 gap-4">
           {indices.map(symbol => {
             const data = marketData[symbol]
-            const change = data ? data.c - data.pc : 0
-            const pctChange = data?.pc ? (change / data.pc) * 100 : 0
-            const positive = change >= 0
+            const pct = data?.changePercent ?? 0
+            const positive = pct >= 0
             const sparkData = data ? generateSparklineData(data.c, data.pc) : []
             return (
               <div key={symbol} onClick={() => onSelectStock(symbol)}
@@ -3000,7 +2999,7 @@ function MarketOverview({ onSelectStock }) {
                   <div className="flex items-end justify-between">
                     <div>
                       <div className="text-xl font-bold text-white">{formatCurrency(data?.c)}</div>
-                      <div className={`text-sm font-medium ${positive ? 'text-green-400' : 'text-red-400'}`}>{positive ? '+' : ''}{pctChange.toFixed(2)}%</div>
+                      <div className={`text-sm font-medium ${positive ? 'text-green-400' : 'text-red-400'}`}>{positive ? '+' : ''}{pct.toFixed(2)}%</div>
                     </div>
                     <MiniSparkline data={sparkData} positive={positive} />
                   </div>
@@ -3018,7 +3017,7 @@ function MarketOverview({ onSelectStock }) {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {trending.map(symbol => {
               const data = trendingData[symbol]
-              const change = data && data.pc ? ((data.c - data.pc) / data.pc) * 100 : 0
+              const change = data?.changePercent ?? 0
               return (
                 <HeatMapCell key={symbol} value={change} label={symbol} onClick={() => onSelectStock(symbol)} />
               )
