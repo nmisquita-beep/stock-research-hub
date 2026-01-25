@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Brain, Sparkles, Search, RefreshCw, TrendingUp, TrendingDown, Minus, X, Clock, AlertTriangle, BarChart3, CheckCircle, Target, Lightbulb, ChevronRight, Newspaper, DollarSign } from 'lucide-react'
+import { Brain, Sparkles, Search, RefreshCw, TrendingUp, TrendingDown, Minus, X, Clock, AlertTriangle, BarChart3, CheckCircle, Target, Lightbulb, ChevronRight, Newspaper, DollarSign, Zap, Shield, Activity, PieChart, Award, ArrowUpRight, ArrowDownRight } from 'lucide-react'
 
 const GROQ_PROXY_URL = 'https://stock-api-proxy-seven.vercel.app/api/groq'
 const YAHOO_PROXY_URL = 'https://stock-api-proxy-seven.vercel.app/api/yahoo'
@@ -15,7 +15,7 @@ const yahooFetch = async (symbol, type = 'quote', options = {}) => {
   return await response.json()
 }
 
-// Normalize Yahoo quote data
+// Normalize Yahoo quote data with enhanced fields
 const normalizeYahooQuote = (data) => {
   if (!data) return null
   return {
@@ -27,13 +27,84 @@ const normalizeYahooQuote = (data) => {
     change: data.regularMarketChange || 0,
     changePercent: data.regularMarketChangePercent || 0,
     volume: data.regularMarketVolume || 0,
+    avgVolume: data.averageDailyVolume10Day || data.averageVolume || 0,
     marketCap: data.marketCap || 0,
-    peRatio: data.trailingPE || data.forwardPE || null,
+    peRatio: data.trailingPE || null,
+    forwardPE: data.forwardPE || null,
     eps: data.trailingEps || null,
     weekHigh52: data.fiftyTwoWeekHigh || null,
     weekLow52: data.fiftyTwoWeekLow || null,
+    fiftyDayAvg: data.fiftyDayAverage || null,
+    twoHundredDayAvg: data.twoHundredDayAverage || null,
+    dividendYield: data.dividendYield || data.trailingAnnualDividendYield || null,
+    beta: data.beta || null,
     name: data.shortName || data.longName || '',
-    exchange: data.exchange || ''
+    exchange: data.exchange || '',
+    sector: data.sector || '',
+    industry: data.industry || '',
+    targetPrice: data.targetMeanPrice || data.targetHighPrice || null,
+    recommendation: data.recommendationKey || null,
+    earningsDate: data.earningsTimestamp || null,
+    bookValue: data.bookValue || null,
+    priceToBook: data.priceToBook || null
+  }
+}
+
+// Calculate technical indicators from price data
+const calculateTechnicalIndicators = (prices) => {
+  if (!prices || prices.length < 5) return null
+
+  const latest = prices[prices.length - 1]
+  const len = prices.length
+
+  // Simple Moving Averages
+  const sma5 = prices.slice(-5).reduce((a, b) => a + b, 0) / 5
+  const sma10 = len >= 10 ? prices.slice(-10).reduce((a, b) => a + b, 0) / 10 : null
+  const sma20 = len >= 20 ? prices.slice(-20).reduce((a, b) => a + b, 0) / 20 : null
+
+  // Momentum (price change over last 5 days)
+  const momentum = ((latest - prices[len - 5]) / prices[len - 5] * 100).toFixed(2)
+
+  // Volatility (standard deviation of last 10 days)
+  const recentPrices = prices.slice(-10)
+  const mean = recentPrices.reduce((a, b) => a + b, 0) / recentPrices.length
+  const variance = recentPrices.reduce((sum, p) => sum + Math.pow(p - mean, 2), 0) / recentPrices.length
+  const volatility = (Math.sqrt(variance) / mean * 100).toFixed(2)
+
+  // RSI approximation (simplified)
+  let gains = 0, losses = 0
+  for (let i = Math.max(0, len - 14); i < len - 1; i++) {
+    const change = prices[i + 1] - prices[i]
+    if (change > 0) gains += change
+    else losses -= change
+  }
+  const avgGain = gains / 14
+  const avgLoss = losses / 14
+  const rs = avgLoss === 0 ? 100 : avgGain / avgLoss
+  const rsi = Math.round(100 - (100 / (1 + rs)))
+
+  // Trend detection
+  let trend = 'sideways'
+  if (latest > sma5 && sma5 > (sma10 || sma5)) trend = 'bullish'
+  else if (latest < sma5 && sma5 < (sma10 || sma5)) trend = 'bearish'
+
+  // Support/Resistance levels (simplified)
+  const sortedPrices = [...prices].sort((a, b) => a - b)
+  const support = sortedPrices[Math.floor(len * 0.1)]
+  const resistance = sortedPrices[Math.floor(len * 0.9)]
+
+  return {
+    sma5: sma5.toFixed(2),
+    sma10: sma10?.toFixed(2),
+    sma20: sma20?.toFixed(2),
+    momentum: parseFloat(momentum),
+    volatility: parseFloat(volatility),
+    rsi,
+    trend,
+    support: support.toFixed(2),
+    resistance: resistance.toFixed(2),
+    aboveSMA5: latest > sma5,
+    aboveSMA20: sma20 ? latest > sma20 : null
   }
 }
 
@@ -75,8 +146,10 @@ export default function AIInsights({ darkMode, finnhubFetch }) {
   const [searchLoading, setSearchLoading] = useState(false)
   const [showDropdown, setShowDropdown] = useState(false)
   const [selectedIndex, setSelectedIndex] = useState(0)
+  const [loadingStep, setLoadingStep] = useState('')
   const inputRef = useRef(null)
   const dropdownRef = useRef(null)
+  const isSelectingRef = useRef(false) // Prevent dropdown flickering
 
   useEffect(() => {
     localStorage.setItem('ai_analysis_history', JSON.stringify(history.slice(0, 5)))
@@ -123,6 +196,9 @@ export default function AIInsights({ darkMode, finnhubFetch }) {
   }
 
   const searchStocks = useCallback(debounce(async (q) => {
+    // Don't search if we're in the middle of selecting a stock
+    if (isSelectingRef.current) return
+
     if (!q.trim() || q.length < 1) {
       setSearchResults([])
       setShowDropdown(false)
@@ -167,9 +243,12 @@ export default function AIInsights({ darkMode, finnhubFetch }) {
         return true
       }).slice(0, 10)
 
-      setSearchResults(results)
-      setShowDropdown(true)
-      setSelectedIndex(0)
+      // Only show dropdown if not selecting
+      if (!isSelectingRef.current) {
+        setSearchResults(results)
+        setShowDropdown(true)
+        setSelectedIndex(0)
+      }
     } catch {
       setSearchResults([])
     }
@@ -213,10 +292,18 @@ export default function AIInsights({ darkMode, finnhubFetch }) {
   }
 
   const selectStock = (sym) => {
-    setSymbol(sym)
+    // Prevent dropdown from reopening
+    isSelectingRef.current = true
     setShowDropdown(false)
     setSearchResults([])
-    setTimeout(() => analyzeStock(sym), 100)
+    setSymbol(sym)
+
+    // Start analysis after a brief delay
+    setTimeout(() => {
+      analyzeStock(sym)
+      // Reset the flag after analysis starts
+      setTimeout(() => { isSelectingRef.current = false }, 500)
+    }, 50)
   }
 
   const analyzeStock = async (stockSymbol) => {
@@ -227,114 +314,228 @@ export default function AIInsights({ darkMode, finnhubFetch }) {
     setError(null)
     setCurrentAnalysis(null)
     setShowDropdown(false)
+    setLoadingStep('Fetching quote data...')
 
     try {
-      // Fetch quote data from Yahoo (no rate limits!)
+      // STEP 1: Fetch comprehensive quote data from Yahoo
       const yahooData = await yahooFetch(sym)
       const quote = normalizeYahooQuote(yahooData)
       if (!quote || quote.c === 0) {
         throw new Error(`Invalid symbol: ${sym}`)
       }
 
-      // Fetch 1-month chart data for trend analysis
-      let chartTrend = 'N/A'
+      setLoadingStep('Analyzing price history...')
+
+      // STEP 2: Fetch 3-month chart data for comprehensive trend analysis
       let chartPrices = []
+      let technicals = null
+      let weekChange = 0, monthChange = 0, threeMonthChange = 0
       try {
-        const chartData = await yahooFetch(sym, 'chart', { range: '1mo', interval: '1d' })
+        const chartData = await yahooFetch(sym, 'chart', { range: '3mo', interval: '1d' })
         if (chartData?.chart?.result?.[0]) {
           const result = chartData.chart.result[0]
           const closes = result.indicators?.quote?.[0]?.close || []
           chartPrices = closes.filter(c => c !== null)
-          if (chartPrices.length >= 2) {
-            const startPrice = chartPrices[0]
-            const endPrice = chartPrices[chartPrices.length - 1]
-            const monthChange = ((endPrice - startPrice) / startPrice * 100).toFixed(1)
-            chartTrend = `${monthChange >= 0 ? '+' : ''}${monthChange}% over past month`
 
-            // Calculate if trending up or down
-            const midPoint = chartPrices[Math.floor(chartPrices.length / 2)]
-            if (endPrice > midPoint && midPoint > startPrice) {
-              chartTrend += ' (strong uptrend)'
-            } else if (endPrice < midPoint && midPoint < startPrice) {
-              chartTrend += ' (strong downtrend)'
-            } else if (endPrice > startPrice) {
-              chartTrend += ' (recovery/choppy)'
+          if (chartPrices.length >= 5) {
+            const latest = chartPrices[chartPrices.length - 1]
+
+            // Calculate performance over different periods
+            if (chartPrices.length >= 5) {
+              weekChange = ((latest - chartPrices[chartPrices.length - 5]) / chartPrices[chartPrices.length - 5] * 100)
             }
+            if (chartPrices.length >= 21) {
+              monthChange = ((latest - chartPrices[chartPrices.length - 21]) / chartPrices[chartPrices.length - 21] * 100)
+            }
+            if (chartPrices.length >= 63) {
+              threeMonthChange = ((latest - chartPrices[0]) / chartPrices[0] * 100)
+            }
+
+            // Calculate technical indicators
+            technicals = calculateTechnicalIndicators(chartPrices)
           }
         }
       } catch {}
 
-      // Fetch company news from Finnhub (still works well for news)
+      setLoadingStep('Gathering latest news...')
+
+      // STEP 3: Fetch company news from Finnhub
       const today = new Date()
-      const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)
-      const fromDate = weekAgo.toISOString().split('T')[0]
+      const twoWeeksAgo = new Date(today.getTime() - 14 * 24 * 60 * 60 * 1000)
+      const fromDate = twoWeeksAgo.toISOString().split('T')[0]
       const toDate = today.toISOString().split('T')[0]
 
       let news = []
       try {
         const newsData = await finnhubFetch(`/company-news?symbol=${sym}&from=${fromDate}&to=${toDate}`)
         if (Array.isArray(newsData)) {
-          news = newsData.slice(0, 5)
+          news = newsData.slice(0, 8)
         } else if (newsData && typeof newsData === 'object') {
-          news = Object.values(newsData).filter(n => n && n.headline).slice(0, 5)
+          news = Object.values(newsData).filter(n => n && n.headline).slice(0, 8)
         }
       } catch {}
 
+      setLoadingStep('Running AI analysis...')
+
+      // Calculate key metrics
       const change = quote.changePercent || 0
       const weekHigh52 = quote.weekHigh52
       const weekLow52 = quote.weekLow52
-      const peRatio = quote.peRatio
-      const eps = quote.eps
-      const marketCap = quote.marketCap
 
       // Calculate position in 52-week range
       let pricePosition = null
       if (weekHigh52 && weekLow52 && quote.c) {
         const range = weekHigh52 - weekLow52
         if (range > 0) {
-          pricePosition = ((quote.c - weekLow52) / range * 100).toFixed(0)
+          pricePosition = Math.round((quote.c - weekLow52) / range * 100)
         }
       }
 
-      // Build comprehensive stock data for AI
-      const stockData = {
+      // Volume analysis
+      const volumeRatio = quote.avgVolume ? (quote.volume / quote.avgVolume) : null
+      const volumeStatus = volumeRatio ? (volumeRatio > 1.5 ? 'heavy' : volumeRatio < 0.5 ? 'light' : 'normal') : 'unknown'
+
+      // Distance from moving averages
+      const distFrom50MA = quote.fiftyDayAvg ? ((quote.c - quote.fiftyDayAvg) / quote.fiftyDayAvg * 100).toFixed(1) : null
+      const distFrom200MA = quote.twoHundredDayAvg ? ((quote.c - quote.twoHundredDayAvg) / quote.twoHundredDayAvg * 100).toFixed(1) : null
+
+      // Build comprehensive stock context for AI
+      const stockContext = {
         symbol: sym,
         name: quote.name || sym,
-        currentPrice: quote.c,
-        previousClose: quote.pc,
-        dayHigh: quote.h,
-        dayLow: quote.l,
-        openPrice: quote.o,
-        changePercent: change.toFixed(2),
-        weekHigh52,
-        weekLow52,
-        pricePositionIn52WeekRange: pricePosition ? `${pricePosition}%` : 'N/A',
-        peRatio: peRatio ? peRatio.toFixed(1) : 'N/A',
-        eps: eps ? eps.toFixed(2) : 'N/A',
-        marketCapBillions: marketCap ? (marketCap / 1e9).toFixed(1) : 'N/A',
-        chartTrend,
-        recentNewsHeadlines: news.map(n => n.headline).filter(Boolean)
+        sector: quote.sector || 'Unknown',
+        industry: quote.industry || 'Unknown',
+        price: {
+          current: quote.c,
+          open: quote.o,
+          high: quote.h,
+          low: quote.l,
+          previousClose: quote.pc,
+          changeToday: `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`
+        },
+        valuation: {
+          marketCap: quote.marketCap ? `$${(quote.marketCap / 1e9).toFixed(1)}B` : 'N/A',
+          peRatio: quote.peRatio?.toFixed(1) || 'N/A',
+          forwardPE: quote.forwardPE?.toFixed(1) || 'N/A',
+          eps: quote.eps?.toFixed(2) || 'N/A',
+          priceToBook: quote.priceToBook?.toFixed(2) || 'N/A',
+          dividendYield: quote.dividendYield ? `${(quote.dividendYield * 100).toFixed(2)}%` : 'None'
+        },
+        fiftyTwoWeek: {
+          high: weekHigh52?.toFixed(2) || 'N/A',
+          low: weekLow52?.toFixed(2) || 'N/A',
+          positionInRange: pricePosition !== null ? `${pricePosition}%` : 'N/A',
+          nearHigh: pricePosition !== null && pricePosition > 85,
+          nearLow: pricePosition !== null && pricePosition < 15
+        },
+        movingAverages: {
+          fiftyDay: quote.fiftyDayAvg?.toFixed(2) || 'N/A',
+          twoHundredDay: quote.twoHundredDayAvg?.toFixed(2) || 'N/A',
+          distanceFrom50MA: distFrom50MA ? `${distFrom50MA}%` : 'N/A',
+          distanceFrom200MA: distFrom200MA ? `${distFrom200MA}%` : 'N/A',
+          above50MA: quote.fiftyDayAvg ? quote.c > quote.fiftyDayAvg : null,
+          above200MA: quote.twoHundredDayAvg ? quote.c > quote.twoHundredDayAvg : null
+        },
+        performance: {
+          week: `${weekChange >= 0 ? '+' : ''}${weekChange.toFixed(1)}%`,
+          month: `${monthChange >= 0 ? '+' : ''}${monthChange.toFixed(1)}%`,
+          threeMonth: `${threeMonthChange >= 0 ? '+' : ''}${threeMonthChange.toFixed(1)}%`
+        },
+        technicals: technicals ? {
+          rsi: technicals.rsi,
+          rsiStatus: technicals.rsi > 70 ? 'overbought' : technicals.rsi < 30 ? 'oversold' : 'neutral',
+          momentum: `${technicals.momentum >= 0 ? '+' : ''}${technicals.momentum}%`,
+          volatility: `${technicals.volatility}%`,
+          trend: technicals.trend,
+          support: `$${technicals.support}`,
+          resistance: `$${technicals.resistance}`
+        } : null,
+        volume: {
+          today: quote.volume?.toLocaleString() || 'N/A',
+          average: quote.avgVolume?.toLocaleString() || 'N/A',
+          ratio: volumeRatio?.toFixed(2) || 'N/A',
+          status: volumeStatus
+        },
+        risk: {
+          beta: quote.beta?.toFixed(2) || 'N/A'
+        },
+        analystTargetPrice: quote.targetPrice?.toFixed(2) || null,
+        analystRating: quote.recommendation || null,
+        newsHeadlines: news.slice(0, 5).map(n => n.headline).filter(Boolean)
       }
 
-      // JSON AI prompt for structured response
-      const prompt = `Analyze ${sym}: $${quote.c?.toFixed(2)} (${change >= 0 ? '+' : ''}${change.toFixed(2)}% today), P/E: ${peRatio ? peRatio.toFixed(1) : 'N/A'}, 52W Range: $${weekLow52?.toFixed(2) || '?'}-$${weekHigh52?.toFixed(2) || '?'} (at ${pricePosition || '?'}%), Trend: ${chartTrend}.
-${news.length > 0 ? 'News: ' + news.slice(0,3).map(n => n.headline).join(' | ') : ''}
+      // Build a comprehensive, powerful AI prompt
+      const prompt = `You are a senior Wall Street equity analyst. Provide a thorough, professional analysis of ${sym} (${quote.name || sym}).
 
-Respond with ONLY this JSON, no other text:
+=== CURRENT MARKET DATA ===
+Price: $${quote.c?.toFixed(2)} (${change >= 0 ? '+' : ''}${change.toFixed(2)}% today)
+Market Cap: ${stockContext.valuation.marketCap}
+Sector: ${quote.sector || 'Unknown'} | Industry: ${quote.industry || 'Unknown'}
+
+=== VALUATION METRICS ===
+P/E Ratio: ${stockContext.valuation.peRatio} (Forward: ${stockContext.valuation.forwardPE})
+EPS: $${stockContext.valuation.eps}
+Price/Book: ${stockContext.valuation.priceToBook}
+Dividend Yield: ${stockContext.valuation.dividendYield}
+
+=== PRICE POSITION ===
+52-Week Range: $${stockContext.fiftyTwoWeek.low} - $${stockContext.fiftyTwoWeek.high}
+Position in Range: ${stockContext.fiftyTwoWeek.positionInRange}
+Distance from 50-Day MA: ${stockContext.movingAverages.distanceFrom50MA}
+Distance from 200-Day MA: ${stockContext.movingAverages.distanceFrom200MA}
+
+=== PERFORMANCE ===
+1 Week: ${stockContext.performance.week}
+1 Month: ${stockContext.performance.month}
+3 Month: ${stockContext.performance.threeMonth}
+
+${technicals ? `=== TECHNICAL INDICATORS ===
+RSI(14): ${technicals.rsi} (${technicals.rsi > 70 ? 'OVERBOUGHT' : technicals.rsi < 30 ? 'OVERSOLD' : 'neutral'})
+5-Day Momentum: ${stockContext.technicals.momentum}
+Volatility: ${stockContext.technicals.volatility}
+Trend: ${technicals.trend.toUpperCase()}
+Support: ${stockContext.technicals.support} | Resistance: ${stockContext.technicals.resistance}
+` : ''}
+=== VOLUME ANALYSIS ===
+Today vs Avg: ${stockContext.volume.ratio}x (${volumeStatus} volume)
+
+${quote.beta ? `=== RISK ===
+Beta: ${quote.beta.toFixed(2)} (${quote.beta > 1.2 ? 'High volatility vs market' : quote.beta < 0.8 ? 'Lower volatility vs market' : 'Market-like volatility'})
+` : ''}
+${quote.targetPrice ? `=== ANALYST CONSENSUS ===
+Target Price: $${quote.targetPrice.toFixed(2)} (${((quote.targetPrice - quote.c) / quote.c * 100).toFixed(1)}% ${quote.targetPrice > quote.c ? 'upside' : 'downside'})
+Rating: ${quote.recommendation || 'N/A'}
+` : ''}
+${news.length > 0 ? `=== RECENT NEWS ===
+${news.slice(0, 5).map((n, i) => `${i + 1}. ${n.headline}`).join('\n')}
+` : ''}
+
+Based on ALL the data above, provide a comprehensive analysis. Be specific, reference the actual numbers, and give actionable insights.
+
+Respond with ONLY this JSON structure (no other text):
 {
-  "rating": "BULLISH" or "BEARISH" or "NEUTRAL",
-  "summary": "1-2 sentence overview of the stock",
-  "strengths": ["strength 1", "strength 2", "strength 3"],
-  "risks": ["risk 1", "risk 2", "risk 3"],
-  "keyMetrics": "Brief note on valuation - is it cheap/expensive and why",
-  "catalyst": "What could move this stock soon",
-  "bottomLine": "BUY, HOLD, or AVOID - one decisive sentence"
+  "rating": "STRONG_BUY" or "BUY" or "HOLD" or "SELL" or "STRONG_SELL",
+  "confidenceScore": <number 1-100>,
+  "summary": "<2-3 sentence executive summary of the investment thesis>",
+  "technicalAnalysis": "<2-3 sentences analyzing price action, trend, momentum, RSI, support/resistance>",
+  "fundamentalAnalysis": "<2-3 sentences on valuation - is P/E reasonable? Growth outlook? Compare to sector>",
+  "sentimentAnalysis": "<1-2 sentences on news sentiment and what it signals>",
+  "strengths": ["<specific strength with data>", "<strength 2>", "<strength 3>"],
+  "risks": ["<specific risk with data>", "<risk 2>", "<risk 3>"],
+  "keyLevels": {
+    "support": "<price level to watch>",
+    "resistance": "<price level to watch>",
+    "stopLoss": "<suggested stop loss level>"
+  },
+  "catalyst": "<What specific event/trigger could move this stock in the near term>",
+  "timeHorizon": "<Is this a short-term trade or long-term hold and why>",
+  "bottomLine": "<One decisive sentence: exactly what an investor should do and why>"
 }`
 
       const response = await fetch(GROQ_PROXY_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, stockData })
+        body: JSON.stringify({ prompt, stockData: stockContext })
       })
 
       if (!response.ok) {
@@ -354,7 +555,7 @@ Respond with ONLY this JSON, no other text:
         throw new Error('No analysis generated')
       }
 
-      // Clean asterisks from response
+      // Clean and parse response
       const rawText = (data.insight || '').replace(/\*\*/g, '').replace(/\*/g, '').trim()
 
       // Try to parse JSON response
@@ -365,7 +566,10 @@ Respond with ONLY this JSON, no other text:
         if (jsonMatch) {
           aiJson = JSON.parse(jsonMatch[0])
           if (aiJson.rating) {
-            sentiment = aiJson.rating.toLowerCase()
+            const rating = aiJson.rating.toLowerCase()
+            if (rating.includes('strong_buy') || rating.includes('buy')) sentiment = 'bullish'
+            else if (rating.includes('strong_sell') || rating.includes('sell')) sentiment = 'bearish'
+            else sentiment = 'neutral'
           }
         }
       } catch (e) {
@@ -374,42 +578,55 @@ Respond with ONLY this JSON, no other text:
 
       // Fallback: extract from text if no JSON
       if (!aiJson) {
-        const ratingMatch = rawText.match(/RATING:\s*(BULLISH|BEARISH|NEUTRAL)/i)
-        if (ratingMatch) {
-          sentiment = ratingMatch[1].toLowerCase()
-        } else {
-          const lower = rawText.toLowerCase()
-          if (lower.includes('bullish') || lower.includes('buy')) sentiment = 'bullish'
-          else if (lower.includes('bearish') || lower.includes('avoid') || lower.includes('sell')) sentiment = 'bearish'
-        }
+        const lower = rawText.toLowerCase()
+        if (lower.includes('strong buy') || lower.includes('bullish') || lower.includes('buy')) sentiment = 'bullish'
+        else if (lower.includes('strong sell') || lower.includes('bearish') || lower.includes('sell') || lower.includes('avoid')) sentiment = 'bearish'
       }
 
       const analysis = {
         symbol: sym,
         name: quote.name || sym,
+        sector: quote.sector,
+        industry: quote.industry,
         price: quote.c,
         previousClose: quote.pc,
         dayHigh: quote.h,
         dayLow: quote.l,
+        open: quote.o,
         change,
+        volume: quote.volume,
+        avgVolume: quote.avgVolume,
         weekHigh52,
         weekLow52,
         pricePosition,
-        peRatio,
-        eps,
-        marketCap,
-        chartTrend,
-        news: news.slice(0, 3),
+        fiftyDayAvg: quote.fiftyDayAvg,
+        twoHundredDayAvg: quote.twoHundredDayAvg,
+        peRatio: quote.peRatio,
+        forwardPE: quote.forwardPE,
+        eps: quote.eps,
+        marketCap: quote.marketCap,
+        dividendYield: quote.dividendYield,
+        beta: quote.beta,
+        targetPrice: quote.targetPrice,
+        priceToBook: quote.priceToBook,
+        performance: {
+          week: weekChange,
+          month: monthChange,
+          threeMonth: threeMonthChange
+        },
+        technicals,
+        news: news.slice(0, 5),
         analysis: rawText,
-        aiJson, // Parsed JSON data
+        aiJson,
         sentiment,
+        confidenceScore: aiJson?.confidenceScore || null,
         timestamp: new Date().toISOString()
       }
 
       setCurrentAnalysis(analysis)
       setHistory(prev => {
         const filtered = prev.filter(h => h.symbol !== sym)
-        return [analysis, ...filtered].slice(0, 5)
+        return [analysis, ...filtered].slice(0, 10)
       })
       setSymbol('')
 
@@ -419,37 +636,64 @@ Respond with ONLY this JSON, no other text:
     }
 
     setLoading(false)
+    setLoadingStep('')
   }
 
-  const getSentimentDisplay = (sentiment) => {
-    switch (sentiment) {
-      case 'bullish':
-        return { icon: TrendingUp, color: 'text-green-400', bg: 'bg-green-500/20', border: 'border-green-500/30', label: 'BULLISH', bgSolid: 'bg-green-600' }
-      case 'bearish':
-        return { icon: TrendingDown, color: 'text-red-400', bg: 'bg-red-500/20', border: 'border-red-500/30', label: 'BEARISH', bgSolid: 'bg-red-600' }
-      default:
-        return { icon: Minus, color: 'text-yellow-400', bg: 'bg-yellow-500/20', border: 'border-yellow-500/30', label: 'NEUTRAL', bgSolid: 'bg-yellow-600' }
+  const getSentimentDisplay = (sentiment, rating) => {
+    // Map rating to display
+    const ratingUpper = (rating || '').toUpperCase()
+    if (ratingUpper.includes('STRONG_BUY') || ratingUpper === 'STRONG BUY') {
+      return { icon: TrendingUp, color: 'text-emerald-400', bg: 'bg-emerald-500/20', border: 'border-emerald-500/40', label: 'STRONG BUY', bgSolid: 'bg-emerald-600', gradient: 'from-emerald-600 to-green-600' }
     }
+    if (ratingUpper === 'BUY' || sentiment === 'bullish') {
+      return { icon: TrendingUp, color: 'text-green-400', bg: 'bg-green-500/20', border: 'border-green-500/30', label: 'BUY', bgSolid: 'bg-green-600', gradient: 'from-green-600 to-green-500' }
+    }
+    if (ratingUpper.includes('STRONG_SELL') || ratingUpper === 'STRONG SELL') {
+      return { icon: TrendingDown, color: 'text-red-400', bg: 'bg-red-500/20', border: 'border-red-500/40', label: 'STRONG SELL', bgSolid: 'bg-red-600', gradient: 'from-red-600 to-red-500' }
+    }
+    if (ratingUpper === 'SELL' || sentiment === 'bearish') {
+      return { icon: TrendingDown, color: 'text-orange-400', bg: 'bg-orange-500/20', border: 'border-orange-500/30', label: 'SELL', bgSolid: 'bg-orange-600', gradient: 'from-orange-600 to-red-600' }
+    }
+    return { icon: Minus, color: 'text-yellow-400', bg: 'bg-yellow-500/20', border: 'border-yellow-500/30', label: 'HOLD', bgSolid: 'bg-yellow-600', gradient: 'from-yellow-600 to-amber-600' }
   }
 
-  const s = currentAnalysis ? getSentimentDisplay(currentAnalysis.sentiment) : null
-
-  // Parse sections from analysis
-  const parseSection = (text, header) => {
-    const regex = new RegExp(`${header}:?\\s*(.+?)(?=\\n[A-Z]+:|$)`, 'is')
-    const match = text.match(regex)
-    return match ? match[1].trim().replace(/\*\*/g, '') : null
+  const getRatingColor = (rating) => {
+    const r = (rating || '').toUpperCase()
+    if (r.includes('STRONG_BUY') || r === 'STRONG BUY') return 'text-emerald-400'
+    if (r === 'BUY') return 'text-green-400'
+    if (r.includes('STRONG_SELL') || r === 'STRONG SELL') return 'text-red-400'
+    if (r === 'SELL') return 'text-orange-400'
+    return 'text-yellow-400'
   }
+
+  const getConfidenceColor = (score) => {
+    if (score >= 80) return 'text-emerald-400'
+    if (score >= 60) return 'text-green-400'
+    if (score >= 40) return 'text-yellow-400'
+    return 'text-orange-400'
+  }
+
+  const s = currentAnalysis ? getSentimentDisplay(currentAnalysis.sentiment, currentAnalysis.aiJson?.rating) : null
 
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header */}
-      <div>
-        <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-          <Brain className="w-7 h-7 text-purple-400" />
-          AI Stock Analysis
-        </h2>
-        <p className="text-gray-400 mt-1">Get opinionated, actionable insights on any stock</p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-white flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500">
+              <Brain className="w-6 h-6 text-white" />
+            </div>
+            AI Stock Analysis
+          </h2>
+          <p className="text-gray-400 mt-2">Professional-grade analysis powered by AI. Technical, fundamental, and sentiment insights.</p>
+        </div>
+        {history.length > 0 && !currentAnalysis && !loading && (
+          <div className="flex items-center gap-2 text-sm text-gray-500">
+            <Sparkles className="w-4 h-4" />
+            <span>{history.length} recent {history.length === 1 ? 'analysis' : 'analyses'}</span>
+          </div>
+        )}
       </div>
 
       {/* Search Bar */}
@@ -539,77 +783,250 @@ Respond with ONLY this JSON, no other text:
 
       {/* Loading */}
       {loading && (
-        <div className="p-8 rounded-xl border bg-gray-800/50 border-gray-700 text-center">
-          <RefreshCw className="w-12 h-12 text-purple-400 animate-spin mx-auto mb-4" />
-          <p className="text-white font-medium">Analyzing {symbol}...</p>
-          <p className="text-gray-400 text-sm mt-1">Fetching financials, news, and generating insights</p>
+        <div className="p-8 rounded-xl border bg-gradient-to-br from-gray-800/80 to-gray-900/80 border-purple-500/30 text-center">
+          <div className="relative w-16 h-16 mx-auto mb-4">
+            <div className="absolute inset-0 rounded-full border-4 border-purple-500/20"></div>
+            <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-purple-500 animate-spin"></div>
+            <Brain className="absolute inset-0 m-auto w-8 h-8 text-purple-400" />
+          </div>
+          <p className="text-white font-medium text-lg">Analyzing {symbol}...</p>
+          <p className="text-purple-400 text-sm mt-2 animate-pulse">{loadingStep}</p>
+          <div className="flex justify-center gap-2 mt-4">
+            <div className="w-2 h-2 rounded-full bg-purple-500 animate-bounce" style={{ animationDelay: '0ms' }}></div>
+            <div className="w-2 h-2 rounded-full bg-purple-500 animate-bounce" style={{ animationDelay: '150ms' }}></div>
+            <div className="w-2 h-2 rounded-full bg-purple-500 animate-bounce" style={{ animationDelay: '300ms' }}></div>
+          </div>
         </div>
       )}
 
       {/* Analysis Result */}
       {currentAnalysis && !loading && (
         <div className="space-y-4">
-          {/* Header Card with Rating */}
-          <div className={`rounded-xl border ${s.border} ${s.bg} p-5`}>
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <div className="flex items-center gap-3 mb-1">
-                  <h3 className="text-2xl font-bold text-white">{currentAnalysis.symbol}</h3>
-                  <span className={`px-4 py-1.5 rounded-lg text-sm font-bold text-white ${s.bgSolid}`}>
-                    {s.label}
+          {/* Hero Header Card */}
+          <div className={`rounded-2xl border-2 ${s.border} bg-gradient-to-br ${s.bg} overflow-hidden`}>
+            {/* Rating Banner */}
+            <div className={`bg-gradient-to-r ${s.gradient} px-5 py-3 flex items-center justify-between`}>
+              <div className="flex items-center gap-3">
+                <s.icon className="w-6 h-6 text-white" />
+                <span className="text-white font-bold text-lg tracking-wide">{s.label}</span>
+                {currentAnalysis.confidenceScore && (
+                  <span className="bg-white/20 px-2 py-0.5 rounded text-white text-sm">
+                    {currentAnalysis.confidenceScore}% confidence
                   </span>
-                </div>
-                <p className="text-gray-300">{currentAnalysis.name}</p>
-                {currentAnalysis.industry && (
-                  <p className="text-gray-500 text-sm">{currentAnalysis.industry}</p>
                 )}
               </div>
-              <button onClick={() => setCurrentAnalysis(null)} className="p-2 rounded-lg hover:bg-gray-700/50 text-gray-400">
+              <button onClick={() => setCurrentAnalysis(null)} className="p-1.5 rounded-lg hover:bg-white/20 text-white/80 hover:text-white transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Price & Metrics */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div>
-                <div className="text-sm text-gray-400">Current Price</div>
-                <div className="text-2xl font-bold text-white">${currentAnalysis.price?.toFixed(2)}</div>
-                <div className={`text-sm font-medium ${currentAnalysis.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  {currentAnalysis.change >= 0 ? '+' : ''}{currentAnalysis.change?.toFixed(2)}%
+            <div className="p-5">
+              {/* Stock Info */}
+              <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-5">
+                <div>
+                  <h3 className="text-3xl font-bold text-white mb-1">{currentAnalysis.symbol}</h3>
+                  <p className="text-gray-300 text-lg">{currentAnalysis.name}</p>
+                  {(currentAnalysis.sector || currentAnalysis.industry) && (
+                    <p className="text-gray-500 text-sm mt-1">
+                      {currentAnalysis.sector}{currentAnalysis.industry ? ` • ${currentAnalysis.industry}` : ''}
+                    </p>
+                  )}
+                </div>
+                <div className="text-left md:text-right">
+                  <div className="text-3xl font-bold text-white">${currentAnalysis.price?.toFixed(2)}</div>
+                  <div className={`text-lg font-semibold flex items-center gap-1 md:justify-end ${currentAnalysis.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    {currentAnalysis.change >= 0 ? <ArrowUpRight className="w-5 h-5" /> : <ArrowDownRight className="w-5 h-5" />}
+                    {currentAnalysis.change >= 0 ? '+' : ''}{currentAnalysis.change?.toFixed(2)}% today
+                  </div>
                 </div>
               </div>
-              <div>
-                <div className="text-sm text-gray-400">52-Week Range</div>
-                <div className="text-white font-medium">
-                  ${currentAnalysis.weekLow52?.toFixed(2) || 'N/A'} - ${currentAnalysis.weekHigh52?.toFixed(2) || 'N/A'}
+
+              {/* Quick Stats Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+                <div className="bg-gray-800/50 rounded-lg p-3">
+                  <div className="text-xs text-gray-400 mb-1">Market Cap</div>
+                  <div className="text-white font-semibold">
+                    {currentAnalysis.marketCap ? `$${(currentAnalysis.marketCap / 1e9).toFixed(1)}B` : 'N/A'}
+                  </div>
                 </div>
-                {currentAnalysis.pricePosition && (
-                  <div className="text-sm text-gray-400">{currentAnalysis.pricePosition}% of range</div>
-                )}
-              </div>
-              <div>
-                <div className="text-sm text-gray-400">P/E Ratio</div>
-                <div className="text-white font-medium">{currentAnalysis.peRatio?.toFixed(1) || 'N/A'}</div>
-              </div>
-              <div>
-                <div className="text-sm text-gray-400">Market Cap</div>
-                <div className="text-white font-medium">
-                  {currentAnalysis.marketCap ? `$${(currentAnalysis.marketCap / 1000).toFixed(1)}B` : 'N/A'}
+                <div className="bg-gray-800/50 rounded-lg p-3">
+                  <div className="text-xs text-gray-400 mb-1">P/E Ratio</div>
+                  <div className="text-white font-semibold">{currentAnalysis.peRatio?.toFixed(1) || 'N/A'}</div>
+                </div>
+                <div className="bg-gray-800/50 rounded-lg p-3">
+                  <div className="text-xs text-gray-400 mb-1">52W Position</div>
+                  <div className="text-white font-semibold">{currentAnalysis.pricePosition || 'N/A'}%</div>
+                </div>
+                <div className="bg-gray-800/50 rounded-lg p-3">
+                  <div className="text-xs text-gray-400 mb-1">Beta</div>
+                  <div className="text-white font-semibold">{currentAnalysis.beta?.toFixed(2) || 'N/A'}</div>
+                </div>
+                <div className="bg-gray-800/50 rounded-lg p-3">
+                  <div className="text-xs text-gray-400 mb-1">Div Yield</div>
+                  <div className="text-white font-semibold">
+                    {currentAnalysis.dividendYield ? `${(currentAnalysis.dividendYield * 100).toFixed(2)}%` : 'None'}
+                  </div>
+                </div>
+                <div className="bg-gray-800/50 rounded-lg p-3">
+                  <div className="text-xs text-gray-400 mb-1">Analyst Target</div>
+                  <div className="text-white font-semibold">
+                    {currentAnalysis.targetPrice ? `$${currentAnalysis.targetPrice.toFixed(0)}` : 'N/A'}
+                  </div>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Analysis Sections - JSON format */}
-          {currentAnalysis.aiJson ? (
+          {/* Performance & Technicals Row */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Performance Card */}
+            <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4">
+              <div className="flex items-center gap-2 mb-4">
+                <Activity className="w-5 h-5 text-blue-400" />
+                <h4 className="font-semibold text-white">Performance</h4>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="text-center">
+                  <div className="text-xs text-gray-400 mb-1">1 Week</div>
+                  <div className={`font-bold ${currentAnalysis.performance?.week >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    {currentAnalysis.performance?.week >= 0 ? '+' : ''}{currentAnalysis.performance?.week?.toFixed(1) || 0}%
+                  </div>
+                </div>
+                <div className="text-center">
+                  <div className="text-xs text-gray-400 mb-1">1 Month</div>
+                  <div className={`font-bold ${currentAnalysis.performance?.month >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    {currentAnalysis.performance?.month >= 0 ? '+' : ''}{currentAnalysis.performance?.month?.toFixed(1) || 0}%
+                  </div>
+                </div>
+                <div className="text-center">
+                  <div className="text-xs text-gray-400 mb-1">3 Month</div>
+                  <div className={`font-bold ${currentAnalysis.performance?.threeMonth >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    {currentAnalysis.performance?.threeMonth >= 0 ? '+' : ''}{currentAnalysis.performance?.threeMonth?.toFixed(1) || 0}%
+                  </div>
+                </div>
+              </div>
+              {/* 52-Week Range Bar */}
+              <div className="mt-4 pt-4 border-t border-gray-700">
+                <div className="flex justify-between text-xs text-gray-400 mb-2">
+                  <span>52W Low: ${currentAnalysis.weekLow52?.toFixed(2) || 'N/A'}</span>
+                  <span>52W High: ${currentAnalysis.weekHigh52?.toFixed(2) || 'N/A'}</span>
+                </div>
+                <div className="relative h-2 bg-gray-700 rounded-full">
+                  <div
+                    className="absolute h-full bg-gradient-to-r from-red-500 via-yellow-500 to-green-500 rounded-full"
+                    style={{ width: '100%' }}
+                  ></div>
+                  {currentAnalysis.pricePosition !== null && (
+                    <div
+                      className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full border-2 border-gray-900 shadow-lg"
+                      style={{ left: `calc(${currentAnalysis.pricePosition}% - 6px)` }}
+                    ></div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Technicals Card */}
+            {currentAnalysis.technicals && (
+              <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4">
+                <div className="flex items-center gap-2 mb-4">
+                  <BarChart3 className="w-5 h-5 text-purple-400" />
+                  <h4 className="font-semibold text-white">Technical Indicators</h4>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <div className="text-xs text-gray-400 mb-1">RSI (14)</div>
+                    <div className={`font-bold ${
+                      currentAnalysis.technicals.rsi > 70 ? 'text-red-400' :
+                      currentAnalysis.technicals.rsi < 30 ? 'text-green-400' : 'text-gray-300'
+                    }`}>
+                      {currentAnalysis.technicals.rsi}
+                      <span className="text-xs text-gray-500 ml-1">
+                        ({currentAnalysis.technicals.rsi > 70 ? 'Overbought' : currentAnalysis.technicals.rsi < 30 ? 'Oversold' : 'Neutral'})
+                      </span>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-400 mb-1">Trend</div>
+                    <div className={`font-bold capitalize ${
+                      currentAnalysis.technicals.trend === 'bullish' ? 'text-green-400' :
+                      currentAnalysis.technicals.trend === 'bearish' ? 'text-red-400' : 'text-gray-300'
+                    }`}>
+                      {currentAnalysis.technicals.trend}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-400 mb-1">Momentum (5D)</div>
+                    <div className={`font-bold ${currentAnalysis.technicals.momentum >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {currentAnalysis.technicals.momentum >= 0 ? '+' : ''}{currentAnalysis.technicals.momentum}%
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-400 mb-1">Volatility</div>
+                    <div className="font-bold text-gray-300">{currentAnalysis.technicals.volatility}%</div>
+                  </div>
+                </div>
+                <div className="mt-3 pt-3 border-t border-gray-700 flex justify-between text-sm">
+                  <span className="text-gray-400">Support: <span className="text-green-400 font-medium">${currentAnalysis.technicals.support}</span></span>
+                  <span className="text-gray-400">Resistance: <span className="text-red-400 font-medium">${currentAnalysis.technicals.resistance}</span></span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* AI Analysis Content */}
+          {currentAnalysis.aiJson && (
             <>
-              {/* Summary */}
+              {/* Executive Summary */}
               {currentAnalysis.aiJson.summary && (
-                <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4">
-                  <p className="text-gray-200 text-base leading-relaxed">{currentAnalysis.aiJson.summary}</p>
+                <div className="rounded-xl border border-purple-500/30 bg-purple-500/5 p-5">
+                  <div className="flex items-start gap-3">
+                    <Brain className="w-6 h-6 text-purple-400 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="font-semibold text-purple-300 mb-2">AI Summary</h4>
+                      <p className="text-gray-200 text-base leading-relaxed">{currentAnalysis.aiJson.summary}</p>
+                    </div>
+                  </div>
                 </div>
               )}
 
+              {/* Analysis Cards Grid */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                {/* Technical Analysis */}
+                {currentAnalysis.aiJson.technicalAnalysis && (
+                  <div className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <BarChart3 className="w-5 h-5 text-blue-400" />
+                      <h4 className="font-semibold text-blue-300">Technical Analysis</h4>
+                    </div>
+                    <p className="text-gray-300 text-sm leading-relaxed">{currentAnalysis.aiJson.technicalAnalysis}</p>
+                  </div>
+                )}
+
+                {/* Fundamental Analysis */}
+                {currentAnalysis.aiJson.fundamentalAnalysis && (
+                  <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/5 p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <PieChart className="w-5 h-5 text-cyan-400" />
+                      <h4 className="font-semibold text-cyan-300">Fundamental Analysis</h4>
+                    </div>
+                    <p className="text-gray-300 text-sm leading-relaxed">{currentAnalysis.aiJson.fundamentalAnalysis}</p>
+                  </div>
+                )}
+
+                {/* Sentiment Analysis */}
+                {currentAnalysis.aiJson.sentimentAnalysis && (
+                  <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Newspaper className="w-5 h-5 text-amber-400" />
+                      <h4 className="font-semibold text-amber-300">News Sentiment</h4>
+                    </div>
+                    <p className="text-gray-300 text-sm leading-relaxed">{currentAnalysis.aiJson.sentimentAnalysis}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Strengths & Risks */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Strengths */}
                 {currentAnalysis.aiJson.strengths && currentAnalysis.aiJson.strengths.length > 0 && (
@@ -619,10 +1036,10 @@ Respond with ONLY this JSON, no other text:
                       <h4 className="font-semibold text-green-400">Strengths</h4>
                     </div>
                     <ul className="space-y-2">
-                      {currentAnalysis.aiJson.strengths.map((s, i) => (
+                      {currentAnalysis.aiJson.strengths.map((str, i) => (
                         <li key={i} className="flex items-start gap-2 text-sm text-gray-300">
-                          <span className="text-green-400 mt-0.5">+</span>
-                          <span>{s}</span>
+                          <span className="text-green-400 mt-0.5 font-bold">+</span>
+                          <span>{str}</span>
                         </li>
                       ))}
                     </ul>
@@ -633,135 +1050,130 @@ Respond with ONLY this JSON, no other text:
                 {currentAnalysis.aiJson.risks && currentAnalysis.aiJson.risks.length > 0 && (
                   <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-4">
                     <div className="flex items-center gap-2 mb-3">
-                      <AlertTriangle className="w-5 h-5 text-red-400" />
+                      <Shield className="w-5 h-5 text-red-400" />
                       <h4 className="font-semibold text-red-400">Risks</h4>
                     </div>
                     <ul className="space-y-2">
-                      {currentAnalysis.aiJson.risks.map((r, i) => (
+                      {currentAnalysis.aiJson.risks.map((risk, i) => (
                         <li key={i} className="flex items-start gap-2 text-sm text-gray-300">
-                          <span className="text-red-400 mt-0.5">!</span>
-                          <span>{r}</span>
+                          <span className="text-red-400 mt-0.5 font-bold">!</span>
+                          <span>{risk}</span>
                         </li>
                       ))}
                     </ul>
                   </div>
                 )}
-
-                {/* Key Metrics */}
-                {currentAnalysis.aiJson.keyMetrics && (
-                  <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <DollarSign className="w-5 h-5 text-blue-400" />
-                      <h4 className="font-semibold text-white">Valuation</h4>
-                    </div>
-                    <p className="text-gray-300 text-sm leading-relaxed">{currentAnalysis.aiJson.keyMetrics}</p>
-                  </div>
-                )}
-
-                {/* Catalyst */}
-                {currentAnalysis.aiJson.catalyst && (
-                  <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Lightbulb className="w-5 h-5 text-yellow-400" />
-                      <h4 className="font-semibold text-white">Upcoming Catalyst</h4>
-                    </div>
-                    <p className="text-gray-300 text-sm leading-relaxed">{currentAnalysis.aiJson.catalyst}</p>
-                  </div>
-                )}
               </div>
 
-              {/* Bottom Line */}
-              {currentAnalysis.aiJson.bottomLine && (
-                <div className={`rounded-xl border ${s.border} ${s.bg} p-4`}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <Target className="w-5 h-5 ${s.color}" />
-                    <h4 className="font-semibold text-white">Bottom Line</h4>
+              {/* Key Levels & Catalyst Row */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Key Price Levels */}
+                {currentAnalysis.aiJson.keyLevels && (
+                  <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Target className="w-5 h-5 text-purple-400" />
+                      <h4 className="font-semibold text-white">Key Price Levels</h4>
+                    </div>
+                    <div className="grid grid-cols-3 gap-4 text-center">
+                      <div>
+                        <div className="text-xs text-gray-400 mb-1">Support</div>
+                        <div className="text-green-400 font-bold">{currentAnalysis.aiJson.keyLevels.support || 'N/A'}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-gray-400 mb-1">Resistance</div>
+                        <div className="text-red-400 font-bold">{currentAnalysis.aiJson.keyLevels.resistance || 'N/A'}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-gray-400 mb-1">Stop Loss</div>
+                        <div className="text-orange-400 font-bold">{currentAnalysis.aiJson.keyLevels.stopLoss || 'N/A'}</div>
+                      </div>
+                    </div>
                   </div>
-                  <p className="text-white font-medium">{currentAnalysis.aiJson.bottomLine}</p>
+                )}
+
+                {/* Catalyst & Time Horizon */}
+                <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4">
+                  <div className="space-y-4">
+                    {currentAnalysis.aiJson.catalyst && (
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <Zap className="w-4 h-4 text-yellow-400" />
+                          <span className="text-xs text-gray-400 uppercase tracking-wide">Catalyst</span>
+                        </div>
+                        <p className="text-gray-300 text-sm">{currentAnalysis.aiJson.catalyst}</p>
+                      </div>
+                    )}
+                    {currentAnalysis.aiJson.timeHorizon && (
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <Clock className="w-4 h-4 text-blue-400" />
+                          <span className="text-xs text-gray-400 uppercase tracking-wide">Time Horizon</span>
+                        </div>
+                        <p className="text-gray-300 text-sm">{currentAnalysis.aiJson.timeHorizon}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Bottom Line - Hero */}
+              {currentAnalysis.aiJson.bottomLine && (
+                <div className={`rounded-xl border-2 ${s.border} bg-gradient-to-r ${s.bg} p-5`}>
+                  <div className="flex items-start gap-3">
+                    <Award className={`w-7 h-7 ${s.color} flex-shrink-0`} />
+                    <div>
+                      <h4 className="font-bold text-white text-lg mb-2">Bottom Line</h4>
+                      <p className="text-white text-base font-medium leading-relaxed">{currentAnalysis.aiJson.bottomLine}</p>
+                    </div>
+                  </div>
                 </div>
               )}
             </>
-          ) : (
-            /* Fallback: Text-based display */
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {parseSection(currentAnalysis.analysis, 'PRICE ASSESSMENT') && (
-                <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4">
-                  <div className="flex items-center gap-2 mb-3">
-                    <DollarSign className="w-5 h-5 text-blue-400" />
-                    <h4 className="font-semibold text-white">Price Assessment</h4>
-                  </div>
-                  <p className="text-gray-300 text-sm leading-relaxed">
-                    {parseSection(currentAnalysis.analysis, 'PRICE ASSESSMENT')}
-                  </p>
-                </div>
-              )}
+          )}
 
-              {parseSection(currentAnalysis.analysis, 'KEY OPPORTUNITY') && (
-                <div className="rounded-xl border border-green-500/30 bg-green-500/5 p-4">
-                  <div className="flex items-center gap-2 mb-3">
-                    <CheckCircle className="w-5 h-5 text-green-400" />
-                    <h4 className="font-semibold text-green-400">Opportunity</h4>
-                  </div>
-                  <p className="text-gray-300 text-sm leading-relaxed">
-                    {parseSection(currentAnalysis.analysis, 'KEY OPPORTUNITY')}
-                  </p>
-                </div>
-              )}
-
-              {parseSection(currentAnalysis.analysis, 'KEY RISK') && (
-                <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-4">
-                  <div className="flex items-center gap-2 mb-3">
-                    <AlertTriangle className="w-5 h-5 text-red-400" />
-                    <h4 className="font-semibold text-red-400">Risk</h4>
-                  </div>
-                  <p className="text-gray-300 text-sm leading-relaxed">
-                    {parseSection(currentAnalysis.analysis, 'KEY RISK')}
-                  </p>
-                </div>
-              )}
-
-              {parseSection(currentAnalysis.analysis, 'BOTTOM LINE') && (
-                <div className={`rounded-xl border ${s.border} ${s.bg} p-4 md:col-span-2`}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <Target className="w-5 h-5" />
-                    <h4 className="font-semibold text-white">Bottom Line</h4>
-                  </div>
-                  <p className="text-white font-medium">
-                    {parseSection(currentAnalysis.analysis, 'BOTTOM LINE')}
-                  </p>
-                </div>
-              )}
+          {/* Fallback for non-JSON response */}
+          {!currentAnalysis.aiJson && currentAnalysis.analysis && (
+            <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <Brain className="w-5 h-5 text-purple-400" />
+                <h4 className="font-semibold text-white">AI Analysis</h4>
+              </div>
+              <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap">{currentAnalysis.analysis}</p>
             </div>
           )}
 
-          {/* News Headlines Used */}
+          {/* News Headlines */}
           {currentAnalysis.news && currentAnalysis.news.length > 0 && (
             <div className="rounded-xl border border-gray-700 bg-gray-800/30 p-4">
-              <h4 className="text-sm font-medium text-gray-400 mb-3">Recent News Analyzed</h4>
-              <div className="space-y-2">
+              <div className="flex items-center gap-2 mb-3">
+                <Newspaper className="w-4 h-4 text-gray-400" />
+                <h4 className="text-sm font-medium text-gray-400">News Sources Analyzed</h4>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {currentAnalysis.news.map((article, i) => (
                   <a
                     key={i}
                     href={article.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="block text-sm text-gray-300 hover:text-blue-400 truncate"
+                    className="flex items-start gap-2 text-sm text-gray-400 hover:text-blue-400 transition-colors group"
                   >
-                    • {article.headline}
+                    <ChevronRight className="w-4 h-4 flex-shrink-0 mt-0.5 group-hover:translate-x-0.5 transition-transform" />
+                    <span className="line-clamp-1">{article.headline}</span>
                   </a>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Disclaimer */}
-          <div className="flex items-center justify-between text-xs text-gray-500 px-1">
-            <div className="flex items-center gap-1">
-              <AlertTriangle className="w-3 h-3" />
-              <span>AI-generated analysis, not financial advice. Do your own research.</span>
+          {/* Disclaimer Footer */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs text-gray-500 px-1 pt-2 border-t border-gray-800">
+            <div className="flex items-center gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5" />
+              <span>AI-generated analysis for informational purposes only. Not financial advice. Always do your own research.</span>
             </div>
-            <div className="flex items-center gap-1">
-              <Clock className="w-3 h-3" />
+            <div className="flex items-center gap-1.5 text-gray-600">
+              <Clock className="w-3.5 h-3.5" />
               <span>{new Date(currentAnalysis.timestamp).toLocaleString()}</span>
             </div>
           </div>
@@ -770,36 +1182,53 @@ Respond with ONLY this JSON, no other text:
 
       {/* History */}
       {history.length > 0 && !loading && !currentAnalysis && (
-        <div className="space-y-3">
+        <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-medium text-gray-400">Recent Analyses</h3>
+            <h3 className="text-sm font-medium text-gray-400 flex items-center gap-2">
+              <Clock className="w-4 h-4" />
+              Recent Analyses
+            </h3>
             <button
               onClick={() => { setHistory([]); localStorage.removeItem('ai_analysis_history') }}
-              className="text-xs text-gray-500 hover:text-gray-400"
+              className="text-xs text-gray-500 hover:text-red-400 transition-colors"
             >
-              Clear
+              Clear All
             </button>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
             {history.map((item) => {
-              const hs = getSentimentDisplay(item.sentiment)
+              const hs = getSentimentDisplay(item.sentiment, item.aiJson?.rating)
               return (
                 <button
                   key={`${item.symbol}-${item.timestamp}`}
                   onClick={() => setCurrentAnalysis(item)}
-                  className="p-4 rounded-xl border bg-gray-800/50 border-gray-700 hover:border-gray-600 hover:bg-gray-800 text-left transition-all"
+                  className={`p-4 rounded-xl border-2 ${hs.border} ${hs.bg} hover:scale-[1.02] text-left transition-all group`}
                 >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-bold text-white text-lg">{item.symbol}</span>
-                    <span className={`px-2 py-0.5 rounded text-xs font-bold text-white ${hs.bgSolid}`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="font-bold text-white text-xl">{item.symbol}</span>
+                    <span className={`px-2.5 py-1 rounded-lg text-xs font-bold text-white bg-gradient-to-r ${hs.gradient}`}>
                       {hs.label}
                     </span>
                   </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="text-gray-300">${item.price?.toFixed(2)}</span>
-                    <span className={item.change >= 0 ? 'text-green-400' : 'text-red-400'}>
-                      {item.change >= 0 ? '+' : ''}{item.change?.toFixed(2)}%
-                    </span>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-white font-semibold">${item.price?.toFixed(2)}</div>
+                      <div className={`text-sm font-medium ${item.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {item.change >= 0 ? '+' : ''}{item.change?.toFixed(2)}%
+                      </div>
+                    </div>
+                    {item.confidenceScore && (
+                      <div className="text-right">
+                        <div className={`text-lg font-bold ${getConfidenceColor(item.confidenceScore)}`}>
+                          {item.confidenceScore}%
+                        </div>
+                        <div className="text-xs text-gray-500">confidence</div>
+                      </div>
+                    )}
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-gray-700/50 flex items-center justify-between text-xs text-gray-500">
+                    <span>{item.sector || 'Stock'}</span>
+                    <span>{new Date(item.timestamp).toLocaleDateString()}</span>
                   </div>
                 </button>
               )
@@ -810,12 +1239,21 @@ Respond with ONLY this JSON, no other text:
 
       {/* Empty State */}
       {!currentAnalysis && !loading && history.length === 0 && (
-        <div className="rounded-xl p-12 border text-center bg-gray-800/50 border-gray-700">
-          <Brain className="w-16 h-16 mx-auto mb-4 text-gray-600" />
-          <h3 className="text-lg font-medium mb-2 text-gray-300">No analyses yet</h3>
-          <p className="text-gray-500 max-w-md mx-auto">
-            Search for any stock to get opinionated AI analysis with clear buy/hold/avoid recommendations.
+        <div className="rounded-2xl p-10 border-2 border-dashed border-purple-500/30 bg-gradient-to-br from-purple-500/5 to-blue-500/5 text-center">
+          <div className="relative w-20 h-20 mx-auto mb-6">
+            <div className="absolute inset-0 rounded-full bg-purple-500/20 animate-pulse"></div>
+            <Brain className="absolute inset-0 m-auto w-10 h-10 text-purple-400" />
+          </div>
+          <h3 className="text-xl font-bold mb-3 text-white">AI-Powered Stock Analysis</h3>
+          <p className="text-gray-400 max-w-lg mx-auto mb-6 leading-relaxed">
+            Get comprehensive, professional-grade analysis on any stock. Our AI examines fundamentals, technicals, news sentiment, and market positioning to deliver actionable insights.
           </p>
+          <div className="flex flex-wrap justify-center gap-3 text-sm">
+            <span className="px-3 py-1.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20">Technical Analysis</span>
+            <span className="px-3 py-1.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">Fundamental Metrics</span>
+            <span className="px-3 py-1.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">News Sentiment</span>
+            <span className="px-3 py-1.5 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20">Price Targets</span>
+          </div>
         </div>
       )}
     </div>
