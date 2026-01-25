@@ -603,9 +603,9 @@ export default function AIInsights() {
         symbol: sym,
         name: quoteData.shortName || quoteData.longName || sym,
         quote: {
-          price: quoteData.regularMarketPrice || quoteData.price,
-          change: quoteData.regularMarketChange || 0,
-          changePercent: quoteData.regularMarketChangePercent || 0,
+          price: quoteData.regularMarketPrice ?? quoteData.price ?? 0,
+          change: quoteData.regularMarketChange ?? quoteData.change ?? 0,
+          changePercent: quoteData.regularMarketChangePercent ?? quoteData.changePercent ?? 0,
           marketCap: quoteData.marketCap,
           peRatio: quoteData.trailingPE,
           forwardPE: quoteData.forwardPE,
@@ -791,10 +791,16 @@ export default function AIInsights() {
                 </div>
                 <div className="text-left md:text-right">
                   <div className="text-3xl font-bold text-white">${analysisResult.quote?.price?.toFixed(2)}</div>
-                  <div className={`text-lg font-semibold flex items-center gap-1 md:justify-end ${analysisResult.quote?.changePercent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                    {analysisResult.quote?.changePercent >= 0 ? <ArrowUpRight className="w-5 h-5" /> : <ArrowDownRight className="w-5 h-5" />}
-                    {analysisResult.quote?.changePercent >= 0 ? '+' : ''}{analysisResult.quote?.changePercent?.toFixed(2)}% today
-                  </div>
+                  {(() => {
+                    const pct = analysisResult.quote?.changePercent ?? 0
+                    const positive = pct >= 0
+                    return (
+                      <div className={`text-lg font-semibold flex items-center gap-1 md:justify-end ${positive ? 'text-green-400' : 'text-red-400'}`}>
+                        {positive ? <ArrowUpRight className="w-5 h-5" /> : <ArrowDownRight className="w-5 h-5" />}
+                        {positive ? '+' : ''}{pct.toFixed(2)}% today
+                      </div>
+                    )
+                  })()}
                 </div>
               </div>
 
@@ -837,10 +843,10 @@ export default function AIInsights() {
             </div>
           </div>
 
-          {/* News Themes Tags */}
-          {(analysisResult.newsAnalysis?.themes?.length > 0 || analysisResult.newsAnalysis?.sentiment) && (
+          {/* News Themes Tags - only show if we have news */}
+          {analysisResult.newsAnalysis?.totalArticles > 0 && (
             <div className="flex flex-wrap gap-2">
-              {analysisResult.newsAnalysis.themes.map(theme => (
+              {analysisResult.newsAnalysis.themes?.length > 0 && analysisResult.newsAnalysis.themes.map(theme => (
                 <span key={theme} className="px-3 py-1.5 bg-purple-900/50 text-purple-300 rounded-full text-sm font-medium">
                   #{theme}
                 </span>
