@@ -900,18 +900,22 @@ function PredictiveSearch({ onSelect, onClose, placeholder = "Search stocks...",
       setLoading(true)
       try {
         const data = await yahooFetch(q, 'search')
-        if (data?.quotes) {
-          const filtered = data.quotes
-            .filter(r => r.quoteType === 'EQUITY' || r.quoteType === 'ETF')
-            .slice(0, 8)
-            .map(r => ({
-              symbol: r.symbol,
-              name: r.shortname || r.longname || r.symbol,
-              type: r.quoteType || 'EQUITY'
-            }))
-          setResults(filtered)
-          setSelectedIndex(0)
-        }
+        // API returns { results: [...] } with type/name fields
+        const items = data?.results || data?.quotes || []
+        const filtered = items
+          .filter(r => {
+            const itemType = r.type || r.quoteType
+            return itemType === 'EQUITY' || itemType === 'ETF'
+          })
+          .slice(0, 8)
+          .map(r => ({
+            symbol: r.symbol,
+            name: r.name || r.shortname || r.longname || r.symbol,
+            type: r.type || r.quoteType || 'EQUITY',
+            exchange: r.exchange || ''
+          }))
+        setResults(filtered)
+        setSelectedIndex(0)
       } catch (err) {
         console.error('Search error:', err)
         setResults([])
