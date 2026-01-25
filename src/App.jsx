@@ -864,6 +864,312 @@ function OnboardingTour({ onComplete, onOpenSearch }) {
 }
 
 // ============ PREDICTIVE SEARCH ============
+// Popular stocks by first letter for supplementing short searches
+const POPULAR_STOCKS = {
+  'A': [
+    { symbol: 'AAPL', name: 'Apple Inc', type: 'EQUITY' },
+    { symbol: 'AMZN', name: 'Amazon.com Inc', type: 'EQUITY' },
+    { symbol: 'AMD', name: 'Advanced Micro Devices', type: 'EQUITY' },
+    { symbol: 'ABBV', name: 'AbbVie Inc', type: 'EQUITY' },
+    { symbol: 'AVGO', name: 'Broadcom Inc', type: 'EQUITY' },
+    { symbol: 'ADBE', name: 'Adobe Inc', type: 'EQUITY' },
+    { symbol: 'ABT', name: 'Abbott Laboratories', type: 'EQUITY' },
+    { symbol: 'ACN', name: 'Accenture plc', type: 'EQUITY' },
+    { symbol: 'ABNB', name: 'Airbnb Inc', type: 'EQUITY' },
+    { symbol: 'AXP', name: 'American Express', type: 'EQUITY' }
+  ],
+  'B': [
+    { symbol: 'BRK-B', name: 'Berkshire Hathaway', type: 'EQUITY' },
+    { symbol: 'BAC', name: 'Bank of America', type: 'EQUITY' },
+    { symbol: 'BA', name: 'Boeing Co', type: 'EQUITY' },
+    { symbol: 'BMY', name: 'Bristol-Myers Squibb', type: 'EQUITY' },
+    { symbol: 'BLK', name: 'BlackRock Inc', type: 'EQUITY' },
+    { symbol: 'BKNG', name: 'Booking Holdings', type: 'EQUITY' },
+    { symbol: 'BX', name: 'Blackstone Inc', type: 'EQUITY' },
+    { symbol: 'BSX', name: 'Boston Scientific', type: 'EQUITY' },
+    { symbol: 'BIIB', name: 'Biogen Inc', type: 'EQUITY' },
+    { symbol: 'BDX', name: 'Becton Dickinson', type: 'EQUITY' }
+  ],
+  'C': [
+    { symbol: 'COST', name: 'Costco Wholesale', type: 'EQUITY' },
+    { symbol: 'CRM', name: 'Salesforce Inc', type: 'EQUITY' },
+    { symbol: 'CVX', name: 'Chevron Corporation', type: 'EQUITY' },
+    { symbol: 'CSCO', name: 'Cisco Systems', type: 'EQUITY' },
+    { symbol: 'C', name: 'Citigroup Inc', type: 'EQUITY' },
+    { symbol: 'CAT', name: 'Caterpillar Inc', type: 'EQUITY' },
+    { symbol: 'CMCSA', name: 'Comcast Corporation', type: 'EQUITY' },
+    { symbol: 'COP', name: 'ConocoPhillips', type: 'EQUITY' },
+    { symbol: 'CI', name: 'Cigna Group', type: 'EQUITY' },
+    { symbol: 'CRWD', name: 'CrowdStrike Holdings', type: 'EQUITY' }
+  ],
+  'D': [
+    { symbol: 'DIS', name: 'Walt Disney Co', type: 'EQUITY' },
+    { symbol: 'DHR', name: 'Danaher Corporation', type: 'EQUITY' },
+    { symbol: 'DE', name: 'Deere & Company', type: 'EQUITY' },
+    { symbol: 'DXCM', name: 'DexCom Inc', type: 'EQUITY' },
+    { symbol: 'DUK', name: 'Duke Energy', type: 'EQUITY' },
+    { symbol: 'D', name: 'Dominion Energy', type: 'EQUITY' },
+    { symbol: 'DASH', name: 'DoorDash Inc', type: 'EQUITY' },
+    { symbol: 'DVN', name: 'Devon Energy', type: 'EQUITY' },
+    { symbol: 'DG', name: 'Dollar General', type: 'EQUITY' },
+    { symbol: 'DKNG', name: 'DraftKings Inc', type: 'EQUITY' }
+  ],
+  'E': [
+    { symbol: 'XOM', name: 'Exxon Mobil', type: 'EQUITY' },
+    { symbol: 'ETN', name: 'Eaton Corporation', type: 'EQUITY' },
+    { symbol: 'EMR', name: 'Emerson Electric', type: 'EQUITY' },
+    { symbol: 'ELV', name: 'Elevance Health', type: 'EQUITY' },
+    { symbol: 'EOG', name: 'EOG Resources', type: 'EQUITY' },
+    { symbol: 'ENPH', name: 'Enphase Energy', type: 'EQUITY' },
+    { symbol: 'EL', name: 'Estée Lauder', type: 'EQUITY' },
+    { symbol: 'EA', name: 'Electronic Arts', type: 'EQUITY' },
+    { symbol: 'EW', name: 'Edwards Lifesciences', type: 'EQUITY' },
+    { symbol: 'EBAY', name: 'eBay Inc', type: 'EQUITY' }
+  ],
+  'F': [
+    { symbol: 'F', name: 'Ford Motor Co', type: 'EQUITY' },
+    { symbol: 'FDX', name: 'FedEx Corporation', type: 'EQUITY' },
+    { symbol: 'FCX', name: 'Freeport-McMoRan', type: 'EQUITY' },
+    { symbol: 'FSLR', name: 'First Solar Inc', type: 'EQUITY' },
+    { symbol: 'FISV', name: 'Fiserv Inc', type: 'EQUITY' },
+    { symbol: 'FIS', name: 'Fidelity National', type: 'EQUITY' },
+    { symbol: 'FTNT', name: 'Fortinet Inc', type: 'EQUITY' },
+    { symbol: 'FI', name: 'Fiserv Inc', type: 'EQUITY' },
+    { symbol: 'FAST', name: 'Fastenal Company', type: 'EQUITY' },
+    { symbol: 'FTV', name: 'Fortive Corporation', type: 'EQUITY' }
+  ],
+  'G': [
+    { symbol: 'GOOGL', name: 'Alphabet Inc Class A', type: 'EQUITY' },
+    { symbol: 'GOOG', name: 'Alphabet Inc Class C', type: 'EQUITY' },
+    { symbol: 'GS', name: 'Goldman Sachs', type: 'EQUITY' },
+    { symbol: 'GE', name: 'General Electric', type: 'EQUITY' },
+    { symbol: 'GM', name: 'General Motors', type: 'EQUITY' },
+    { symbol: 'GILD', name: 'Gilead Sciences', type: 'EQUITY' },
+    { symbol: 'GD', name: 'General Dynamics', type: 'EQUITY' },
+    { symbol: 'GPN', name: 'Global Payments', type: 'EQUITY' },
+    { symbol: 'GIS', name: 'General Mills', type: 'EQUITY' },
+    { symbol: 'GLW', name: 'Corning Inc', type: 'EQUITY' }
+  ],
+  'H': [
+    { symbol: 'HD', name: 'Home Depot Inc', type: 'EQUITY' },
+    { symbol: 'HON', name: 'Honeywell International', type: 'EQUITY' },
+    { symbol: 'HUM', name: 'Humana Inc', type: 'EQUITY' },
+    { symbol: 'HCA', name: 'HCA Healthcare', type: 'EQUITY' },
+    { symbol: 'HPQ', name: 'HP Inc', type: 'EQUITY' },
+    { symbol: 'HSBC', name: 'HSBC Holdings', type: 'EQUITY' },
+    { symbol: 'HLT', name: 'Hilton Worldwide', type: 'EQUITY' },
+    { symbol: 'HPE', name: 'Hewlett Packard', type: 'EQUITY' },
+    { symbol: 'HAL', name: 'Halliburton Co', type: 'EQUITY' },
+    { symbol: 'HOOD', name: 'Robinhood Markets', type: 'EQUITY' }
+  ],
+  'I': [
+    { symbol: 'INTC', name: 'Intel Corporation', type: 'EQUITY' },
+    { symbol: 'IBM', name: 'IBM Corporation', type: 'EQUITY' },
+    { symbol: 'INTU', name: 'Intuit Inc', type: 'EQUITY' },
+    { symbol: 'ISRG', name: 'Intuitive Surgical', type: 'EQUITY' },
+    { symbol: 'ICE', name: 'Intercontinental Exchange', type: 'EQUITY' },
+    { symbol: 'ITW', name: 'Illinois Tool Works', type: 'EQUITY' },
+    { symbol: 'IDXX', name: 'IDEXX Laboratories', type: 'EQUITY' },
+    { symbol: 'IQV', name: 'IQVIA Holdings', type: 'EQUITY' },
+    { symbol: 'IR', name: 'Ingersoll Rand', type: 'EQUITY' },
+    { symbol: 'ILMN', name: 'Illumina Inc', type: 'EQUITY' }
+  ],
+  'J': [
+    { symbol: 'JPM', name: 'JPMorgan Chase', type: 'EQUITY' },
+    { symbol: 'JNJ', name: 'Johnson & Johnson', type: 'EQUITY' },
+    { symbol: 'JBHT', name: 'JB Hunt Transport', type: 'EQUITY' },
+    { symbol: 'JCI', name: 'Johnson Controls', type: 'EQUITY' },
+    { symbol: 'JD', name: 'JD.com Inc', type: 'EQUITY' },
+    { symbol: 'JWN', name: 'Nordstrom Inc', type: 'EQUITY' },
+    { symbol: 'JNPR', name: 'Juniper Networks', type: 'EQUITY' },
+    { symbol: 'J', name: 'Jacobs Engineering', type: 'EQUITY' },
+    { symbol: 'JAZZ', name: 'Jazz Pharmaceuticals', type: 'EQUITY' },
+    { symbol: 'JLL', name: 'Jones Lang LaSalle', type: 'EQUITY' }
+  ],
+  'K': [
+    { symbol: 'KO', name: 'Coca-Cola Company', type: 'EQUITY' },
+    { symbol: 'KHC', name: 'Kraft Heinz', type: 'EQUITY' },
+    { symbol: 'KLAC', name: 'KLA Corporation', type: 'EQUITY' },
+    { symbol: 'KMB', name: 'Kimberly-Clark', type: 'EQUITY' },
+    { symbol: 'KMI', name: 'Kinder Morgan', type: 'EQUITY' },
+    { symbol: 'KDP', name: 'Keurig Dr Pepper', type: 'EQUITY' },
+    { symbol: 'K', name: 'Kellanova', type: 'EQUITY' },
+    { symbol: 'KR', name: 'Kroger Co', type: 'EQUITY' },
+    { symbol: 'KSS', name: 'Kohl\'s Corporation', type: 'EQUITY' },
+    { symbol: 'KEYS', name: 'Keysight Technologies', type: 'EQUITY' }
+  ],
+  'L': [
+    { symbol: 'LLY', name: 'Eli Lilly', type: 'EQUITY' },
+    { symbol: 'LMT', name: 'Lockheed Martin', type: 'EQUITY' },
+    { symbol: 'LOW', name: 'Lowe\'s Companies', type: 'EQUITY' },
+    { symbol: 'LRCX', name: 'Lam Research', type: 'EQUITY' },
+    { symbol: 'LIN', name: 'Linde plc', type: 'EQUITY' },
+    { symbol: 'LVS', name: 'Las Vegas Sands', type: 'EQUITY' },
+    { symbol: 'LULU', name: 'Lululemon Athletica', type: 'EQUITY' },
+    { symbol: 'LUV', name: 'Southwest Airlines', type: 'EQUITY' },
+    { symbol: 'LYFT', name: 'Lyft Inc', type: 'EQUITY' },
+    { symbol: 'LEN', name: 'Lennar Corporation', type: 'EQUITY' }
+  ],
+  'M': [
+    { symbol: 'MSFT', name: 'Microsoft Corporation', type: 'EQUITY' },
+    { symbol: 'META', name: 'Meta Platforms Inc', type: 'EQUITY' },
+    { symbol: 'MA', name: 'Mastercard Inc', type: 'EQUITY' },
+    { symbol: 'MCD', name: 'McDonald\'s Corp', type: 'EQUITY' },
+    { symbol: 'MRK', name: 'Merck & Co Inc', type: 'EQUITY' },
+    { symbol: 'MMM', name: '3M Company', type: 'EQUITY' },
+    { symbol: 'MO', name: 'Altria Group Inc', type: 'EQUITY' },
+    { symbol: 'MS', name: 'Morgan Stanley', type: 'EQUITY' },
+    { symbol: 'MDLZ', name: 'Mondelez International', type: 'EQUITY' },
+    { symbol: 'MU', name: 'Micron Technology', type: 'EQUITY' }
+  ],
+  'N': [
+    { symbol: 'NVDA', name: 'NVIDIA Corporation', type: 'EQUITY' },
+    { symbol: 'NFLX', name: 'Netflix Inc', type: 'EQUITY' },
+    { symbol: 'NKE', name: 'Nike Inc', type: 'EQUITY' },
+    { symbol: 'NOW', name: 'ServiceNow Inc', type: 'EQUITY' },
+    { symbol: 'NEE', name: 'NextEra Energy', type: 'EQUITY' },
+    { symbol: 'NEM', name: 'Newmont Corporation', type: 'EQUITY' },
+    { symbol: 'NSC', name: 'Norfolk Southern', type: 'EQUITY' },
+    { symbol: 'NDAQ', name: 'Nasdaq Inc', type: 'EQUITY' },
+    { symbol: 'NOC', name: 'Northrop Grumman', type: 'EQUITY' },
+    { symbol: 'NUE', name: 'Nucor Corporation', type: 'EQUITY' }
+  ],
+  'O': [
+    { symbol: 'ORCL', name: 'Oracle Corporation', type: 'EQUITY' },
+    { symbol: 'OXY', name: 'Occidental Petroleum', type: 'EQUITY' },
+    { symbol: 'ON', name: 'ON Semiconductor', type: 'EQUITY' },
+    { symbol: 'ODFL', name: 'Old Dominion Freight', type: 'EQUITY' },
+    { symbol: 'OMC', name: 'Omnicom Group', type: 'EQUITY' },
+    { symbol: 'ORLY', name: 'O\'Reilly Automotive', type: 'EQUITY' },
+    { symbol: 'OKE', name: 'ONEOK Inc', type: 'EQUITY' },
+    { symbol: 'OTIS', name: 'Otis Worldwide', type: 'EQUITY' },
+    { symbol: 'O', name: 'Realty Income Corp', type: 'EQUITY' },
+    { symbol: 'OKTA', name: 'Okta Inc', type: 'EQUITY' }
+  ],
+  'P': [
+    { symbol: 'PG', name: 'Procter & Gamble', type: 'EQUITY' },
+    { symbol: 'PFE', name: 'Pfizer Inc', type: 'EQUITY' },
+    { symbol: 'PEP', name: 'PepsiCo Inc', type: 'EQUITY' },
+    { symbol: 'PYPL', name: 'PayPal Holdings', type: 'EQUITY' },
+    { symbol: 'PM', name: 'Philip Morris', type: 'EQUITY' },
+    { symbol: 'PANW', name: 'Palo Alto Networks', type: 'EQUITY' },
+    { symbol: 'PNC', name: 'PNC Financial', type: 'EQUITY' },
+    { symbol: 'PSX', name: 'Phillips 66', type: 'EQUITY' },
+    { symbol: 'PLD', name: 'Prologis Inc', type: 'EQUITY' },
+    { symbol: 'PLTR', name: 'Palantir Technologies', type: 'EQUITY' }
+  ],
+  'Q': [
+    { symbol: 'QCOM', name: 'Qualcomm Inc', type: 'EQUITY' },
+    { symbol: 'QQQ', name: 'Invesco QQQ Trust', type: 'ETF' },
+    { symbol: 'QRVO', name: 'Qorvo Inc', type: 'EQUITY' },
+    { symbol: 'QSR', name: 'Restaurant Brands', type: 'EQUITY' },
+    { symbol: 'QTWO', name: 'Q2 Holdings', type: 'EQUITY' },
+    { symbol: 'QUAD', name: 'Quad/Graphics', type: 'EQUITY' },
+    { symbol: 'QDEL', name: 'QuidelOrtho', type: 'EQUITY' },
+    { symbol: 'QUOT', name: 'Quotient Technology', type: 'EQUITY' }
+  ],
+  'R': [
+    { symbol: 'RTX', name: 'RTX Corporation', type: 'EQUITY' },
+    { symbol: 'REGN', name: 'Regeneron Pharma', type: 'EQUITY' },
+    { symbol: 'ROP', name: 'Roper Technologies', type: 'EQUITY' },
+    { symbol: 'ROST', name: 'Ross Stores', type: 'EQUITY' },
+    { symbol: 'RCL', name: 'Royal Caribbean', type: 'EQUITY' },
+    { symbol: 'RSG', name: 'Republic Services', type: 'EQUITY' },
+    { symbol: 'RIVN', name: 'Rivian Automotive', type: 'EQUITY' },
+    { symbol: 'RBLX', name: 'Roblox Corporation', type: 'EQUITY' },
+    { symbol: 'RF', name: 'Regions Financial', type: 'EQUITY' },
+    { symbol: 'RMD', name: 'ResMed Inc', type: 'EQUITY' }
+  ],
+  'S': [
+    { symbol: 'SPY', name: 'SPDR S&P 500 ETF', type: 'ETF' },
+    { symbol: 'SBUX', name: 'Starbucks Corp', type: 'EQUITY' },
+    { symbol: 'SCHW', name: 'Charles Schwab', type: 'EQUITY' },
+    { symbol: 'SLB', name: 'Schlumberger Ltd', type: 'EQUITY' },
+    { symbol: 'SO', name: 'Southern Company', type: 'EQUITY' },
+    { symbol: 'SNOW', name: 'Snowflake Inc', type: 'EQUITY' },
+    { symbol: 'SHOP', name: 'Shopify Inc', type: 'EQUITY' },
+    { symbol: 'SQ', name: 'Block Inc', type: 'EQUITY' },
+    { symbol: 'SNAP', name: 'Snap Inc', type: 'EQUITY' },
+    { symbol: 'SOFI', name: 'SoFi Technologies', type: 'EQUITY' }
+  ],
+  'T': [
+    { symbol: 'TSLA', name: 'Tesla Inc', type: 'EQUITY' },
+    { symbol: 'T', name: 'AT&T Inc', type: 'EQUITY' },
+    { symbol: 'TGT', name: 'Target Corporation', type: 'EQUITY' },
+    { symbol: 'TMO', name: 'Thermo Fisher Scientific', type: 'EQUITY' },
+    { symbol: 'TXN', name: 'Texas Instruments', type: 'EQUITY' },
+    { symbol: 'TJX', name: 'TJX Companies', type: 'EQUITY' },
+    { symbol: 'TMUS', name: 'T-Mobile US', type: 'EQUITY' },
+    { symbol: 'TTWO', name: 'Take-Two Interactive', type: 'EQUITY' },
+    { symbol: 'TFC', name: 'Truist Financial', type: 'EQUITY' },
+    { symbol: 'TWLO', name: 'Twilio Inc', type: 'EQUITY' }
+  ],
+  'U': [
+    { symbol: 'UNH', name: 'UnitedHealth Group', type: 'EQUITY' },
+    { symbol: 'UPS', name: 'United Parcel Service', type: 'EQUITY' },
+    { symbol: 'USB', name: 'US Bancorp', type: 'EQUITY' },
+    { symbol: 'UBER', name: 'Uber Technologies', type: 'EQUITY' },
+    { symbol: 'ULTA', name: 'Ulta Beauty', type: 'EQUITY' },
+    { symbol: 'UAL', name: 'United Airlines', type: 'EQUITY' },
+    { symbol: 'U', name: 'Unity Software', type: 'EQUITY' },
+    { symbol: 'URI', name: 'United Rentals', type: 'EQUITY' },
+    { symbol: 'UNP', name: 'Union Pacific', type: 'EQUITY' },
+    { symbol: 'UPST', name: 'Upstart Holdings', type: 'EQUITY' }
+  ],
+  'V': [
+    { symbol: 'V', name: 'Visa Inc', type: 'EQUITY' },
+    { symbol: 'VZ', name: 'Verizon Communications', type: 'EQUITY' },
+    { symbol: 'VRTX', name: 'Vertex Pharmaceuticals', type: 'EQUITY' },
+    { symbol: 'VLO', name: 'Valero Energy', type: 'EQUITY' },
+    { symbol: 'VMW', name: 'VMware Inc', type: 'EQUITY' },
+    { symbol: 'VFC', name: 'VF Corporation', type: 'EQUITY' },
+    { symbol: 'VRSK', name: 'Verisk Analytics', type: 'EQUITY' },
+    { symbol: 'VOO', name: 'Vanguard S&P 500', type: 'ETF' },
+    { symbol: 'VTI', name: 'Vanguard Total Stock', type: 'ETF' },
+    { symbol: 'VNQ', name: 'Vanguard Real Estate', type: 'ETF' }
+  ],
+  'W': [
+    { symbol: 'WMT', name: 'Walmart Inc', type: 'EQUITY' },
+    { symbol: 'WFC', name: 'Wells Fargo', type: 'EQUITY' },
+    { symbol: 'WBA', name: 'Walgreens Boots', type: 'EQUITY' },
+    { symbol: 'WBD', name: 'Warner Bros Discovery', type: 'EQUITY' },
+    { symbol: 'WM', name: 'Waste Management', type: 'EQUITY' },
+    { symbol: 'WDAY', name: 'Workday Inc', type: 'EQUITY' },
+    { symbol: 'W', name: 'Wayfair Inc', type: 'EQUITY' },
+    { symbol: 'WDC', name: 'Western Digital', type: 'EQUITY' },
+    { symbol: 'WST', name: 'West Pharmaceutical', type: 'EQUITY' },
+    { symbol: 'WELL', name: 'Welltower Inc', type: 'EQUITY' }
+  ],
+  'X': [
+    { symbol: 'XOM', name: 'Exxon Mobil', type: 'EQUITY' },
+    { symbol: 'XLK', name: 'Technology Select SPDR', type: 'ETF' },
+    { symbol: 'XLF', name: 'Financial Select SPDR', type: 'ETF' },
+    { symbol: 'XLE', name: 'Energy Select SPDR', type: 'ETF' },
+    { symbol: 'XLV', name: 'Health Care Select SPDR', type: 'ETF' },
+    { symbol: 'XLY', name: 'Consumer Discretionary SPDR', type: 'ETF' },
+    { symbol: 'XLP', name: 'Consumer Staples SPDR', type: 'ETF' },
+    { symbol: 'XLI', name: 'Industrial Select SPDR', type: 'ETF' },
+    { symbol: 'XLNX', name: 'Xilinx Inc', type: 'EQUITY' },
+    { symbol: 'XYL', name: 'Xylem Inc', type: 'EQUITY' }
+  ],
+  'Y': [
+    { symbol: 'YUM', name: 'Yum! Brands', type: 'EQUITY' },
+    { symbol: 'Y', name: 'Alleghany Corporation', type: 'EQUITY' },
+    { symbol: 'YELP', name: 'Yelp Inc', type: 'EQUITY' },
+    { symbol: 'YUMC', name: 'Yum China Holdings', type: 'EQUITY' }
+  ],
+  'Z': [
+    { symbol: 'ZTS', name: 'Zoetis Inc', type: 'EQUITY' },
+    { symbol: 'ZM', name: 'Zoom Video', type: 'EQUITY' },
+    { symbol: 'ZS', name: 'Zscaler Inc', type: 'EQUITY' },
+    { symbol: 'Z', name: 'Zillow Group', type: 'EQUITY' },
+    { symbol: 'ZG', name: 'Zillow Group C', type: 'EQUITY' },
+    { symbol: 'ZBH', name: 'Zimmer Biomet', type: 'EQUITY' },
+    { symbol: 'ZBRA', name: 'Zebra Technologies', type: 'EQUITY' },
+    { symbol: 'ZI', name: 'ZoomInfo Technologies', type: 'EQUITY' }
+  ]
+}
+
 function PredictiveSearch({ onSelect, onClose, placeholder = "Search stocks...", inline = false }) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState([])
@@ -903,19 +1209,41 @@ function PredictiveSearch({ onSelect, onClose, placeholder = "Search stocks...",
         const data = await yahooFetch(q, 'search')
         // API returns { results: [...] } with type/name fields
         const items = data?.results || data?.quotes || []
-        const filtered = items
+        let filtered = items
           .filter(r => {
             const itemType = r.type || r.quoteType
             return itemType === 'EQUITY' || itemType === 'ETF'
           })
-          .slice(0, 8)
           .map(r => ({
             symbol: r.symbol,
             name: r.name || r.shortname || r.longname || r.symbol,
             type: r.type || r.quoteType || 'EQUITY',
             exchange: r.exchange || ''
           }))
-        setResults(filtered)
+
+        // If Yahoo returns few results for short queries, supplement with popular stocks
+        if (filtered.length < 5 && q.length <= 2) {
+          const firstLetter = q.charAt(0).toUpperCase()
+          const popularForLetter = POPULAR_STOCKS[firstLetter] || []
+          const queryUpper = q.toUpperCase()
+
+          // Filter popular stocks that match the query
+          const matchingPopular = popularForLetter
+            .filter(s => s.symbol.startsWith(queryUpper) || s.name.toUpperCase().includes(queryUpper))
+            .filter(s => !filtered.some(f => f.symbol === s.symbol)) // Don't duplicate
+
+          filtered = [...filtered, ...matchingPopular]
+        }
+
+        // Deduplicate and limit to 10 results
+        const seen = new Set()
+        const unique = filtered.filter(item => {
+          if (seen.has(item.symbol)) return false
+          seen.add(item.symbol)
+          return true
+        }).slice(0, 10)
+
+        setResults(unique)
         setSelectedIndex(0)
       } catch (err) {
         console.error('Search error:', err)

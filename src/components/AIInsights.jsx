@@ -92,6 +92,36 @@ export default function AIInsights({ darkMode, finnhubFetch }) {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  // Popular stocks for supplementing short searches
+  const POPULAR_STOCKS = {
+    'A': ['AAPL', 'AMZN', 'AMD', 'ABBV', 'AVGO', 'ADBE', 'ABT', 'ACN', 'ABNB', 'AXP'],
+    'B': ['BRK-B', 'BAC', 'BA', 'BMY', 'BLK', 'BKNG', 'BX', 'BSX', 'BIIB', 'BDX'],
+    'C': ['COST', 'CRM', 'CVX', 'CSCO', 'C', 'CAT', 'CMCSA', 'COP', 'CI', 'CRWD'],
+    'D': ['DIS', 'DHR', 'DE', 'DXCM', 'DUK', 'D', 'DASH', 'DVN', 'DG', 'DKNG'],
+    'E': ['XOM', 'ETN', 'EMR', 'ELV', 'EOG', 'ENPH', 'EL', 'EA', 'EW', 'EBAY'],
+    'F': ['F', 'FDX', 'FCX', 'FSLR', 'FISV', 'FIS', 'FTNT', 'FI', 'FAST', 'FTV'],
+    'G': ['GOOGL', 'GOOG', 'GS', 'GE', 'GM', 'GILD', 'GD', 'GPN', 'GIS', 'GLW'],
+    'H': ['HD', 'HON', 'HUM', 'HCA', 'HPQ', 'HSBC', 'HLT', 'HPE', 'HAL', 'HOOD'],
+    'I': ['INTC', 'IBM', 'INTU', 'ISRG', 'ICE', 'ITW', 'IDXX', 'IQV', 'IR', 'ILMN'],
+    'J': ['JPM', 'JNJ', 'JBHT', 'JCI', 'JD', 'JWN', 'JNPR', 'J', 'JAZZ', 'JLL'],
+    'K': ['KO', 'KHC', 'KLAC', 'KMB', 'KMI', 'KDP', 'K', 'KR', 'KSS', 'KEYS'],
+    'L': ['LLY', 'LMT', 'LOW', 'LRCX', 'LIN', 'LVS', 'LULU', 'LUV', 'LYFT', 'LEN'],
+    'M': ['MSFT', 'META', 'MA', 'MCD', 'MRK', 'MMM', 'MO', 'MS', 'MDLZ', 'MU'],
+    'N': ['NVDA', 'NFLX', 'NKE', 'NOW', 'NEE', 'NEM', 'NSC', 'NDAQ', 'NOC', 'NUE'],
+    'O': ['ORCL', 'OXY', 'ON', 'ODFL', 'OMC', 'ORLY', 'OKE', 'OTIS', 'O', 'OKTA'],
+    'P': ['PG', 'PFE', 'PEP', 'PYPL', 'PM', 'PANW', 'PNC', 'PSX', 'PLD', 'PLTR'],
+    'Q': ['QCOM', 'QQQ', 'QRVO', 'QSR'],
+    'R': ['RTX', 'REGN', 'ROP', 'ROST', 'RCL', 'RSG', 'RIVN', 'RBLX', 'RF', 'RMD'],
+    'S': ['SPY', 'SBUX', 'SCHW', 'SLB', 'SO', 'SNOW', 'SHOP', 'SQ', 'SNAP', 'SOFI'],
+    'T': ['TSLA', 'T', 'TGT', 'TMO', 'TXN', 'TJX', 'TMUS', 'TTWO', 'TFC', 'TWLO'],
+    'U': ['UNH', 'UPS', 'USB', 'UBER', 'ULTA', 'UAL', 'U', 'URI', 'UNP', 'UPST'],
+    'V': ['V', 'VZ', 'VRTX', 'VLO', 'VMW', 'VFC', 'VRSK', 'VOO', 'VTI', 'VNQ'],
+    'W': ['WMT', 'WFC', 'WBA', 'WBD', 'WM', 'WDAY', 'W', 'WDC', 'WST', 'WELL'],
+    'X': ['XOM', 'XLK', 'XLF', 'XLE', 'XLV', 'XLY', 'XLP', 'XLI', 'XLNX', 'XYL'],
+    'Y': ['YUM', 'YELP', 'YUMC'],
+    'Z': ['ZTS', 'ZM', 'ZS', 'Z', 'ZG', 'ZBH', 'ZBRA', 'ZI']
+  }
+
   const searchStocks = useCallback(debounce(async (q) => {
     if (!q.trim() || q.length < 1) {
       setSearchResults([])
@@ -102,17 +132,41 @@ export default function AIInsights({ darkMode, finnhubFetch }) {
     try {
       // Use Yahoo search - no rate limits
       const data = await yahooFetch(q, 'search')
-      let results = []
-      if (data && data.quotes && Array.isArray(data.quotes)) {
-        results = data.quotes
-          .filter(r => r.quoteType === 'EQUITY' || r.quoteType === 'ETF')
-          .slice(0, 8)
-          .map(r => ({
-            symbol: r.symbol,
-            name: r.shortname || r.longname || r.symbol,
-            type: r.quoteType || 'EQUITY'
-          }))
+      // Handle both API response formats
+      const items = data?.results || data?.quotes || []
+      let results = items
+        .filter(r => {
+          const itemType = r.type || r.quoteType
+          return itemType === 'EQUITY' || itemType === 'ETF'
+        })
+        .map(r => ({
+          symbol: r.symbol,
+          name: r.name || r.shortname || r.longname || r.symbol,
+          type: r.type || r.quoteType || 'EQUITY'
+        }))
+
+      // Supplement with popular stocks for short queries
+      if (results.length < 5 && q.length <= 2) {
+        const firstLetter = q.charAt(0).toUpperCase()
+        const popularSymbols = POPULAR_STOCKS[firstLetter] || []
+        const queryUpper = q.toUpperCase()
+
+        const matchingPopular = popularSymbols
+          .filter(sym => sym.startsWith(queryUpper))
+          .filter(sym => !results.some(r => r.symbol === sym))
+          .map(sym => ({ symbol: sym, name: sym, type: 'EQUITY' }))
+
+        results = [...results, ...matchingPopular]
       }
+
+      // Deduplicate and limit
+      const seen = new Set()
+      results = results.filter(r => {
+        if (seen.has(r.symbol)) return false
+        seen.add(r.symbol)
+        return true
+      }).slice(0, 10)
+
       setSearchResults(results)
       setShowDropdown(true)
       setSelectedIndex(0)
