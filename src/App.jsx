@@ -1186,31 +1186,21 @@ function StockNewsModal({ symbol, onClose }) {
           <button onClick={onClose} className="p-2 hover:bg-gray-700 rounded-lg"><X className="w-5 h-5 text-gray-400" /></button>
         </div>
         <div className="overflow-y-auto max-h-[calc(80vh-80px)] p-4 space-y-3">
-          {loading ? [1,2,3].map(i => <Skeleton key={i} className="h-24 w-full" />) : news.length > 0 ? news.map((article, i) => {
-            const hasImage = article.image && article.image.length > 10
+          {loading ? [1,2,3].map(i => <Skeleton key={i} className="h-20 w-full" />) : news.length > 0 ? news.map((article, i) => {
             const summary = article.summary || ''
             return (
-              <a key={i} href={article.url} target="_blank" rel="noopener noreferrer" className="block bg-gray-700/30 hover:bg-gray-700/50 rounded-lg transition-all group overflow-hidden">
-                <div className="flex">
-                  {hasImage && (
-                    <div className="hidden sm:block w-28 h-24 flex-shrink-0">
-                      <img src={article.image} alt="" className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none' }} />
-                    </div>
-                  )}
-                  <div className="flex-1 p-4">
-                    <h4 className="text-white font-medium group-hover:text-blue-400 line-clamp-2 mb-1">{article.headline}</h4>
-                    {summary && (
-                      <p className="text-sm text-gray-400 line-clamp-1 mb-2">{summary}</p>
-                    )}
-                    <div className="flex items-center gap-2 text-xs">
-                      <span className="text-gray-300">{article.source}</span>
-                      <span className="text-gray-500">•</span>
-                      <span className="text-gray-400 flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {formatTimeAgo(article.datetime)}
-                      </span>
-                    </div>
-                  </div>
+              <a key={i} href={article.url} target="_blank" rel="noopener noreferrer" className="block bg-gray-700/30 hover:bg-gray-700/50 rounded-lg transition-all group p-4">
+                <h4 className="text-white font-medium group-hover:text-blue-400 line-clamp-2 mb-1">{article.headline}</h4>
+                {summary && (
+                  <p className="text-sm text-gray-400 line-clamp-2 mb-2">{summary}</p>
+                )}
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-gray-300">{article.source}</span>
+                  <span className="text-gray-500">•</span>
+                  <span className="text-gray-400 flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    {formatTimeAgo(article.datetime)}
+                  </span>
                 </div>
               </a>
             )
@@ -3479,45 +3469,33 @@ function NewsPage({ darkMode, watchlist }) {
       {!loading && news.length > 0 && (
         <div className="space-y-3">
           {news.map((article, i) => {
-            const hasImage = article.image && article.image.length > 10
             const summary = article.summary || ''
             return (
               <a key={`${article.ticker}-${i}`} href={article.url} target="_blank" rel="noopener noreferrer"
                 className="block rounded-xl border transition-all hover:scale-[1.002] bg-gray-800/50 border-gray-700 hover:border-gray-600 hover:bg-gray-800 overflow-hidden group">
-                <div className="flex">
-                  {/* Thumbnail */}
-                  {hasImage && (
-                    <div className="hidden sm:block w-36 h-28 flex-shrink-0">
-                      <img
-                        src={article.image}
-                        alt=""
-                        className="w-full h-full object-cover"
-                        onError={(e) => { e.target.style.display = 'none' }}
-                      />
+                <div className="flex gap-4 p-4">
+                  {/* Stock Badge */}
+                  {article.ticker && (
+                    <div className="flex-shrink-0">
+                      <span className="inline-block px-3 py-1.5 bg-blue-600 text-white text-sm font-bold rounded-lg">
+                        {article.ticker}
+                      </span>
                     </div>
                   )}
                   {/* Content */}
-                  <div className="flex-1 p-4">
-                    <div className="flex items-start gap-2 mb-1.5">
-                      {/* Ticker Badge */}
-                      {article.ticker && (
-                        <span className="flex-shrink-0 px-2 py-0.5 bg-blue-600/20 text-blue-400 text-xs font-bold rounded">
-                          {article.ticker}
-                        </span>
-                      )}
-                      <h3 className="font-medium line-clamp-2 text-white group-hover:text-blue-400 transition-colors">
-                        {article.headline}
-                      </h3>
-                    </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-medium line-clamp-2 text-white group-hover:text-blue-400 transition-colors mb-1">
+                      {article.headline}
+                    </h3>
                     {summary && (
-                      <p className="text-sm text-gray-400 line-clamp-1 mb-2">
+                      <p className="text-sm text-gray-400 line-clamp-2 mb-2">
                         {summary}
                       </p>
                     )}
-                    <div className="flex items-center gap-3 text-sm">
-                      <span className="text-gray-300 font-medium">{article.source}</span>
-                      <span className="text-gray-500">•</span>
-                      <span className="text-gray-400 flex items-center gap-1">
+                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                      <span className="text-gray-300">{article.source}</span>
+                      <span>•</span>
+                      <span className="flex items-center gap-1">
                         <Clock className="w-3 h-3" />
                         {formatTimeAgo(article.datetime)}
                       </span>
