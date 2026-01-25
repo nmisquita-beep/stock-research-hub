@@ -179,25 +179,28 @@ const finnhubFetch = async (endpoint, timeout = 10000) => {
 // Normalize Yahoo quote data to common format
 const normalizeYahooQuote = (data) => {
   if (!data) return null
+  // Use nullish coalescing (??) for numbers to preserve 0 and negative values
+  const changePercent = data.regularMarketChangePercent ?? data.changePercent ?? 0
+  const change = data.regularMarketChange ?? data.change ?? 0
   return {
-    c: data.regularMarketPrice || data.price || 0,
-    pc: data.regularMarketPreviousClose || data.previousClose || 0,
-    h: data.regularMarketDayHigh || data.dayHigh || 0,
-    l: data.regularMarketDayLow || data.dayLow || 0,
-    o: data.regularMarketOpen || data.open || 0,
-    change: data.regularMarketChange || 0,
-    changePercent: data.regularMarketChangePercent || 0,
-    volume: data.regularMarketVolume || 0,
-    marketCap: data.marketCap || 0,
-    peRatio: data.trailingPE || data.forwardPE || null,
-    eps: data.trailingEps || null,
-    weekHigh52: data.fiftyTwoWeekHigh || null,
-    weekLow52: data.fiftyTwoWeekLow || null,
-    avgVolume: data.averageDailyVolume3Month || data.averageVolume || 0,
-    name: data.shortName || data.longName || '',
-    exchange: data.exchange || '',
-    currency: data.currency || 'USD',
-    marketState: data.marketState || null,
+    c: data.regularMarketPrice ?? data.price ?? 0,
+    pc: data.regularMarketPreviousClose ?? data.previousClose ?? 0,
+    h: data.regularMarketDayHigh ?? data.dayHigh ?? 0,
+    l: data.regularMarketDayLow ?? data.dayLow ?? 0,
+    o: data.regularMarketOpen ?? data.open ?? 0,
+    change,
+    changePercent,
+    volume: data.regularMarketVolume ?? data.volume ?? 0,
+    marketCap: data.marketCap ?? 0,
+    peRatio: data.trailingPE ?? data.forwardPE ?? null,
+    eps: data.trailingEps ?? null,
+    weekHigh52: data.fiftyTwoWeekHigh ?? null,
+    weekLow52: data.fiftyTwoWeekLow ?? null,
+    avgVolume: data.averageDailyVolume3Month ?? data.averageVolume ?? 0,
+    name: data.shortName ?? data.longName ?? '',
+    exchange: data.exchange ?? '',
+    currency: data.currency ?? 'USD',
+    marketState: data.marketState ?? null,
     timestamp: new Date()
   }
 }
@@ -1936,8 +1939,8 @@ function ExplorePage({ onSelectStock }) {
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-2 sm:gap-3">
                   {symbols.map(symbol => {
                     const quote = stockData[symbol]
-                    const changePercent = quote?.changePercent || 0
-                    const pos = changePercent >= 0
+                    const pct = quote?.changePercent ?? 0
+                    const pos = pct >= 0
                     return (
                       <button
                         key={symbol}
@@ -1955,7 +1958,7 @@ function ExplorePage({ onSelectStock }) {
                           <>
                             <div className="text-sm text-gray-300 mt-1">${quote.c.toFixed(2)}</div>
                             <div className={`text-sm font-medium ${pos ? 'text-green-400' : 'text-red-400'}`}>
-                              {pos ? '+' : ''}{changePercent.toFixed(2)}%
+                              {pos ? '+' : ''}{pct.toFixed(2)}%
                             </div>
                           </>
                         ) : (
@@ -2827,7 +2830,8 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock }) {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
             {watchlist.map(symbol => {
               const quote = watchlistQuotes[symbol]
-              const positive = (quote?.changePercent || 0) >= 0
+              const pct = quote?.changePercent ?? 0
+              const positive = pct >= 0
               const sparkData = quote ? generateSparklineData(quote.c, quote.pc) : []
               return (
                 <div
@@ -2850,7 +2854,7 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock }) {
                         <div className="text-lg font-bold text-white">{formatCurrency(quote.c)}</div>
                         <div className={`text-xs font-medium flex items-center gap-1 ${positive ? 'text-green-400' : 'text-red-400'}`}>
                           {positive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                          {positive ? '+' : ''}{quote.changePercent?.toFixed(2)}%
+                          {positive ? '+' : ''}{pct.toFixed(2)}%
                         </div>
                       </div>
                       <MiniSparkline data={sparkData} positive={positive} height={32} />
@@ -3411,7 +3415,8 @@ function Watchlist({ watchlist, setWatchlist, onSelectStock }) {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {watchlist.map(symbol => {
             const quote = quotes[symbol]
-            const positive = (quote?.changePercent || 0) >= 0
+            const pct = quote?.changePercent ?? 0
+            const positive = pct >= 0
             const sparkData = quote ? generateSparklineData(quote.c, quote.pc) : []
             return (
               <div key={symbol} className="rounded-xl p-4 border transition-all hover:scale-[1.02] bg-gray-800/50 border-gray-700 hover:border-gray-600">
@@ -3427,7 +3432,7 @@ function Watchlist({ watchlist, setWatchlist, onSelectStock }) {
                       <div className="text-2xl font-bold text-white">{formatCurrency(quote.c)}</div>
                       <div className={`text-sm font-medium flex items-center gap-1 ${positive ? 'text-green-400' : 'text-red-400'}`}>
                         {positive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                        {positive ? '+' : ''}{quote.changePercent?.toFixed(2)}%
+                        {positive ? '+' : ''}{pct.toFixed(2)}%
                       </div>
                     </div>
                     <MiniSparkline data={sparkData} positive={positive} height={40} />
