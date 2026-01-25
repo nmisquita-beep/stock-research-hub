@@ -220,6 +220,14 @@ const formatLargeNumber = (value) => {
   return formatCurrency(value)
 }
 
+const formatVolume = (vol) => {
+  if (!vol || vol === 0) return 'N/A'
+  if (vol >= 1e9) return `${(vol / 1e9).toFixed(2)}B`
+  if (vol >= 1e6) return `${(vol / 1e6).toFixed(2)}M`
+  if (vol >= 1e3) return `${(vol / 1e3).toFixed(2)}K`
+  return vol.toLocaleString()
+}
+
 const analyzeSentiment = (text) => {
   if (!text) return { score: 0, label: 'neutral', confidence: 50 }
   const lower = text.toLowerCase()
@@ -1928,8 +1936,8 @@ function ExplorePage({ onSelectStock }) {
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-2 sm:gap-3">
                   {symbols.map(symbol => {
                     const quote = stockData[symbol]
-                    const change = quote?.pc ? ((quote.c - quote.pc) / quote.pc * 100) : 0
-                    const pos = change >= 0
+                    const changePercent = quote?.changePercent || 0
+                    const pos = changePercent >= 0
                     return (
                       <button
                         key={symbol}
@@ -1947,7 +1955,7 @@ function ExplorePage({ onSelectStock }) {
                           <>
                             <div className="text-sm text-gray-300 mt-1">${quote.c.toFixed(2)}</div>
                             <div className={`text-sm font-medium ${pos ? 'text-green-400' : 'text-red-400'}`}>
-                              {pos ? '+' : ''}{change.toFixed(1)}%
+                              {pos ? '+' : ''}{changePercent.toFixed(2)}%
                             </div>
                           </>
                         ) : (
@@ -2150,7 +2158,6 @@ function ScreenerTab({ onSelectStock }) {
           const raw = result.value
           const normalized = normalizeYahooQuote(raw)
           if (normalized && normalized.c > 0) {
-            const change = normalized.pc ? ((normalized.c - normalized.pc) / normalized.pc * 100) : 0
             const distFrom52High = normalized.weekHigh52
               ? ((normalized.c - normalized.weekHigh52) / normalized.weekHigh52 * 100)
               : null
@@ -2159,7 +2166,7 @@ function ScreenerTab({ onSelectStock }) {
               symbol: screen.stocks[i],
               name: normalized.name,
               price: normalized.c,
-              change,
+              change: normalized.changePercent || 0,
               pe: normalized.peRatio,
               marketCap: normalized.marketCap,
               volume: normalized.volume,
@@ -2820,9 +2827,7 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock }) {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
             {watchlist.map(symbol => {
               const quote = watchlistQuotes[symbol]
-              const change = quote ? quote.c - quote.pc : 0
-              const pctChange = quote?.pc ? (change / quote.pc) * 100 : 0
-              const positive = change >= 0
+              const positive = (quote?.changePercent || 0) >= 0
               const sparkData = quote ? generateSparklineData(quote.c, quote.pc) : []
               return (
                 <div
@@ -2845,7 +2850,7 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock }) {
                         <div className="text-lg font-bold text-white">{formatCurrency(quote.c)}</div>
                         <div className={`text-xs font-medium flex items-center gap-1 ${positive ? 'text-green-400' : 'text-red-400'}`}>
                           {positive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                          {positive ? '+' : ''}{pctChange.toFixed(2)}%
+                          {positive ? '+' : ''}{quote.changePercent?.toFixed(2)}%
                         </div>
                       </div>
                       <MiniSparkline data={sparkData} positive={positive} height={32} />
@@ -3301,11 +3306,12 @@ function StockDetail({ symbol, onClose }) {
             {(() => {
               const metrics = [
                 { label: 'Open', value: quote?.o, format: v => formatCurrency(v) },
-                { label: 'Day Range', value: quote?.l && quote?.h ? [quote.l, quote.h] : null, format: v => `${formatCurrency(v[0])} - ${formatCurrency(v[1])}` },
-                { label: '52W Range', value: quote?.weekLow52 && quote?.weekHigh52 ? [quote.weekLow52, quote.weekHigh52] : null, format: v => `${formatCurrency(v[0])} - ${formatCurrency(v[1])}` },
+                { label: 'High', value: quote?.h, format: v => formatCurrency(v) },
+                { label: 'Low', value: quote?.l, format: v => formatCurrency(v) },
                 { label: 'Prev Close', value: quote?.pc, format: v => formatCurrency(v) },
-                { label: 'Volume', value: quote?.volume, format: v => v.toLocaleString() },
-                { label: 'Avg Volume', value: quote?.avgVolume, format: v => v.toLocaleString() },
+                { label: 'Volume', value: quote?.volume, format: v => formatVolume(v) },
+                { label: 'Avg Volume', value: quote?.avgVolume, format: v => formatVolume(v) },
+                { label: '52W Range', value: quote?.weekLow52 && quote?.weekHigh52 ? [quote.weekLow52, quote.weekHigh52] : null, format: v => `${formatCurrency(v[0])} - ${formatCurrency(v[1])}` },
                 { label: 'P/E Ratio', value: quote?.peRatio, format: v => v.toFixed(2) },
                 { label: 'Market Cap', value: quote?.marketCap, format: v => formatLargeNumber(v) }
               ].filter(m => m.value && (typeof m.value !== 'number' || m.value > 0))
@@ -3405,9 +3411,7 @@ function Watchlist({ watchlist, setWatchlist, onSelectStock }) {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {watchlist.map(symbol => {
             const quote = quotes[symbol]
-            const change = quote ? quote.c - quote.pc : 0
-            const pctChange = quote?.pc ? (change / quote.pc) * 100 : 0
-            const positive = change >= 0
+            const positive = (quote?.changePercent || 0) >= 0
             const sparkData = quote ? generateSparklineData(quote.c, quote.pc) : []
             return (
               <div key={symbol} className="rounded-xl p-4 border transition-all hover:scale-[1.02] bg-gray-800/50 border-gray-700 hover:border-gray-600">
@@ -3423,7 +3427,7 @@ function Watchlist({ watchlist, setWatchlist, onSelectStock }) {
                       <div className="text-2xl font-bold text-white">{formatCurrency(quote.c)}</div>
                       <div className={`text-sm font-medium flex items-center gap-1 ${positive ? 'text-green-400' : 'text-red-400'}`}>
                         {positive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                        {positive ? '+' : ''}{pctChange.toFixed(2)}%
+                        {positive ? '+' : ''}{quote.changePercent?.toFixed(2)}%
                       </div>
                     </div>
                     <MiniSparkline data={sparkData} positive={positive} height={40} />
@@ -3465,9 +3469,8 @@ function MarketMovers({ onSelectStock }) {
       const symbol = popularStocks[i]
       if (result.status === 'fulfilled' && result.value) {
         const normalized = normalizeYahooQuote(result.value)
-        if (normalized && normalized.c > 0 && normalized.pc > 0) {
-          const change = ((normalized.c - normalized.pc) / normalized.pc) * 100
-          stockData.push({ symbol, price: normalized.c, change })
+        if (normalized && normalized.c > 0) {
+          stockData.push({ symbol, price: normalized.c, change: normalized.changePercent || 0 })
         }
       }
     })
@@ -3678,9 +3681,9 @@ function NewsPage({ watchlist }) {
     results.forEach((result, i) => {
       if (result.status === 'fulfilled' && result.value) {
         const normalized = normalizeYahooQuote(result.value)
-        if (normalized && normalized.c > 0 && normalized.pc > 0) {
-          const change = Math.abs((normalized.c - normalized.pc) / normalized.pc * 100)
-          stockData.push({ symbol: POPULAR_FOR_MOVERS[i], change })
+        if (normalized && normalized.c > 0) {
+          const absChange = Math.abs(normalized.changePercent || 0)
+          stockData.push({ symbol: POPULAR_FOR_MOVERS[i], change: absChange })
         }
       }
     })
