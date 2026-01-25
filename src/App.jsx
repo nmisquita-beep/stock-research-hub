@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, createContext, useContext, Co
 import {
   TrendingUp, TrendingDown, Plus, X, Settings, BarChart3, Newspaper,
   Home, Clock, RefreshCw, Star, Trash2, AlertCircle, CheckCircle,
-  Activity, Search, Moon, Sun, Zap, Calendar,
+  Activity, Search, Zap, Calendar,
   AlertTriangle, ChevronRight, HelpCircle, Sparkles,
   Cloud, CloudOff, LogIn, LogOut, User, Brain,
   Filter, Grid3X3, PieChart, Target, DollarSign, Award, Layers,
@@ -436,15 +436,19 @@ function useCloudSync(key, localValue, setLocalValue, user) {
 }
 
 // ============ UI COMPONENTS ============
-function Tooltip({ children, content }) {
+function Tooltip({ children, content, position = 'bottom' }) {
   const [show, setShow] = useState(false)
   return (
     <div className="relative inline-block overflow-visible" onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
       {children}
       {show && (
-        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 text-xs bg-gray-900 text-white rounded-lg whitespace-nowrap z-[100] shadow-lg border border-gray-700 pointer-events-none">
+        <div className={`absolute left-1/2 -translate-x-1/2 px-3 py-1.5 text-xs bg-gray-900 text-white rounded-lg whitespace-nowrap z-[100] shadow-lg border border-gray-700 pointer-events-none ${
+          position === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'
+        }`}>
           {content}
-          <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-gray-900" />
+          <div className={`absolute left-1/2 -translate-x-1/2 border-4 border-transparent ${
+            position === 'top' ? 'top-full -mt-1 border-t-gray-900' : 'bottom-full -mb-1 border-b-gray-900'
+          }`} />
         </div>
       )}
     </div>
@@ -520,73 +524,75 @@ function FearGreedIndicator({ value }) {
 }
 
 // ============ FRIENDLY GUIDED TOUR ============
-function OnboardingTour({ onComplete, onOpenSearch }) {
+function OnboardingTour({ onComplete, onOpenSearch, setActivePage }) {
   const [step, setStep] = useState(0)
   const [highlightRect, setHighlightRect] = useState(null)
   const [isAnimating, setIsAnimating] = useState(false)
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
 
   const steps = [
     {
       type: 'welcome',
+      tab: null,
       title: 'Welcome to Stock Research Hub!',
       description: 'Your personal dashboard for stock research and market insights.',
       emoji: '🚀'
     },
     {
       type: 'highlight',
+      tab: 'dashboard',
       target: '[data-tour="dashboard"]',
       title: 'Dashboard',
-      description: 'View market indices, your watchlist, and sector performance at a glance.',
-      position: 'bottom'
+      description: 'View market indices, your watchlist, and sector performance at a glance.'
     },
     {
       type: 'highlight',
+      tab: 'dashboard',
       target: '[data-tour="watchlist"]',
       title: 'Your Watchlist',
-      description: 'Track your favorite stocks - click any stock to see detailed charts and data.',
-      position: 'top'
+      description: 'Track your favorite stocks - click any stock to see detailed charts and data.'
     },
     {
       type: 'highlight',
+      tab: 'explore',
       target: '[data-tour="explore"]',
       title: 'Explore Stocks',
-      description: 'Browse 100+ stocks organized by sector - discover new investment opportunities.',
-      position: 'bottom'
+      description: 'Browse 100+ stocks organized by sector - discover new investment opportunities.'
     },
     {
       type: 'highlight',
-      target: '[data-tour="insights"]',
+      tab: 'insights',
+      target: '[data-tour="ai-search"]',
       title: 'AI Insights',
-      description: 'Get AI-powered analysis on any stock.',
-      position: 'bottom'
+      description: 'Get AI-powered analysis on any stock with technical and fundamental insights.'
     },
     {
       type: 'highlight',
+      tab: 'screener',
       target: '[data-tour="screener"]',
       title: 'Stock Screener',
-      description: 'Find stocks using pre-built screens like Undervalued Growth and Dividend Champions.',
-      position: 'bottom'
+      description: 'Find stocks using pre-built screens like Undervalued Growth and Dividend Champions.'
     },
     {
       type: 'highlight',
+      tab: 'earnings',
       target: '[data-tour="earnings"]',
       title: 'Earnings Calendar',
-      description: 'Track upcoming earnings reports with expected vs previous EPS.',
-      position: 'bottom'
+      description: 'Track upcoming earnings reports with expected vs previous EPS.'
     },
     {
       type: 'highlight',
+      tab: 'news',
       target: '[data-tour="news"]',
       title: 'Market News',
-      description: 'Stay updated with market-moving news for your watchlist and top movers.',
-      position: 'bottom'
+      description: 'Stay updated with market-moving news for your watchlist and top movers.'
     },
     {
       type: 'highlight',
+      tab: null,
       target: '[data-tour="search"]',
       title: 'Quick Search',
       description: 'Press / anytime to quickly search for any stock.',
-      position: 'bottom',
       isFinal: true
     }
   ]
@@ -596,7 +602,14 @@ function OnboardingTour({ onComplete, onOpenSearch }) {
   const isFinalStep = currentStep.isFinal
   const totalSteps = steps.length
 
-  // Keyboard navigation
+  // Handle window resize
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  // Keyboard navigation (desktop only)
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'ArrowRight' || e.key === ' ') {
@@ -618,12 +631,19 @@ function OnboardingTour({ onComplete, onOpenSearch }) {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [step, isFinalStep])
 
+  // Update highlight and switch tabs
   useEffect(() => {
     if (isModal) {
       setHighlightRect(null)
       return
     }
 
+    // Switch to the correct tab if specified
+    if (currentStep.tab && setActivePage) {
+      setActivePage(currentStep.tab)
+    }
+
+    // Wait for tab to render, then find and highlight element
     const updateHighlight = () => {
       const element = document.querySelector(currentStep.target)
       if (element) {
@@ -634,19 +654,25 @@ function OnboardingTour({ onComplete, onOpenSearch }) {
           width: rect.width + 12,
           height: rect.height + 12
         })
+        // Scroll element into view on mobile
+        if (isMobile) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
       } else {
         setHighlightRect(null)
       }
     }
 
-    updateHighlight()
+    // Delay to allow tab content to render
+    const timeout = setTimeout(updateHighlight, 150)
     window.addEventListener('resize', updateHighlight)
     window.addEventListener('scroll', updateHighlight)
     return () => {
+      clearTimeout(timeout)
       window.removeEventListener('resize', updateHighlight)
       window.removeEventListener('scroll', updateHighlight)
     }
-  }, [step, currentStep])
+  }, [step, currentStep, setActivePage, isMobile])
 
   const handleNext = () => {
     if (step === steps.length - 1) {
@@ -676,41 +702,18 @@ function OnboardingTour({ onComplete, onOpenSearch }) {
     onComplete()
   }
 
-  // Calculate tooltip position for highlight steps
-  const getTooltipPosition = () => {
-    if (!highlightRect) return {}
-
-    const padding = 12
-    const tooltipHeight = 160
-    let top = highlightRect.top + highlightRect.height + padding
-    let left = highlightRect.left + highlightRect.width / 2
-
-    // If tooltip would go off bottom, position above
-    if (top + tooltipHeight > window.innerHeight - 20) {
-      top = highlightRect.top - tooltipHeight - padding
-    }
-
-    // Keep within horizontal bounds
-    const tooltipWidth = 320
-    if (left - tooltipWidth / 2 < 20) left = tooltipWidth / 2 + 20
-    if (left + tooltipWidth / 2 > window.innerWidth - 20) left = window.innerWidth - tooltipWidth / 2 - 20
-
-    const arrowOnTop = top > highlightRect.top
-
-    return { top, left, arrowOnTop }
-  }
-
-  const tooltipPos = getTooltipPosition()
-
   return (
     <div className={`fixed inset-0 z-[200] transition-opacity duration-300 ${isAnimating ? 'opacity-50' : 'opacity-100'}`}>
-      {/* Semi-transparent overlay - users can still see the site */}
-      <div className="absolute inset-0 bg-black/50" onClick={handleSkip} />
+      {/* Semi-transparent overlay - does NOT dismiss on click */}
+      <div
+        className="absolute inset-0 bg-black/60"
+        onClick={(e) => e.stopPropagation()}
+      />
 
       {/* Highlight cutout for non-modal steps */}
       {!isModal && highlightRect && (
         <>
-          {/* Spotlight effect - brighten the highlighted element */}
+          {/* Spotlight effect */}
           <div
             className="absolute rounded-xl transition-all duration-300 ease-out pointer-events-none"
             style={{
@@ -718,9 +721,9 @@ function OnboardingTour({ onComplete, onOpenSearch }) {
               left: highlightRect.left,
               width: highlightRect.width,
               height: highlightRect.height,
-              boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.5)',
+              boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.6)',
               background: 'transparent',
-              border: '3px solid #3b82f6',
+              border: '3px solid #8b5cf6',
               animation: 'pulse-border 2s ease-in-out infinite'
             }}
           />
@@ -732,7 +735,7 @@ function OnboardingTour({ onComplete, onOpenSearch }) {
               left: highlightRect.left - 4,
               width: highlightRect.width + 8,
               height: highlightRect.height + 8,
-              boxShadow: '0 0 30px 10px rgba(59, 130, 246, 0.4)',
+              boxShadow: '0 0 30px 10px rgba(139, 92, 246, 0.4)',
               transition: 'all 0.3s ease-out'
             }}
           />
@@ -742,16 +745,16 @@ function OnboardingTour({ onComplete, onOpenSearch }) {
       {/* Welcome Modal (centered) */}
       {isModal && (
         <div className="absolute inset-0 flex items-center justify-center p-4">
-          <div className="bg-gray-800 rounded-2xl border border-gray-700 shadow-2xl max-w-md w-full overflow-hidden transform transition-all">
-            <div className="p-8 text-center">
+          <div className="bg-gray-800 rounded-2xl border border-purple-500/50 shadow-2xl max-w-md w-full overflow-hidden">
+            <div className="p-6 md:p-8 text-center">
               <div className="text-5xl mb-4">{currentStep.emoji}</div>
-              <h2 className="text-2xl font-bold text-white mb-3">{currentStep.title}</h2>
+              <h2 className="text-xl md:text-2xl font-bold text-white mb-3">{currentStep.title}</h2>
               <p className="text-gray-400 leading-relaxed">{currentStep.description}</p>
             </div>
-            <div className="px-8 pb-6 flex flex-col gap-3">
+            <div className="px-6 md:px-8 pb-6 flex flex-col gap-3">
               <button
                 onClick={handleNext}
-                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition-colors"
+                className="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-medium transition-colors"
               >
                 Let's go!
               </button>
@@ -759,105 +762,68 @@ function OnboardingTour({ onComplete, onOpenSearch }) {
                 onClick={handleSkip}
                 className="w-full py-2 text-gray-400 hover:text-gray-300 text-sm transition-colors"
               >
-                Skip
+                Skip tour
               </button>
-            </div>
-            <div className="px-8 pb-6 text-center text-xs text-gray-500">
-              Press <kbd className="px-1.5 py-0.5 bg-gray-700 rounded text-gray-400">Space</kbd> to continue
             </div>
           </div>
         </div>
       )}
 
-      {/* Tooltip for highlight steps */}
-      {!isModal && highlightRect && (
-        <div
-          className="absolute w-80 transition-all duration-300 ease-out"
-          style={{
-            top: `${tooltipPos.top}px`,
-            left: `${tooltipPos.left}px`,
-            transform: 'translateX(-50%)'
-          }}
-        >
-          {/* Arrow pointing to element */}
-          {!tooltipPos.arrowOnTop && (
-            <div className="flex justify-center -mb-2">
-              <div className="w-4 h-4 bg-gray-800 border-l border-t border-gray-600 transform rotate-45" />
-            </div>
-          )}
-
-          <div className="bg-gray-800 rounded-xl border border-gray-600 shadow-2xl overflow-hidden">
-            {/* Step indicator */}
-            <div className="flex items-center justify-between px-4 pt-3">
-              <span className="text-xs text-gray-500">Step {step} of {totalSteps - 1}</span>
-              <div className="flex gap-1">
-                {steps.slice(1).map((_, i) => (
-                  <div
-                    key={i}
-                    className={`h-1.5 w-1.5 rounded-full transition-all duration-300 ${
-                      i + 1 === step ? 'bg-blue-500' : i + 1 < step ? 'bg-blue-400' : 'bg-gray-600'
-                    }`}
-                  />
-                ))}
-              </div>
+      {/* Tooltip - Fixed at bottom on mobile, positioned near element on desktop */}
+      {!isModal && (
+        <div className={`fixed z-50 ${isMobile ? 'inset-x-4 bottom-4' : 'bottom-8 left-1/2 -translate-x-1/2'}`}>
+          <div className="bg-gray-800 rounded-xl border border-purple-500/50 shadow-2xl max-w-md mx-auto overflow-hidden">
+            {/* Progress dots */}
+            <div className="flex justify-center gap-1.5 pt-4">
+              {steps.map((_, i) => (
+                <div
+                  key={i}
+                  className={`w-2 h-2 rounded-full transition-colors ${
+                    i === step ? 'bg-purple-500' : i < step ? 'bg-purple-400/50' : 'bg-gray-600'
+                  }`}
+                />
+              ))}
             </div>
 
             {/* Content */}
-            <div className="p-4 pt-2">
-              <h3 className="text-lg font-bold text-white mb-1">{currentStep.title}</h3>
-              <p className="text-gray-400 text-sm leading-relaxed">{currentStep.description}</p>
+            <div className="p-4 md:p-5 pt-3">
+              <h3 className="text-lg md:text-xl font-bold text-white mb-2">{currentStep.title}</h3>
+              <p className="text-gray-300 text-sm md:text-base leading-relaxed">{currentStep.description}</p>
             </div>
 
-            {/* Actions */}
-            <div className="flex items-center justify-between px-4 pb-3">
-              <button
-                onClick={handleSkip}
-                className="text-sm text-gray-500 hover:text-gray-300 transition-colors"
-              >
-                Skip
-              </button>
-              <div className="flex gap-2">
-                {step > 1 && (
-                  <button
-                    onClick={handleBack}
-                    className="px-3 py-1.5 text-sm text-gray-300 hover:text-white transition-colors"
-                  >
-                    ← Back
-                  </button>
-                )}
+            {/* Navigation buttons */}
+            <div className="flex items-center justify-between px-4 md:px-5 pb-4 gap-3">
+              {step > 0 ? (
                 <button
-                  onClick={handleNext}
-                  className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+                  onClick={handleBack}
+                  className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
                 >
-                  {isFinalStep ? 'Start Exploring' : 'Next →'}
+                  Back
                 </button>
-              </div>
-            </div>
-
-            {/* Keyboard hints */}
-            <div className="px-4 pb-3 flex justify-center gap-3 text-[10px] text-gray-500">
-              <span>← → navigate</span>
-              <span>•</span>
-              <span>Space continue</span>
-              <span>•</span>
-              <span>Esc skip</span>
+              ) : (
+                <button
+                  onClick={handleSkip}
+                  className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
+                >
+                  Skip
+                </button>
+              )}
+              <button
+                onClick={handleNext}
+                className="px-6 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-white font-medium transition-colors"
+              >
+                {isFinalStep ? 'Start Exploring' : 'Next'}
+              </button>
             </div>
           </div>
-
-          {/* Arrow pointing to element (bottom) */}
-          {tooltipPos.arrowOnTop && (
-            <div className="flex justify-center -mt-2">
-              <div className="w-4 h-4 bg-gray-800 border-r border-b border-gray-600 transform rotate-45" />
-            </div>
-          )}
         </div>
       )}
 
       {/* CSS for pulse animation */}
       <style>{`
         @keyframes pulse-border {
-          0%, 100% { border-color: #3b82f6; }
-          50% { border-color: #60a5fa; }
+          0%, 100% { border-color: #8b5cf6; }
+          50% { border-color: #a78bfa; }
         }
       `}</style>
     </div>
@@ -1408,7 +1374,7 @@ function PredictiveSearch({ onSelect, onClose, placeholder = "Search stocks...",
 }
 
 // ============ EARNINGS CALENDAR ============
-function EarningsCalendar({ onSelect, darkMode }) {
+function EarningsCalendar({ onSelect }) {
   const [earnings, setEarnings] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -1457,7 +1423,7 @@ function EarningsCalendar({ onSelect, darkMode }) {
 }
 
 // ============ SMART WATCHLIST INSIGHTS ============
-function WatchlistInsights({ watchlist, quotes, darkMode }) {
+function WatchlistInsights({ watchlist, quotes }) {
   if (!watchlist || watchlist.length === 0) return null
 
   const validQuotes = watchlist.filter(s => quotes[s] && quotes[s].pc).map(s => ({
@@ -1560,7 +1526,7 @@ function StockNewsModal({ symbol, onClose }) {
 }
 
 // ============ MOBILE BOTTOM NAV ============
-function MobileBottomNav({ activePage, setActivePage, onSearchOpen, darkMode }) {
+function MobileBottomNav({ activePage, setActivePage, onSearchOpen }) {
   const [showMoreMenu, setShowMoreMenu] = useState(false)
 
   const mainItems = [
@@ -1655,7 +1621,7 @@ function MobileBottomNav({ activePage, setActivePage, onSearchOpen, darkMode }) 
 }
 
 // ============ DESKTOP NAVIGATION ============
-function DesktopNav({ activePage, setActivePage, onSearchOpen, darkMode, toggleDarkMode, syncStatus }) {
+function DesktopNav({ activePage, setActivePage, onSearchOpen, syncStatus }) {
   const { user, loading: authLoading, signIn, signOut: handleSignOut } = useAuth()
   const [showUserMenu, setShowUserMenu] = useState(false)
 
@@ -1702,16 +1668,14 @@ function DesktopNav({ activePage, setActivePage, onSearchOpen, darkMode, toggleD
                 </div>
               </Tooltip>
             )}
-            <Tooltip content="Search (/)">
-              <button data-tour="search" onClick={onSearchOpen} className="p-2 rounded-lg transition-colors hover:bg-gray-700 text-gray-300">
-                <Search className="w-5 h-5" />
-              </button>
-            </Tooltip>
-            <Tooltip content="Toggle theme">
-              <button onClick={toggleDarkMode} className="p-2 rounded-lg transition-colors hover:bg-gray-700 text-gray-300">
-                {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-              </button>
-            </Tooltip>
+            <button
+              data-tour="search"
+              aria-label="Search (Press /)"
+              onClick={onSearchOpen}
+              className="p-2 rounded-lg transition-colors hover:bg-gray-700 text-gray-300"
+            >
+              <Search className="w-5 h-5" />
+            </button>
             {authLoading ? (
               <div className="w-8 h-8 rounded-full bg-gray-700 animate-pulse" />
             ) : user ? (
@@ -2122,7 +2086,7 @@ const SECTOR_MAP = {
   'Industrial': ['BA', 'CAT', 'DE', 'HON', 'UPS', 'FDX', 'LMT', 'RTX', 'GE', 'MMM']
 }
 
-function ScreenerTab({ onSelectStock, darkMode }) {
+function ScreenerTab({ onSelectStock }) {
   const [selectedScreen, setSelectedScreen] = useState(null)
   const [screenResults, setScreenResults] = useState([])
   const [loading, setLoading] = useState(false)
@@ -2538,7 +2502,7 @@ const EARNINGS_STOCKS = [
   { symbol: 'UNH', date: '2025-01-16', expectedEps: 6.68, prevEps: 6.16 }
 ]
 
-function EarningsTab({ onSelectStock, watchlist, darkMode }) {
+function EarningsTab({ onSelectStock, watchlist }) {
   const [earnings, setEarnings] = useState([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all')
@@ -2669,7 +2633,7 @@ function EarningsTab({ onSelectStock, watchlist, darkMode }) {
 }
 
 // ============ COMBINED DASHBOARD ============
-function Dashboard({ watchlist, setWatchlist, onSelectStock, darkMode }) {
+function Dashboard({ watchlist, setWatchlist, onSelectStock }) {
   const [marketData, setMarketData] = useState({})
   const [watchlistQuotes, setWatchlistQuotes] = useState({})
   const [sectorData, setSectorData] = useState({})
@@ -2964,7 +2928,7 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock, darkMode }) {
 }
 
 // ============ MARKET OVERVIEW (LEGACY - KEPT FOR REFERENCE) ============
-function MarketOverview({ onSelectStock, darkMode }) {
+function MarketOverview({ onSelectStock }) {
   const [marketData, setMarketData] = useState({})
   const [trendingData, setTrendingData] = useState({})
   const [loading, setLoading] = useState(true)
@@ -3052,7 +3016,7 @@ function MarketOverview({ onSelectStock, darkMode }) {
           </div>
         </div>
         <div className="space-y-4">
-          <EarningsCalendar onSelect={onSelectStock} darkMode={darkMode} />
+          <EarningsCalendar onSelect={onSelectStock} />
         </div>
       </div>
     </div>
@@ -3210,7 +3174,7 @@ function StockChart({ symbol, range = '1mo', interval = '1d' }) {
 }
 
 // ============ STOCK DETAIL MODAL ============
-function StockDetail({ symbol, onClose, darkMode }) {
+function StockDetail({ symbol, onClose }) {
   const [quote, setQuote] = useState(null)
   const [loading, setLoading] = useState(true)
   const [showNews, setShowNews] = useState(false)
@@ -3365,7 +3329,7 @@ function StockDetail({ symbol, onClose, darkMode }) {
 }
 
 // ============ WATCHLIST ============
-function Watchlist({ watchlist, setWatchlist, onSelectStock, darkMode }) {
+function Watchlist({ watchlist, setWatchlist, onSelectStock }) {
   const [quotes, setQuotes] = useState({})
   const [loading, setLoading] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
@@ -3434,7 +3398,7 @@ function Watchlist({ watchlist, setWatchlist, onSelectStock, darkMode }) {
         </div>
       )}
 
-      <WatchlistInsights watchlist={watchlist} quotes={quotes} darkMode={darkMode} />
+      <WatchlistInsights watchlist={watchlist} quotes={quotes} />
 
       {watchlist && watchlist.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -3482,7 +3446,7 @@ function Watchlist({ watchlist, setWatchlist, onSelectStock, darkMode }) {
 }
 
 // ============ MARKET MOVERS (SIMPLIFIED EXPLORE) ============
-function MarketMovers({ onSelectStock, darkMode }) {
+function MarketMovers({ onSelectStock }) {
   const [gainers, setGainers] = useState([])
   const [losers, setLosers] = useState([])
   const [loading, setLoading] = useState(true)
@@ -3628,7 +3592,7 @@ const newsCache = {
 }
 
 // ============ NEWS PAGE - STOCK-SPECIFIC NEWS ============
-function NewsPage({ darkMode, watchlist }) {
+function NewsPage({ watchlist }) {
   const [news, setNews] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -3961,7 +3925,7 @@ function NewsPage({ darkMode, watchlist }) {
 }
 
 // ============ SETTINGS PAGE ============
-function SettingsPage({ darkMode, syncStatus, onShowTour }) {
+function SettingsPage({ syncStatus, onShowTour }) {
   const { user, signIn, signOut: handleSignOut } = useAuth()
 
   const handleClear = () => {
@@ -4116,7 +4080,6 @@ function AppContent() {
   const [activePage, setActivePage] = useState('dashboard')
   const [selectedStock, setSelectedStock] = useState(null)
   const [showSearch, setShowSearch] = useState(false)
-  const [darkMode, setDarkMode] = useState(true)
   const [showTour, setShowTour] = useState(() => !localStorage.getItem('tour_completed'))
   const [watchlist, setWatchlist] = useState(() => {
     const saved = localStorage.getItem('watchlist')
@@ -4164,10 +4127,10 @@ function AppContent() {
   }
 
   return (
-    <div className="min-h-screen pb-20 md:pb-0 transition-colors bg-gray-900">
+    <div className="min-h-screen pb-20 md:pb-0 bg-gray-900">
       <DesktopNav activePage={activePage} setActivePage={setActivePage}
-        onSearchOpen={() => setShowSearch(true)} darkMode={darkMode} toggleDarkMode={() => setDarkMode(!darkMode)} syncStatus={syncStatus} />
-      <MobileBottomNav activePage={activePage} setActivePage={setActivePage} onSearchOpen={() => setShowSearch(true)} darkMode={darkMode} />
+        onSearchOpen={() => setShowSearch(true)} syncStatus={syncStatus} />
+      <MobileBottomNav activePage={activePage} setActivePage={setActivePage} onSearchOpen={() => setShowSearch(true)} />
 
       {!user && !dismissedSyncBanner && (
         <div className="border-b bg-blue-900/20 border-blue-500/30">
@@ -4189,19 +4152,19 @@ function AppContent() {
       )}
 
       <main className="max-w-7xl mx-auto px-4 py-6 pb-24 md:pb-6">
-        {activePage === 'dashboard' && <Dashboard watchlist={watchlist} setWatchlist={setWatchlist} onSelectStock={setSelectedStock} darkMode={darkMode} />}
-        {activePage === 'explore' && <ExplorePage onSelectStock={setSelectedStock} darkMode={darkMode} />}
-        {activePage === 'insights' && <AIInsights darkMode={darkMode} finnhubFetch={finnhubFetch} />}
-        {activePage === 'screener' && <ScreenerTab onSelectStock={setSelectedStock} darkMode={darkMode} />}
-        {activePage === 'earnings' && <EarningsTab onSelectStock={setSelectedStock} watchlist={watchlist} darkMode={darkMode} />}
-        {activePage === 'news' && <NewsPage darkMode={darkMode} watchlist={watchlist} />}
-        {activePage === 'watchlist' && <Watchlist watchlist={watchlist} setWatchlist={setWatchlist} onSelectStock={setSelectedStock} darkMode={darkMode} />}
-        {activePage === 'settings' && <SettingsPage darkMode={darkMode} syncStatus={syncStatus} onShowTour={() => setShowTour(true)} />}
+        {activePage === 'dashboard' && <Dashboard watchlist={watchlist} setWatchlist={setWatchlist} onSelectStock={setSelectedStock} />}
+        {activePage === 'explore' && <ExplorePage onSelectStock={setSelectedStock} />}
+        {activePage === 'insights' && <AIInsights finnhubFetch={finnhubFetch} />}
+        {activePage === 'screener' && <ScreenerTab onSelectStock={setSelectedStock} />}
+        {activePage === 'earnings' && <EarningsTab onSelectStock={setSelectedStock} watchlist={watchlist} />}
+        {activePage === 'news' && <NewsPage watchlist={watchlist} />}
+        {activePage === 'watchlist' && <Watchlist watchlist={watchlist} setWatchlist={setWatchlist} onSelectStock={setSelectedStock} />}
+        {activePage === 'settings' && <SettingsPage syncStatus={syncStatus} onShowTour={() => setShowTour(true)} />}
       </main>
 
-      {selectedStock && <StockDetail symbol={selectedStock} onClose={() => setSelectedStock(null)} darkMode={darkMode} />}
+      {selectedStock && <StockDetail symbol={selectedStock} onClose={() => setSelectedStock(null)} />}
       {showSearch && <PredictiveSearch onSelect={setSelectedStock} onClose={() => setShowSearch(false)} />}
-      {showTour && <OnboardingTour onComplete={() => setShowTour(false)} onOpenSearch={() => setShowSearch(true)} />}
+      {showTour && <OnboardingTour onComplete={() => setShowTour(false)} onOpenSearch={() => setShowSearch(true)} setActivePage={setActivePage} />}
       <BackToTopButton />
     </div>
   )

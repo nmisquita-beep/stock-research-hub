@@ -129,7 +129,7 @@ const debounce = (func, wait) => {
   }
 }
 
-export default function AIInsights({ darkMode, finnhubFetch }) {
+export default function AIInsights({ finnhubFetch }) {
   const [symbol, setSymbol] = useState('')
   const [loading, setLoading] = useState(false)
   const [currentAnalysis, setCurrentAnalysis] = useState(null)
@@ -697,12 +697,8 @@ Respond with ONLY this JSON structure (no other text):
       </div>
 
       {/* Search Bar */}
-      <div className="relative" ref={dropdownRef}>
-        <div className={`flex items-center gap-3 p-4 rounded-xl border transition-all ${
-          darkMode
-            ? 'bg-gray-800 border-gray-700 focus-within:border-purple-500'
-            : 'bg-white border-gray-200 focus-within:border-purple-500'
-        }`}>
+      <div className="relative" ref={dropdownRef} data-tour="ai-search">
+        <div className="flex items-center gap-3 p-4 rounded-xl border transition-all bg-gray-800 border-gray-700 focus-within:border-purple-500">
           <Search className="w-5 h-5 text-gray-400" />
           <input
             ref={inputRef}
@@ -712,9 +708,7 @@ Respond with ONLY this JSON structure (no other text):
             onKeyDown={handleKeyDown}
             onFocus={() => symbol.length >= 1 && searchResults.length > 0 && setShowDropdown(true)}
             placeholder="Search stock symbol (e.g., AAPL, MSFT, TSLA)"
-            className={`flex-1 bg-transparent outline-none text-lg ${
-              darkMode ? 'text-white placeholder-gray-500' : 'text-gray-900 placeholder-gray-400'
-            }`}
+            className="flex-1 bg-transparent outline-none text-lg text-white placeholder-gray-500"
             disabled={loading}
           />
           {searchLoading && <RefreshCw className="w-4 h-4 text-gray-400 animate-spin" />}
