@@ -106,8 +106,12 @@ export default function AIInsights({ darkMode, finnhubFetch }) {
       if (data && data.quotes && Array.isArray(data.quotes)) {
         results = data.quotes
           .filter(r => r.quoteType === 'EQUITY' || r.quoteType === 'ETF')
-          .slice(0, 6)
-          .map(r => ({ symbol: r.symbol, name: r.shortname || r.longname || r.symbol }))
+          .slice(0, 8)
+          .map(r => ({
+            symbol: r.symbol,
+            name: r.shortname || r.longname || r.symbol,
+            type: r.quoteType || 'EQUITY'
+          }))
       }
       setSearchResults(results)
       setShowDropdown(true)
@@ -442,20 +446,26 @@ Respond with ONLY this JSON, no other text:
 
         {/* Autocomplete */}
         {showDropdown && searchResults.length > 0 && (
-          <div className="absolute top-full left-0 right-0 mt-2 bg-gray-800 rounded-xl border border-gray-700 shadow-2xl z-50 overflow-hidden">
+          <div className="absolute top-full left-0 right-0 mt-2 bg-gray-800 rounded-xl border border-gray-700 shadow-2xl z-50 overflow-hidden max-h-72 overflow-y-auto">
             {searchResults.map((item, i) => (
               <button
                 key={item.symbol}
                 onClick={() => selectStock(item.symbol)}
+                onMouseEnter={() => setSelectedIndex(i)}
                 className={`w-full flex items-center justify-between p-3 text-left transition-colors ${
-                  i === selectedIndex ? 'bg-purple-600/20' : 'hover:bg-gray-700'
+                  i === selectedIndex ? 'bg-purple-600/30' : 'hover:bg-gray-700'
                 }`}
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
                   <span className="font-bold text-white">{item.symbol}</span>
-                  <span className="text-gray-400 text-sm truncate max-w-[200px]">{item.name}</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 ${
+                    item.type === 'ETF' ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'
+                  }`}>
+                    {item.type}
+                  </span>
+                  <span className="text-gray-400 text-sm truncate">{item.name}</span>
                 </div>
-                <ChevronRight className="w-4 h-4 text-gray-500" />
+                <ChevronRight className="w-4 h-4 text-gray-500 flex-shrink-0" />
               </button>
             ))}
           </div>

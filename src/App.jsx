@@ -868,61 +868,126 @@ function PredictiveSearch({ onSelect, onClose, placeholder = "Search stocks...",
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
   const [selectedIndex, setSelectedIndex] = useState(0)
+  const [isOpen, setIsOpen] = useState(false)
   const inputRef = useRef(null)
+  const wrapperRef = useRef(null)
 
   useEffect(() => { inputRef.current?.focus() }, [])
 
+  // Click outside to close (for inline mode)
+  useEffect(() => {
+    if (!inline) return
+    const handleClickOutside = (e) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
+        setIsOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [inline])
+
   const searchStocks = useCallback(debounce(async (q) => {
-    if (!q.trim()) { setResults([]); return }
+    if (!q.trim()) { setResults([]); setIsOpen(false); return }
     setLoading(true)
     try {
-      // Use Yahoo search - no rate limits
       const data = await yahooFetch(q, 'search')
       let resultArray = []
       if (data && data.quotes && Array.isArray(data.quotes)) {
         resultArray = data.quotes
           .filter(r => r.quoteType === 'EQUITY' || r.quoteType === 'ETF')
-          .slice(0, 6)
-          .map(r => ({ symbol: r.symbol, name: r.shortname || r.longname || r.symbol }))
+          .slice(0, 8)
+          .map(r => ({
+            symbol: r.symbol,
+            name: r.shortname || r.longname || r.symbol,
+            type: r.quoteType || 'EQUITY',
+            exchange: r.exchange || ''
+          }))
       }
       setResults(resultArray)
       setSelectedIndex(0)
+      setIsOpen(resultArray.length > 0)
     } catch { setResults([]) }
     finally { setLoading(false) }
-  }, 200), [])
+  }, 150), [])
 
   useEffect(() => { searchStocks(query) }, [query, searchStocks])
 
-  const handleSelect = (item) => { onSelect(item.symbol); if (!inline) onClose?.() }
+  const handleSelect = (item) => {
+    onSelect(item.symbol)
+    setQuery('')
+    setResults([])
+    setIsOpen(false)
+    if (!inline) onClose?.()
+  }
 
   const handleKeyDown = (e) => {
-    if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIndex(i => Math.min(i + 1, results.length - 1)) }
-    if (e.key === 'ArrowUp') { e.preventDefault(); setSelectedIndex(i => Math.max(i - 1, 0)) }
-    if (e.key === 'Enter' && results[selectedIndex]) { handleSelect(results[selectedIndex]) }
-    if (e.key === 'Escape') { onClose?.() }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setSelectedIndex(i => Math.min(i + 1, results.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setSelectedIndex(i => Math.max(i - 1, 0))
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      if (results[selectedIndex]) handleSelect(results[selectedIndex])
+    } else if (e.key === 'Escape') {
+      setIsOpen(false)
+      onClose?.()
+    }
   }
 
   if (inline) {
     return (
-      <div className="relative">
+      <div className="relative" ref={wrapperRef}>
         <div className="flex items-center gap-2 bg-gray-700 rounded-lg px-3 py-2">
           <Search className="w-4 h-4 text-gray-400" />
-          <input ref={inputRef} type="text" value={query} onChange={e => setQuery(e.target.value.toUpperCase())} onKeyDown={handleKeyDown}
-            placeholder={placeholder} className="bg-transparent text-white placeholder-gray-400 outline-none flex-1 text-sm" />
+          <input
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={e => { setQuery(e.target.value.toUpperCase()); setIsOpen(true) }}
+            onFocus={() => query && results.length > 0 && setIsOpen(true)}
+            onKeyDown={handleKeyDown}
+            placeholder={placeholder}
+            className="bg-transparent text-white placeholder-gray-400 outline-none flex-1 text-sm"
+          />
           {loading && <RefreshCw className="w-4 h-4 text-gray-400 animate-spin" />}
         </div>
-        {results.length > 0 && (
-          <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 rounded-lg border border-gray-700 shadow-xl z-50 overflow-hidden">
+        {isOpen && results.length > 0 && (
+          <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 rounded-lg border border-gray-700 shadow-xl z-50 overflow-hidden max-h-64 overflow-y-auto">
             {results.map((item, i) => (
-              <button key={item.symbol} onClick={() => handleSelect(item)}
-                className={`w-full flex items-center justify-between p-3 text-left transition-colors ${i === selectedIndex ? 'bg-blue-600/20' : 'hover:bg-gray-700'}`}>
-                <div>
+              <button
+                key={item.symbol}
+                onClick={() => handleSelect(item)}
+                onMouseEnter={() => setSelectedIndex(i)}
+                className={`w-full flex items-center justify-between p-3 text-left transition-colors ${
+                  i === selectedIndex ? 'bg-blue-600/30' : 'hover:bg-gray-700'
+                }`}
+              >
+                <div className="flex-1 min-w-0">
                   <span className="text-white font-medium">{item.symbol}</span>
                   <span className="text-gray-400 text-sm ml-2 truncate">{item.name}</span>
                 </div>
-                <Plus className="w-4 h-4 text-gray-400" />
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                    item.type === 'ETF' ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'
+                  }`}>
+                    {item.type}
+                  </span>
+                  <Plus className="w-4 h-4 text-gray-400" />
+                </div>
               </button>
             ))}
+          </div>
+        )}
+        {isOpen && loading && query && (
+          <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 rounded-lg border border-gray-700 shadow-xl z-50 p-3 text-center">
+            <RefreshCw className="w-4 h-4 text-gray-400 animate-spin mx-auto" />
+          </div>
+        )}
+        {isOpen && !loading && query && results.length === 0 && (
+          <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 rounded-lg border border-gray-700 shadow-xl z-50 p-3 text-center text-gray-400 text-sm">
+            No results for "{query}"
           </div>
         )}
       </div>
@@ -934,25 +999,65 @@ function PredictiveSearch({ onSelect, onClose, placeholder = "Search stocks...",
       <div className="bg-gray-800 rounded-xl w-full max-w-lg mx-4 shadow-2xl border border-gray-700 overflow-hidden" onClick={e => e.stopPropagation()}>
         <div className="flex items-center gap-3 p-4 border-b border-gray-700">
           <Search className="w-5 h-5 text-gray-400" />
-          <input ref={inputRef} type="text" value={query} onChange={e => setQuery(e.target.value.toUpperCase())} onKeyDown={handleKeyDown}
-            placeholder={placeholder} className="flex-1 bg-transparent text-white placeholder-gray-400 outline-none text-lg" />
+          <input
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={e => setQuery(e.target.value.toUpperCase())}
+            onKeyDown={handleKeyDown}
+            placeholder={placeholder}
+            className="flex-1 bg-transparent text-white placeholder-gray-400 outline-none text-lg"
+          />
           <kbd className="px-2 py-1 text-xs bg-gray-700 rounded text-gray-300">ESC</kbd>
         </div>
         <div className="max-h-80 overflow-y-auto">
-          {loading && <div className="p-4 text-center"><RefreshCw className="w-5 h-5 animate-spin mx-auto text-gray-400" /></div>}
+          {loading && (
+            <div className="p-4 text-center">
+              <RefreshCw className="w-5 h-5 animate-spin mx-auto text-gray-400" />
+            </div>
+          )}
           {!loading && results.map((item, i) => (
-            <button key={item.symbol} onClick={() => handleSelect(item)}
-              className={`w-full flex items-center justify-between p-4 transition-colors ${i === selectedIndex ? 'bg-blue-600/20' : 'hover:bg-gray-700'}`}>
-              <div className="text-left">
-                <div className="text-white font-medium">{item.symbol}</div>
-                <div className="text-gray-400 text-sm truncate max-w-xs">{item.name}</div>
+            <button
+              key={item.symbol}
+              onClick={() => handleSelect(item)}
+              onMouseEnter={() => setSelectedIndex(i)}
+              className={`w-full flex items-center justify-between p-4 transition-colors ${
+                i === selectedIndex ? 'bg-blue-600/30' : 'hover:bg-gray-700'
+              }`}
+            >
+              <div className="text-left flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-white font-medium">{item.symbol}</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                    item.type === 'ETF' ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'
+                  }`}>
+                    {item.type}
+                  </span>
+                </div>
+                <div className="text-gray-400 text-sm truncate">{item.name}</div>
               </div>
-              <ChevronRight className="w-4 h-4 text-gray-400" />
+              <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
             </button>
           ))}
           {!loading && query && results.length === 0 && (
-            <div className="p-8 text-center text-gray-400">No results found</div>
+            <div className="p-8 text-center text-gray-400">
+              No results for "{query}"
+            </div>
           )}
+          {!loading && !query && (
+            <div className="p-6 text-center text-gray-500">
+              <Search className="w-8 h-8 mx-auto mb-2 opacity-50" />
+              <p>Type to search by symbol or name</p>
+              <p className="text-xs mt-1">e.g., AAPL, Apple, Tesla</p>
+            </div>
+          )}
+        </div>
+        <div className="p-3 border-t border-gray-700 flex items-center justify-between text-xs text-gray-500">
+          <div className="flex items-center gap-3">
+            <span><kbd className="px-1.5 py-0.5 bg-gray-700 rounded">↑↓</kbd> navigate</span>
+            <span><kbd className="px-1.5 py-0.5 bg-gray-700 rounded">↵</kbd> select</span>
+          </div>
+          <span><kbd className="px-1.5 py-0.5 bg-gray-700 rounded">esc</kbd> close</span>
         </div>
       </div>
     </div>
