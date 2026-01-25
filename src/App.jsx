@@ -6,7 +6,8 @@ import {
   AlertTriangle, ChevronRight, HelpCircle, Sparkles,
   Cloud, CloudOff, LogIn, LogOut, User, Brain,
   Filter, Grid3X3, PieChart, Target, DollarSign, Award, Layers,
-  ArrowUpRight, ArrowDownRight, Info, Building, ChevronDown, Eye
+  ArrowUpRight, ArrowDownRight, Info, Building, ChevronDown, Eye,
+  Crown, Leaf, Heart, Cpu, TrendingDown as TrendDown, Gem, Shield, LayoutGrid, List
 } from 'lucide-react'
 import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip as RechartsTooltip, CartesianGrid, BarChart, Bar, ComposedChart, Line } from 'recharts'
 import AIInsights from './components/AIInsights'
@@ -1599,60 +1600,167 @@ const SCREENS = [
   {
     id: 'undervalued',
     name: 'Undervalued Growth',
-    description: 'Low P/E with strong growth potential',
+    description: 'Low P/E ratio with strong growth potential',
     icon: Target,
     color: 'from-green-500 to-emerald-600',
-    stocks: ['META', 'GOOG', 'INTC', 'T', 'VZ', 'GM', 'F', 'WFC']
+    stocks: ['META', 'GOOG', 'INTC', 'VZ', 'T', 'PARA', 'WBD', 'GM', 'F', 'BAC'],
+    metrics: ['pe', 'marketCap']
   },
   {
     id: 'dividend',
     name: 'Dividend Champions',
-    description: 'Consistent dividend growers',
+    description: 'Consistent dividend growers for income',
     icon: DollarSign,
     color: 'from-blue-500 to-indigo-600',
-    stocks: ['JNJ', 'PG', 'KO', 'PEP', 'MMM', 'XOM', 'CVX', 'VZ']
+    stocks: ['JNJ', 'PG', 'KO', 'PEP', 'MCD', 'MMM', 'XOM', 'CVX', 'ABBV', 'O'],
+    metrics: ['dividendYield', 'marketCap']
   },
   {
     id: 'momentum',
     name: 'Momentum Plays',
-    description: 'Strong recent performance',
-    icon: TrendingUp,
+    description: 'Stocks with strong recent performance',
+    icon: Zap,
     color: 'from-purple-500 to-pink-600',
-    stocks: ['NVDA', 'META', 'AMZN', 'NFLX', 'AMD', 'AVGO', 'CRM', 'NOW']
+    stocks: ['NVDA', 'META', 'AMZN', 'NFLX', 'AVGO', 'CRM', 'NOW', 'PANW', 'CRWD', 'LLY'],
+    metrics: ['changePercent', 'volume']
   },
   {
     id: 'turnaround',
     name: 'Turnaround Candidates',
-    description: 'Down but fundamentals improving',
+    description: 'Down from highs but fundamentals improving',
     icon: RefreshCw,
     color: 'from-orange-500 to-red-600',
-    stocks: ['INTC', 'BA', 'DIS', 'PYPL', 'NKE', 'SBUX', 'TGT', 'WBD']
+    stocks: ['INTC', 'BA', 'DIS', 'PYPL', 'NKE', 'SBUX', 'TGT', 'FDX', 'PARA', 'WBD'],
+    metrics: ['distanceFrom52High', 'pe']
   },
   {
-    id: 'ai-favorites',
-    name: 'AI Favorites',
-    description: 'Stocks AI is most bullish on',
-    icon: Brain,
+    id: 'largecap',
+    name: 'Large Cap Leaders',
+    description: 'Mega-cap stocks leading the market',
+    icon: Crown,
+    color: 'from-yellow-500 to-amber-600',
+    stocks: ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'BRK-B', 'LLY', 'V', 'JPM'],
+    metrics: ['marketCap', 'pe']
+  },
+  {
+    id: 'highyield',
+    name: 'High Yield',
+    description: 'Highest dividend yields for income',
+    icon: DollarSign,
+    color: 'from-emerald-500 to-teal-600',
+    stocks: ['VZ', 'T', 'MO', 'PM', 'IBM', 'O', 'ABBV', 'XOM', 'CVX', 'KHC'],
+    metrics: ['dividendYield', 'pe']
+  },
+  {
+    id: 'tech',
+    name: 'Tech Titans',
+    description: 'Leading technology companies',
+    icon: Cpu,
     color: 'from-cyan-500 to-blue-600',
-    stocks: ['NVDA', 'MSFT', 'GOOGL', 'AMZN', 'AAPL', 'META', 'TSM', 'AVGO']
+    stocks: ['AAPL', 'MSFT', 'GOOGL', 'NVDA', 'META', 'TSLA', 'AMD', 'CRM', 'ORCL', 'ADBE'],
+    metrics: ['pe', 'marketCap']
+  },
+  {
+    id: 'healthcare',
+    name: 'Healthcare Heroes',
+    description: 'Top healthcare and pharma stocks',
+    icon: Heart,
+    color: 'from-rose-500 to-pink-600',
+    stocks: ['JNJ', 'UNH', 'LLY', 'PFE', 'ABBV', 'MRK', 'TMO', 'ABT', 'DHR', 'BMY'],
+    metrics: ['pe', 'marketCap']
+  },
+  {
+    id: 'green',
+    name: 'Green Energy',
+    description: 'Clean energy and EV stocks',
+    icon: Leaf,
+    color: 'from-green-500 to-lime-600',
+    stocks: ['TSLA', 'ENPH', 'FSLR', 'NEE', 'SEDG', 'RUN', 'PLUG', 'BE', 'RIVN', 'LCID'],
+    metrics: ['changePercent', 'marketCap']
+  },
+  {
+    id: 'beaten',
+    name: 'Beaten Down',
+    description: 'Stocks down significantly (potential value)',
+    icon: TrendDown,
+    color: 'from-red-500 to-rose-600',
+    stocks: ['PARA', 'WBD', 'PYPL', 'INTC', 'BA', 'NKE', 'SNAP', 'HOOD', 'RIVN', 'LCID'],
+    metrics: ['distanceFrom52High', 'changePercent']
+  },
+  {
+    id: 'smallcap',
+    name: 'Small Cap Gems',
+    description: 'Smaller companies with growth potential',
+    icon: Gem,
+    color: 'from-violet-500 to-purple-600',
+    stocks: ['SOFI', 'PLTR', 'HOOD', 'RBLX', 'U', 'PATH', 'BILL', 'DKNG', 'CELH', 'DUOL'],
+    metrics: ['marketCap', 'changePercent']
+  },
+  {
+    id: 'lowvol',
+    name: 'Low Volatility',
+    description: 'Stable stocks for conservative investors',
+    icon: Shield,
+    color: 'from-slate-500 to-gray-600',
+    stocks: ['JNJ', 'PG', 'KO', 'PEP', 'WMT', 'CL', 'GIS', 'K', 'HSY', 'CPB'],
+    metrics: ['pe', 'dividendYield']
   }
 ]
+
+const SECTOR_MAP = {
+  'Technology': ['AAPL', 'MSFT', 'GOOGL', 'NVDA', 'META', 'TSLA', 'AMD', 'CRM', 'ORCL', 'ADBE', 'INTC', 'AVGO', 'NOW', 'PANW', 'CRWD'],
+  'Healthcare': ['JNJ', 'UNH', 'LLY', 'PFE', 'ABBV', 'MRK', 'TMO', 'ABT', 'DHR', 'BMY'],
+  'Finance': ['JPM', 'BAC', 'V', 'MA', 'GS', 'MS', 'WFC', 'BLK', 'SCHW', 'C'],
+  'Consumer': ['AMZN', 'WMT', 'HD', 'MCD', 'NKE', 'SBUX', 'TGT', 'COST', 'PG', 'KO', 'PEP'],
+  'Energy': ['XOM', 'CVX', 'COP', 'SLB', 'EOG', 'MPC', 'VLO', 'PSX', 'OXY', 'HAL'],
+  'Industrial': ['BA', 'CAT', 'DE', 'HON', 'UPS', 'FDX', 'LMT', 'RTX', 'GE', 'MMM']
+}
 
 function ScreenerTab({ onSelectStock, darkMode }) {
   const [selectedScreen, setSelectedScreen] = useState(null)
   const [screenResults, setScreenResults] = useState([])
   const [loading, setLoading] = useState(false)
+  const [viewMode, setViewMode] = useState('table') // 'table' or 'grid'
+  const [sortBy, setSortBy] = useState('symbol')
+  const [sortDir, setSortDir] = useState('asc')
+  const [sectorFilter, setSectorFilter] = useState('All')
+  const [capFilter, setCapFilter] = useState('All')
+
+  const formatMarketCap = (cap) => {
+    if (!cap) return 'N/A'
+    if (cap >= 1e12) return `$${(cap / 1e12).toFixed(2)}T`
+    if (cap >= 1e9) return `$${(cap / 1e9).toFixed(1)}B`
+    if (cap >= 1e6) return `$${(cap / 1e6).toFixed(0)}M`
+    return `$${cap.toLocaleString()}`
+  }
+
+  const getCapCategory = (cap) => {
+    if (!cap) return 'Unknown'
+    if (cap >= 200e9) return 'Mega'
+    if (cap >= 10e9) return 'Large'
+    if (cap >= 2e9) return 'Mid'
+    return 'Small'
+  }
+
+  const getSectorForStock = (symbol) => {
+    for (const [sector, stocks] of Object.entries(SECTOR_MAP)) {
+      if (stocks.includes(symbol)) return sector
+    }
+    return 'Other'
+  }
 
   const runScreen = async (screen) => {
     setSelectedScreen(screen)
     setLoading(true)
+    setSortBy('symbol')
+    setSortDir('asc')
 
-    const cacheKey = `screen_${screen.id}`
+    const cacheKey = `screen_v2_${screen.id}`
     const cached = localStorage.getItem(cacheKey)
     if (cached) {
       try {
         const parsed = JSON.parse(cached)
-        if (Date.now() - parsed.timestamp < 5 * 60 * 1000) { // 5 min cache
+        if (Date.now() - parsed.timestamp < 5 * 60 * 1000) {
           setScreenResults(parsed.results)
           setLoading(false)
           return
@@ -1661,7 +1769,6 @@ function ScreenerTab({ onSelectStock, darkMode }) {
     }
 
     try {
-      // Fetch data for screen stocks
       const results = await Promise.allSettled(
         screen.stocks.map(s => yahooFetch(s))
       )
@@ -1669,16 +1776,28 @@ function ScreenerTab({ onSelectStock, darkMode }) {
       const stockData = []
       results.forEach((result, i) => {
         if (result.status === 'fulfilled' && result.value) {
-          const normalized = normalizeYahooQuote(result.value)
+          const raw = result.value
+          const normalized = normalizeYahooQuote(raw)
           if (normalized && normalized.c > 0) {
             const change = normalized.pc ? ((normalized.c - normalized.pc) / normalized.pc * 100) : 0
+            const distFrom52High = normalized.weekHigh52
+              ? ((normalized.c - normalized.weekHigh52) / normalized.weekHigh52 * 100)
+              : null
+
             stockData.push({
               symbol: screen.stocks[i],
               name: normalized.name,
               price: normalized.c,
               change,
               pe: normalized.peRatio,
-              marketCap: normalized.marketCap
+              marketCap: normalized.marketCap,
+              volume: normalized.volume,
+              weekHigh52: normalized.weekHigh52,
+              weekLow52: normalized.weekLow52,
+              distanceFrom52High: distFrom52High,
+              dividendYield: raw.dividendYield || raw.trailingAnnualDividendYield || null,
+              sector: getSectorForStock(screen.stocks[i]),
+              capCategory: getCapCategory(normalized.marketCap)
             })
           }
         }
@@ -1692,6 +1811,81 @@ function ScreenerTab({ onSelectStock, darkMode }) {
     setLoading(false)
   }
 
+  const handleSort = (field) => {
+    if (sortBy === field) {
+      setSortDir(sortDir === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortBy(field)
+      setSortDir('asc')
+    }
+  }
+
+  const filteredAndSortedResults = () => {
+    let results = [...screenResults]
+
+    // Apply sector filter
+    if (sectorFilter !== 'All') {
+      results = results.filter(s => s.sector === sectorFilter)
+    }
+
+    // Apply cap filter
+    if (capFilter !== 'All') {
+      results = results.filter(s => s.capCategory === capFilter)
+    }
+
+    // Sort
+    results.sort((a, b) => {
+      let aVal = a[sortBy]
+      let bVal = b[sortBy]
+
+      if (typeof aVal === 'string') {
+        aVal = aVal?.toLowerCase() || ''
+        bVal = bVal?.toLowerCase() || ''
+      }
+      if (aVal === null || aVal === undefined) aVal = sortDir === 'asc' ? Infinity : -Infinity
+      if (bVal === null || bVal === undefined) bVal = sortDir === 'asc' ? Infinity : -Infinity
+
+      if (sortDir === 'asc') return aVal > bVal ? 1 : -1
+      return aVal < bVal ? 1 : -1
+    })
+
+    return results
+  }
+
+  const SortHeader = ({ field, label, className = '' }) => (
+    <button
+      onClick={() => handleSort(field)}
+      className={`flex items-center gap-1 hover:text-white transition-colors ${className} ${sortBy === field ? 'text-blue-400' : 'text-gray-400'}`}
+    >
+      {label}
+      {sortBy === field && (
+        <span className="text-xs">{sortDir === 'asc' ? '↑' : '↓'}</span>
+      )}
+    </button>
+  )
+
+  const getMetricDisplay = (stock, metric) => {
+    switch (metric) {
+      case 'pe':
+        return { label: 'P/E', value: stock.pe ? stock.pe.toFixed(1) : 'N/A' }
+      case 'marketCap':
+        return { label: 'Cap', value: formatMarketCap(stock.marketCap) }
+      case 'dividendYield':
+        return { label: 'Yield', value: stock.dividendYield ? `${(stock.dividendYield * 100).toFixed(2)}%` : 'N/A' }
+      case 'distanceFrom52High':
+        return { label: 'vs 52H', value: stock.distanceFrom52High ? `${stock.distanceFrom52High.toFixed(1)}%` : 'N/A' }
+      case 'changePercent':
+        return { label: 'Change', value: `${stock.change >= 0 ? '+' : ''}${stock.change.toFixed(2)}%` }
+      case 'volume':
+        return { label: 'Vol', value: stock.volume ? `${(stock.volume / 1e6).toFixed(1)}M` : 'N/A' }
+      default:
+        return { label: '', value: '' }
+    }
+  }
+
+  const uniqueSectors = ['All', ...new Set(screenResults.map(s => s.sector).filter(Boolean))]
+  const displayResults = filteredAndSortedResults()
+
   return (
     <div className="space-y-6">
       <div>
@@ -1699,11 +1893,11 @@ function ScreenerTab({ onSelectStock, darkMode }) {
           <Filter className="w-7 h-7 text-green-400" />
           Stock Screener
         </h2>
-        <p className="text-gray-400 mt-1">Curated stock screens for different strategies</p>
+        <p className="text-gray-400 mt-1">Curated stock screens for different investment strategies</p>
       </div>
 
-      {/* Screen Buttons */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {/* Screen Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {SCREENS.map(screen => (
           <button
             key={screen.id}
@@ -1714,13 +1908,14 @@ function ScreenerTab({ onSelectStock, darkMode }) {
                 : 'border-gray-700 hover:border-gray-600 bg-gray-800/50'
             }`}
           >
-            <div className="flex items-center gap-3 mb-2">
-              <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${screen.color} flex items-center justify-center`}>
+            <div className="flex items-start gap-3">
+              <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${screen.color} flex items-center justify-center flex-shrink-0`}>
                 <screen.icon className="w-5 h-5 text-white" />
               </div>
-              <div>
-                <h3 className="font-medium text-white">{screen.name}</h3>
-                <p className="text-xs text-gray-400">{screen.description}</p>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-medium text-white truncate">{screen.name}</h3>
+                <p className="text-xs text-gray-400 line-clamp-2">{screen.description}</p>
+                <p className="text-xs text-gray-500 mt-1">{screen.stocks.length} stocks</p>
               </div>
             </div>
           </button>
@@ -1729,41 +1924,192 @@ function ScreenerTab({ onSelectStock, darkMode }) {
 
       {/* Screen Results */}
       {selectedScreen && (
-        <div className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
-          <h3 className="font-bold text-white mb-4 flex items-center gap-2">
-            <selectedScreen.icon className="w-5 h-5" />
-            {selectedScreen.name} Results
-          </h3>
+        <div className="bg-gray-800/50 rounded-xl border border-gray-700 overflow-hidden">
+          {/* Results Header */}
+          <div className="p-4 border-b border-gray-700 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${selectedScreen.color} flex items-center justify-center`}>
+                <selectedScreen.icon className="w-4 h-4 text-white" />
+              </div>
+              <div>
+                <h3 className="font-bold text-white">{selectedScreen.name}</h3>
+                <p className="text-xs text-gray-400">{displayResults.length} of {screenResults.length} stocks</p>
+              </div>
+            </div>
 
+            {/* Filters */}
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Sector Filter */}
+              <select
+                value={sectorFilter}
+                onChange={e => setSectorFilter(e.target.value)}
+                className="bg-gray-700 border border-gray-600 rounded-lg px-3 py-1.5 text-sm text-white"
+              >
+                {uniqueSectors.map(s => (
+                  <option key={s} value={s}>{s === 'All' ? 'All Sectors' : s}</option>
+                ))}
+              </select>
+
+              {/* Cap Filter */}
+              <select
+                value={capFilter}
+                onChange={e => setCapFilter(e.target.value)}
+                className="bg-gray-700 border border-gray-600 rounded-lg px-3 py-1.5 text-sm text-white"
+              >
+                <option value="All">All Caps</option>
+                <option value="Mega">Mega Cap</option>
+                <option value="Large">Large Cap</option>
+                <option value="Mid">Mid Cap</option>
+                <option value="Small">Small Cap</option>
+              </select>
+
+              {/* View Toggle */}
+              <div className="flex items-center bg-gray-700 rounded-lg p-1">
+                <button
+                  onClick={() => setViewMode('table')}
+                  className={`p-1.5 rounded ${viewMode === 'table' ? 'bg-gray-600 text-white' : 'text-gray-400'}`}
+                >
+                  <List className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setViewMode('grid')}
+                  className={`p-1.5 rounded ${viewMode === 'grid' ? 'bg-gray-600 text-white' : 'text-gray-400'}`}
+                >
+                  <LayoutGrid className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Results Content */}
           {loading ? (
-            <div className="space-y-3">
+            <div className="p-4 space-y-3">
               {[1,2,3,4,5].map(i => <div key={i} className="h-16 bg-gray-700 rounded-lg animate-pulse" />)}
             </div>
+          ) : viewMode === 'table' ? (
+            /* Table View */
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="text-left text-xs border-b border-gray-700">
+                    <th className="p-3"><SortHeader field="symbol" label="Symbol" /></th>
+                    <th className="p-3 hidden sm:table-cell"><SortHeader field="name" label="Name" /></th>
+                    <th className="p-3 text-right"><SortHeader field="price" label="Price" className="justify-end" /></th>
+                    <th className="p-3 text-right"><SortHeader field="change" label="Change" className="justify-end" /></th>
+                    {selectedScreen.metrics?.includes('pe') && (
+                      <th className="p-3 text-right hidden md:table-cell"><SortHeader field="pe" label="P/E" className="justify-end" /></th>
+                    )}
+                    {selectedScreen.metrics?.includes('marketCap') && (
+                      <th className="p-3 text-right hidden md:table-cell"><SortHeader field="marketCap" label="Market Cap" className="justify-end" /></th>
+                    )}
+                    {selectedScreen.metrics?.includes('dividendYield') && (
+                      <th className="p-3 text-right hidden md:table-cell"><SortHeader field="dividendYield" label="Yield" className="justify-end" /></th>
+                    )}
+                    {selectedScreen.metrics?.includes('distanceFrom52High') && (
+                      <th className="p-3 text-right hidden md:table-cell"><SortHeader field="distanceFrom52High" label="vs 52H" className="justify-end" /></th>
+                    )}
+                    {selectedScreen.metrics?.includes('volume') && (
+                      <th className="p-3 text-right hidden lg:table-cell"><SortHeader field="volume" label="Volume" className="justify-end" /></th>
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {displayResults.map((stock, i) => (
+                    <tr
+                      key={stock.symbol}
+                      onClick={() => onSelectStock(stock.symbol)}
+                      className={`cursor-pointer transition-colors hover:bg-gray-700/50 ${i % 2 === 0 ? 'bg-gray-800/30' : ''}`}
+                    >
+                      <td className="p-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-lg bg-gray-700 flex items-center justify-center flex-shrink-0">
+                            <span className="text-white font-bold text-sm">{stock.symbol.charAt(0)}</span>
+                          </div>
+                          <span className="font-medium text-white">{stock.symbol}</span>
+                        </div>
+                      </td>
+                      <td className="p-3 text-gray-400 text-sm truncate max-w-[200px] hidden sm:table-cell">{stock.name}</td>
+                      <td className="p-3 text-right text-white font-medium">{formatCurrency(stock.price)}</td>
+                      <td className={`p-3 text-right font-medium ${stock.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {stock.change >= 0 ? '+' : ''}{stock.change.toFixed(2)}%
+                      </td>
+                      {selectedScreen.metrics?.includes('pe') && (
+                        <td className="p-3 text-right text-gray-300 hidden md:table-cell">{stock.pe ? stock.pe.toFixed(1) : 'N/A'}</td>
+                      )}
+                      {selectedScreen.metrics?.includes('marketCap') && (
+                        <td className="p-3 text-right text-gray-300 hidden md:table-cell">{formatMarketCap(stock.marketCap)}</td>
+                      )}
+                      {selectedScreen.metrics?.includes('dividendYield') && (
+                        <td className="p-3 text-right text-gray-300 hidden md:table-cell">
+                          {stock.dividendYield ? `${(stock.dividendYield * 100).toFixed(2)}%` : 'N/A'}
+                        </td>
+                      )}
+                      {selectedScreen.metrics?.includes('distanceFrom52High') && (
+                        <td className={`p-3 text-right hidden md:table-cell ${stock.distanceFrom52High && stock.distanceFrom52High < 0 ? 'text-red-400' : 'text-green-400'}`}>
+                          {stock.distanceFrom52High ? `${stock.distanceFrom52High.toFixed(1)}%` : 'N/A'}
+                        </td>
+                      )}
+                      {selectedScreen.metrics?.includes('volume') && (
+                        <td className="p-3 text-right text-gray-300 hidden lg:table-cell">
+                          {stock.volume ? `${(stock.volume / 1e6).toFixed(1)}M` : 'N/A'}
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           ) : (
-            <div className="space-y-2">
-              {screenResults.map(stock => (
+            /* Grid View */
+            <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {displayResults.map(stock => (
                 <button
                   key={stock.symbol}
                   onClick={() => onSelectStock(stock.symbol)}
-                  className="w-full flex items-center justify-between p-4 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 transition-colors"
+                  className="p-4 rounded-xl bg-gray-700/30 hover:bg-gray-700/50 transition-colors text-left border border-gray-700"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-gray-700 flex items-center justify-center">
-                      <span className="text-white font-bold">{stock.symbol.charAt(0)}</span>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-10 h-10 rounded-lg bg-gray-700 flex items-center justify-center">
+                        <span className="text-white font-bold">{stock.symbol.charAt(0)}</span>
+                      </div>
+                      <div>
+                        <div className="font-medium text-white">{stock.symbol}</div>
+                        <div className="text-xs text-gray-400 truncate max-w-[120px]">{stock.name}</div>
+                      </div>
                     </div>
-                    <div className="text-left">
-                      <div className="font-medium text-white">{stock.symbol}</div>
-                      <div className="text-xs text-gray-400 truncate max-w-[150px]">{stock.name}</div>
+                    <div className="text-right">
+                      <div className="text-white font-medium">{formatCurrency(stock.price)}</div>
+                      <div className={`text-sm ${stock.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {stock.change >= 0 ? '+' : ''}{stock.change.toFixed(2)}%
+                      </div>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="text-white font-medium">{formatCurrency(stock.price)}</div>
-                    <div className={`text-sm ${stock.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                      {stock.change >= 0 ? '+' : ''}{stock.change.toFixed(2)}%
-                    </div>
+                  {/* Screen-specific metrics */}
+                  <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-600">
+                    {selectedScreen.metrics?.map(metric => {
+                      const { label, value } = getMetricDisplay(stock, metric)
+                      return (
+                        <div key={metric} className="text-xs">
+                          <span className="text-gray-500">{label}:</span>
+                          <span className={`ml-1 ${
+                            metric === 'distanceFrom52High' && stock.distanceFrom52High < 0 ? 'text-red-400' :
+                            metric === 'changePercent' && stock.change >= 0 ? 'text-green-400' :
+                            metric === 'changePercent' && stock.change < 0 ? 'text-red-400' :
+                            'text-gray-300'
+                          }`}>{value}</span>
+                        </div>
+                      )
+                    })}
                   </div>
                 </button>
               ))}
+            </div>
+          )}
+
+          {displayResults.length === 0 && !loading && (
+            <div className="p-8 text-center text-gray-400">
+              No stocks match the current filters
             </div>
           )}
         </div>
