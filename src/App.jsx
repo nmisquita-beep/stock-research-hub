@@ -1326,170 +1326,119 @@ const SECTOR_COLORS = {
   Utilities: 'text-teal-400'
 }
 
-function ExplorePage({ onSelectStock, darkMode }) {
+function ExplorePage({ onSelectStock }) {
   const [stockData, setStockData] = useState({})
   const [loading, setLoading] = useState(true)
   const [activeSector, setActiveSector] = useState('All')
   const [searchQuery, setSearchQuery] = useState('')
-  const [lastUpdated, setLastUpdated] = useState(null)
-  const [error, setError] = useState(null)
-  const lastFetchRef = useRef(0)
-  const isFetchingRef = useRef(false)
-  const stockDataRef = useRef({})
 
-  const allStocks = useMemo(() => {
-    const stocks = new Set()
-    Object.values(EXPLORE_STOCKS).forEach(arr => arr.forEach(s => stocks.add(s)))
-    return Array.from(stocks)
+  // Simple fetch on mount
+  useEffect(() => {
+    let cancelled = false
+
+    const fetchData = async () => {
+      try {
+        const allSymbols = Object.values(EXPLORE_STOCKS).flat()
+        const data = {}
+
+        // Fetch in batches
+        for (let i = 0; i < allSymbols.length; i += 20) {
+          if (cancelled) return
+          const batch = allSymbols.slice(i, i + 20)
+
+          const results = await Promise.allSettled(
+            batch.map(s => yahooFetch(s))
+          )
+
+          results.forEach((r, idx) => {
+            if (r.status === 'fulfilled' && r.value) {
+              const n = normalizeYahooQuote(r.value)
+              if (n?.c > 0) data[batch[idx]] = n
+            }
+          })
+
+          // Show first batch immediately
+          if (i === 0 && !cancelled) {
+            setStockData({ ...data })
+            setLoading(false)
+          }
+        }
+
+        if (!cancelled) setStockData(data)
+      } catch (e) {
+        console.error('Fetch error:', e)
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+
+    fetchData()
+    return () => { cancelled = true }
   }, [])
 
-  const fetchStocks = useCallback(async (force = false) => {
-    const now = Date.now()
-    if (!force && (now - lastFetchRef.current < 60000 || isFetchingRef.current)) return
-
-    isFetchingRef.current = true
-    if (lastFetchRef.current === 0) setLoading(true)
-    setError(null)
-
-    try {
-      // Fetch in batches of 20
-      const batchSize = 20
-      const newData = { ...stockDataRef.current }
-
-      for (let i = 0; i < allStocks.length; i += batchSize) {
-        const batch = allStocks.slice(i, i + batchSize)
-        const results = await Promise.allSettled(
-          batch.map(symbol => yahooFetch(symbol))
-        )
-
-        results.forEach((result, idx) => {
-          if (result.status === 'fulfilled' && result.value) {
-            const normalized = normalizeYahooQuote(result.value)
-            if (normalized && normalized.c > 0) {
-              newData[batch[idx]] = normalized
-            }
-          }
-        })
-
-        // Update state after each batch for progressive loading
-        if (i === 0) {
-          stockDataRef.current = { ...newData }
-          setStockData({ ...newData })
-          setLoading(false)
-        }
-      }
-
-      stockDataRef.current = newData
-      setStockData(newData)
-      lastFetchRef.current = now
-      setLastUpdated(new Date())
-    } catch (err) {
-      console.error('Explore fetch error:', err)
-      setError('Failed to load stocks')
-    } finally {
-      isFetchingRef.current = false
-      setLoading(false)
-    }
-  }, [allStocks])
-
-  useEffect(() => {
-    fetchStocks(true)
-    const interval = setInterval(() => fetchStocks(), 60000)
-    return () => clearInterval(interval)
-  }, [fetchStocks])
-
+  // Get sector list
   const sectors = ['All', ...Object.keys(EXPLORE_STOCKS)]
 
-  const getFilteredStocks = () => {
-    try {
-      let stocks = activeSector === 'All'
-        ? Object.entries(EXPLORE_STOCKS)
-        : [[activeSector, EXPLORE_STOCKS[activeSector] || []]]
+  // Filter stocks based on sector and search
+  const getStocks = () => {
+    let result = activeSector === 'All'
+      ? Object.entries(EXPLORE_STOCKS)
+      : [[activeSector, EXPLORE_STOCKS[activeSector] || []]]
 
-      if (searchQuery) {
-        const query = searchQuery.toUpperCase()
-        stocks = stocks.map(([sector, symbols]) => [
-          sector,
-          (symbols || []).filter(s => s.includes(query) || (stockData[s]?.name || '').toUpperCase().includes(query))
-        ]).filter(([, symbols]) => symbols && symbols.length > 0)
-      }
-
-      return stocks
-    } catch (err) {
-      console.error('getFilteredStocks error:', err)
-      return []
+    if (searchQuery) {
+      const q = searchQuery.toUpperCase()
+      result = result
+        .map(([sec, syms]) => [sec, (syms || []).filter(s =>
+          s.includes(q) || (stockData[s]?.name || '').toUpperCase().includes(q)
+        )])
+        .filter(([, syms]) => syms.length > 0)
     }
-  }
 
-  const getTimeAgo = () => {
-    if (!lastUpdated) return ''
-    const mins = Math.floor((Date.now() - lastUpdated.getTime()) / 60000)
-    if (mins < 1) return 'Just now'
-    return `${mins}m ago`
+    return result
   }
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Grid3X3 className="w-7 h-7 text-purple-400" />
-            Explore Stocks
-          </h2>
-          <p className="text-gray-400 mt-1">Browse 100+ stocks organized by sector</p>
-        </div>
-        {lastUpdated && (
-          <span className="text-xs text-gray-500">{getTimeAgo()}</span>
-        )}
+      <div>
+        <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+          <Grid3X3 className="w-7 h-7 text-purple-400" />
+          Explore Stocks
+        </h2>
+        <p className="text-gray-400 mt-1">Browse 100+ stocks organized by sector</p>
       </div>
 
-      {/* Search Bar */}
+      {/* Search */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
         <input
           type="text"
           value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
+          onChange={e => setSearchQuery(e.target.value)}
           placeholder="Search by symbol or name..."
           className="w-full pl-10 pr-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
         />
       </div>
 
-      {/* Sector Filter Pills */}
+      {/* Sector Pills */}
       <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-        {sectors.map(sector => (
+        {sectors.map(sec => (
           <button
-            key={sector}
-            onClick={() => setActiveSector(sector)}
+            key={sec}
+            onClick={() => setActiveSector(sec)}
             className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
-              activeSector === sector
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+              activeSector === sec ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
             }`}
           >
-            {sector}
+            {sec}
           </button>
         ))}
       </div>
 
-      {/* Error State */}
-      {error && (
-        <div className="p-4 bg-red-900/30 border border-red-500/50 rounded-xl text-center">
-          <p className="text-red-400">{error}</p>
-          <button
-            onClick={() => fetchStocks(true)}
-            className="mt-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm"
-          >
-            Retry
-          </button>
-        </div>
-      )}
-
       {/* Stock Grid */}
-      {!error && loading && Object.keys(stockData).length === 0 ? (
+      {loading ? (
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
-          {Array(24).fill(0).map((_, i) => (
+          {[...Array(24)].map((_, i) => (
             <div key={i} className="p-3 rounded-lg bg-gray-800 animate-pulse">
               <div className="h-4 bg-gray-700 rounded mb-2" />
               <div className="h-3 bg-gray-700 rounded mb-2" />
@@ -1497,41 +1446,38 @@ function ExplorePage({ onSelectStock, darkMode }) {
             </div>
           ))}
         </div>
-      ) : !error && (
+      ) : (
         <div className="space-y-6">
-          {getFilteredStocks().map(([sector, symbols]) => {
-            // Ensure symbols is always an array
-            const safeSymbols = Array.isArray(symbols) ? symbols : []
-            if (safeSymbols.length === 0) return null
-
+          {getStocks().map(([sector, symbols]) => {
+            if (!symbols || symbols.length === 0) return null
             return (
               <div key={sector} className="space-y-3">
                 <h3 className={`text-sm font-semibold ${SECTOR_COLORS[sector] || 'text-gray-300'}`}>
-                  {sector} ({safeSymbols.length})
+                  {sector} ({symbols.length})
                 </h3>
                 <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
-                  {safeSymbols.map(symbol => {
-                    if (!symbol) return null
+                  {symbols.map(symbol => {
                     const quote = stockData[symbol]
                     const change = quote?.pc ? ((quote.c - quote.pc) / quote.pc * 100) : 0
-                    const positive = change >= 0
+                    const pos = change >= 0
                     return (
                       <button
                         key={symbol}
                         onClick={() => onSelectStock(symbol)}
-                        className={`p-2 rounded-lg border transition-all hover:scale-105 cursor-pointer text-left ${
-                          positive
-                            ? 'bg-green-900/20 border-green-500/30 hover:border-green-500'
+                        className={`p-2 rounded-lg border transition-all hover:scale-105 text-left ${
+                          pos ? 'bg-green-900/20 border-green-500/30 hover:border-green-500'
                             : 'bg-red-900/20 border-red-500/30 hover:border-red-500'
                         }`}
                       >
                         <div className="text-xs font-bold text-white">{symbol}</div>
-                        <div className="text-[10px] text-gray-400 truncate">{quote?.name ? quote.name.split(' ')[0] : '—'}</div>
-                        {quote && quote.c ? (
+                        <div className="text-[10px] text-gray-400 truncate">
+                          {quote?.name ? quote.name.split(' ')[0] : '—'}
+                        </div>
+                        {quote?.c ? (
                           <>
                             <div className="text-xs text-gray-300">${quote.c.toFixed(2)}</div>
-                            <div className={`text-xs font-medium ${positive ? 'text-green-400' : 'text-red-400'}`}>
-                              {positive ? '+' : ''}{change.toFixed(1)}%
+                            <div className={`text-xs font-medium ${pos ? 'text-green-400' : 'text-red-400'}`}>
+                              {pos ? '+' : ''}{change.toFixed(1)}%
                             </div>
                           </>
                         ) : (
