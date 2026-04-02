@@ -279,11 +279,11 @@ class ErrorBoundary extends Component {
     if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
-          <div className="bg-gray-800 rounded-xl p-8 max-w-md text-center border border-gray-700">
+          <div className="bg-[var(--bg-card)] rounded-xl p-8 max-w-md text-center border border-white/[0.06]">
             <AlertCircle className="w-16 h-16 text-red-400 mx-auto mb-4" />
             <h2 className="text-xl font-bold text-white mb-2">Something went wrong</h2>
             <p className="text-gray-400 mb-4">Please refresh the page to continue.</p>
-            <button onClick={() => window.location.reload()} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-white">
+            <button onClick={() => window.location.reload()} className="px-6 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-white">
               Refresh
             </button>
           </div>
@@ -308,7 +308,7 @@ function ToastProvider({ children }) {
       <div className="fixed bottom-20 md:bottom-4 right-4 z-50 space-y-2">
         {toasts.map(toast => (
           <div key={toast.id} className={`px-4 py-3 rounded-lg shadow-lg backdrop-blur-sm animate-slide-in flex items-center gap-2 ${
-            toast.type === 'success' ? 'bg-green-500/90' : toast.type === 'error' ? 'bg-red-500/90' : 'bg-gray-700/90'
+            toast.type === 'success' ? 'bg-green-500/90' : toast.type === 'error' ? 'bg-red-500/90' : 'bg-white/10/90'
           } text-white`}>
             {toast.type === 'success' && <CheckCircle className="w-4 h-4" />}
             {toast.type === 'error' && <AlertCircle className="w-4 h-4" />}
@@ -456,7 +456,7 @@ function Tooltip({ children, content, position = 'bottom' }) {
     <div className="relative inline-block overflow-visible" onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
       {children}
       {show && (
-        <div className={`absolute left-1/2 -translate-x-1/2 px-3 py-1.5 text-xs bg-gray-900 text-white rounded-lg whitespace-nowrap z-[100] shadow-lg border border-gray-700 pointer-events-none ${
+        <div className={`absolute left-1/2 -translate-x-1/2 px-3 py-1.5 text-xs bg-gray-900 text-white rounded-lg whitespace-nowrap z-[100] shadow-lg border border-white/[0.06] pointer-events-none ${
           position === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'
         }`}>
           {content}
@@ -470,7 +470,7 @@ function Tooltip({ children, content, position = 'bottom' }) {
 }
 
 function Skeleton({ className }) {
-  return <div className={`animate-shimmer rounded ${className}`} />
+  return <div className={`rounded-lg animate-shimmer ${className}`} />
 }
 
 function MiniSparkline({ data, positive, height = 32 }) {
@@ -545,7 +545,7 @@ function FearGreedIndicator({ value }) {
   const getLabel = (v) => {
     if (v < 35) return { text: 'Fear', color: 'text-red-400', bgColor: '#ef4444' }
     if (v < 65) return { text: 'Neutral', color: 'text-yellow-400', bgColor: '#eab308' }
-    return { text: 'Greed', color: 'text-green-400', bgColor: '#22c55e' }
+    return { text: 'Greed', color: 'text-emerald-400', bgColor: '#10b981' }
   }
   const label = getLabel(roundedValue)
 
@@ -553,15 +553,15 @@ function FearGreedIndicator({ value }) {
   const rotation = (safeValue / 100) * 180 - 90
 
   return (
-    <div className="card-premium rounded-xl p-4">
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-gray-300 text-sm font-semibold">Market Mood</span>
-        <span className={`text-sm font-semibold ${label.color}`}>{label.text}</span>
+    <div className="card p-4">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-gray-400 text-xs font-medium">Market Mood</span>
+        <span className={`text-xs font-semibold ${label.color}`}>{label.text}</span>
       </div>
 
       {/* Semicircle Gauge */}
-      <div className="relative flex justify-center mb-2 overflow-hidden">
-        <svg width="128" height="72" viewBox="0 0 128 72" className="overflow-hidden">
+      <div className="relative flex justify-center mb-1 overflow-hidden">
+        <svg width="100" height="56" viewBox="0 0 128 72" className="overflow-hidden">
           {/* Background arc */}
           <defs>
             <linearGradient id="gaugeGradient" x1="0%" y1="0%" x2="100%" y2="0%">
@@ -569,7 +569,7 @@ function FearGreedIndicator({ value }) {
               <stop offset="25%" stopColor="#f97316" />
               <stop offset="50%" stopColor="#eab308" />
               <stop offset="75%" stopColor="#84cc16" />
-              <stop offset="100%" stopColor="#22c55e" />
+              <stop offset="100%" stopColor="#10b981" />
             </linearGradient>
           </defs>
           {/* Background track */}
@@ -577,16 +577,16 @@ function FearGreedIndicator({ value }) {
             d="M 12 64 A 52 52 0 0 1 116 64"
             fill="none"
             stroke="url(#gaugeGradient)"
-            strokeWidth="8"
+            strokeWidth="6"
             strokeLinecap="round"
-            opacity="0.3"
+            opacity="0.2"
           />
           {/* Foreground arc (filled portion based on value) */}
           <path
             d="M 12 64 A 52 52 0 0 1 116 64"
             fill="none"
             stroke="url(#gaugeGradient)"
-            strokeWidth="8"
+            strokeWidth="6"
             strokeLinecap="round"
             strokeDasharray={`${(safeValue / 100) * 163.4} 163.4`}
           />
@@ -594,20 +594,20 @@ function FearGreedIndicator({ value }) {
           <line
             x1="64"
             y1="64"
-            x2={64 + Math.cos((rotation - 90) * Math.PI / 180) * 40}
-            y2={64 + Math.sin((rotation - 90) * Math.PI / 180) * 40}
+            x2={64 + Math.cos((rotation - 90) * Math.PI / 180) * 38}
+            y2={64 + Math.sin((rotation - 90) * Math.PI / 180) * 38}
             stroke="white"
-            strokeWidth="2"
+            strokeWidth="1.5"
             strokeLinecap="round"
           />
           {/* Center dot */}
-          <circle cx="64" cy="64" r="4" fill="white" />
+          <circle cx="64" cy="64" r="3" fill="white" />
         </svg>
       </div>
 
-      <div className="flex justify-between items-center px-2">
-        <span className="text-[10px] text-red-400 font-medium">FEAR</span>
-        <span className="text-[10px] text-green-400 font-medium">GREED</span>
+      <div className="flex justify-between items-center px-1">
+        <span className="text-[10px] uppercase tracking-wider text-gray-500">Fear</span>
+        <span className="text-[10px] uppercase tracking-wider text-gray-500">Greed</span>
       </div>
     </div>
   )
@@ -779,7 +779,7 @@ function OnboardingTour({ onComplete, onOpenSearch, setActivePage }) {
         {/* Welcome Modal */}
         {isModal && visible && (
           <div className="absolute inset-0 flex items-center justify-center p-4 z-10">
-            <div className="bg-gray-800 rounded-2xl border border-purple-500/30 shadow-2xl max-w-md w-full">
+            <div className="bg-[var(--bg-card)] rounded-2xl border border-purple-500/30 shadow-2xl max-w-md w-full">
               <div className="p-8 text-center">
                 <div className="text-5xl mb-4">{currentStep.emoji}</div>
                 <h2 className="text-2xl font-bold text-white mb-3">{currentStep.title}</h2>
@@ -800,7 +800,7 @@ function OnboardingTour({ onComplete, onOpenSearch, setActivePage }) {
         {/* Tooltip — appears at same time as spotlight */}
         {!isModal && visible && (
           <div className={`fixed z-10 ${isMobile ? 'inset-x-4 bottom-4' : 'bottom-8 left-1/2 -translate-x-1/2'}`}>
-            <div className="bg-gray-800/95 backdrop-blur rounded-xl border border-purple-500/30 shadow-2xl max-w-md mx-auto">
+            <div className="bg-[var(--bg-card)]/95 backdrop-blur rounded-xl border border-purple-500/30 shadow-2xl max-w-md mx-auto">
               <div className="flex justify-center gap-1.5 pt-4">
                 {steps.map((_, i) => (
                   <div key={i} className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${i === step ? 'bg-purple-400 w-4' : i < step ? 'bg-purple-600' : 'bg-gray-600'}`} />
@@ -1245,7 +1245,7 @@ function PredictiveSearch({ onSelect, onClose, placeholder = "Search stocks...",
   if (inline) {
     return (
       <div className="relative" ref={wrapperRef}>
-        <div className="flex items-center gap-2 bg-gray-700 rounded-lg px-3 py-2">
+        <div className="flex items-center gap-2 bg-white/10 rounded-lg px-3 py-2">
           <Search className="w-4 h-4 text-gray-400" />
           <input
             ref={inputRef}
@@ -1259,7 +1259,7 @@ function PredictiveSearch({ onSelect, onClose, placeholder = "Search stocks...",
           {loading && <RefreshCw className="w-4 h-4 text-gray-400 animate-spin" />}
         </div>
         {showDropdown && (
-          <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 rounded-lg border border-gray-700 shadow-xl z-50 overflow-hidden max-h-64 overflow-y-auto">
+          <div className="absolute top-full left-0 right-0 mt-1 bg-[var(--bg-card)] rounded-lg border border-white/[0.06] shadow-xl z-50 overflow-hidden max-h-64 overflow-y-auto">
             {loading ? (
               <div className="p-3 text-center text-gray-400">Searching...</div>
             ) : results.length > 0 ? (
@@ -1269,7 +1269,7 @@ function PredictiveSearch({ onSelect, onClose, placeholder = "Search stocks...",
                   onClick={() => handleSelect(item)}
                   onMouseEnter={() => setSelectedIndex(i)}
                   className={`w-full flex items-center justify-between p-3 text-left transition-colors ${
-                    i === selectedIndex ? 'bg-blue-600/30' : 'hover:bg-gray-700'
+                    i === selectedIndex ? 'bg-blue-600/30' : 'hover:bg-white/5'
                   }`}
                 >
                   <div>
@@ -1290,9 +1290,9 @@ function PredictiveSearch({ onSelect, onClose, placeholder = "Search stocks...",
 
   return (
     <div className="fixed inset-0 bg-black/70 sm:bg-black/60 backdrop-blur-sm flex items-start justify-center pt-4 sm:pt-20 z-50" onClick={onClose}>
-      <div ref={wrapperRef} className="bg-gray-800 sm:rounded-xl w-full h-full sm:h-auto sm:max-w-lg sm:mx-4 shadow-2xl sm:border border-gray-700 overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+      <div ref={wrapperRef} className="bg-[var(--bg-card)] sm:rounded-xl w-full h-full sm:h-auto sm:max-w-lg sm:mx-4 shadow-2xl sm:border border-white/[0.06] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
         {/* Search Header */}
-        <div className="flex items-center gap-3 p-4 border-b border-gray-700 flex-shrink-0">
+        <div className="flex items-center gap-3 p-4 border-b border-white/[0.06] flex-shrink-0">
           <Search className="w-5 h-5 text-gray-400 flex-shrink-0" />
           <input
             ref={inputRef}
@@ -1306,7 +1306,7 @@ function PredictiveSearch({ onSelect, onClose, placeholder = "Search stocks...",
           {query && (
             <button
               onClick={() => { setQuery(''); setResults([]) }}
-              className="p-1.5 rounded-lg hover:bg-gray-700 sm:hidden"
+              className="p-1.5 rounded-lg hover:bg-white/5 sm:hidden"
               aria-label="Clear search"
             >
               <X className="w-5 h-5 text-gray-400" />
@@ -1318,7 +1318,7 @@ function PredictiveSearch({ onSelect, onClose, placeholder = "Search stocks...",
           >
             Cancel
           </button>
-          <kbd className="hidden sm:block px-2 py-1 text-xs bg-gray-700 rounded text-gray-300">ESC</kbd>
+          <kbd className="hidden sm:block px-2 py-1 text-xs bg-white/10 rounded text-gray-300">ESC</kbd>
         </div>
 
         {/* Results */}
@@ -1334,8 +1334,8 @@ function PredictiveSearch({ onSelect, onClose, placeholder = "Search stocks...",
                 key={item.symbol}
                 onClick={() => handleSelect(item)}
                 onMouseEnter={() => setSelectedIndex(i)}
-                className={`w-full flex items-center justify-between p-4 transition-colors border-b border-gray-700/50 last:border-0 active:bg-gray-600 ${
-                  i === selectedIndex ? 'bg-blue-600/30' : 'hover:bg-gray-700'
+                className={`w-full flex items-center justify-between p-4 transition-colors border-b border-white/[0.06]/50 last:border-0 active:bg-white/10 ${
+                  i === selectedIndex ? 'bg-blue-600/30' : 'hover:bg-white/5'
                 }`}
               >
                 <div className="text-left">
@@ -1362,9 +1362,9 @@ function PredictiveSearch({ onSelect, onClose, placeholder = "Search stocks...",
           )}
         </div>
         {/* Footer - hidden on mobile */}
-        <div className="hidden sm:flex p-3 border-t border-gray-700 items-center justify-between text-xs text-gray-500 flex-shrink-0">
-          <span><kbd className="px-1 bg-gray-700 rounded">↑↓</kbd> navigate <kbd className="px-1 bg-gray-700 rounded ml-2">↵</kbd> select</span>
-          <span><kbd className="px-1 bg-gray-700 rounded">esc</kbd> close</span>
+        <div className="hidden sm:flex p-3 border-t border-white/[0.06] items-center justify-between text-xs text-gray-500 flex-shrink-0">
+          <span><kbd className="px-1 bg-white/10 rounded">↑↓</kbd> navigate <kbd className="px-1 bg-white/10 rounded ml-2">↵</kbd> select</span>
+          <span><kbd className="px-1 bg-white/10 rounded">esc</kbd> close</span>
         </div>
       </div>
     </div>
@@ -1393,7 +1393,7 @@ function EarningsCalendar({ onSelect }) {
   }, [])
 
   return (
-    <div className="rounded-xl p-4 border bg-gray-800/50 border-gray-700">
+    <div className="rounded-xl p-4 border bg-[var(--bg-card)]/50 border-white/[0.06]">
       <div className="flex items-center gap-2 mb-3">
         <Calendar className="w-5 h-5 text-purple-400" />
         <h3 className="font-semibold text-white">Upcoming Earnings</h3>
@@ -1404,7 +1404,7 @@ function EarningsCalendar({ onSelect }) {
         <div className="space-y-2">
           {earnings.map((e, i) => (
             <button key={i} onClick={() => onSelect(e.symbol)}
-              className="w-full flex items-center justify-between p-2 rounded-lg transition-colors hover:bg-gray-700/50">
+              className="w-full flex items-center justify-between p-2 rounded-lg transition-colors hover:bg-white/5/50">
               <div className="flex items-center gap-2">
                 <span className="font-medium text-white">{e.symbol}</span>
                 <span className="text-xs text-gray-400">{e.hour === 'bmo' ? 'Before Open' : 'After Close'}</span>
@@ -1443,25 +1443,25 @@ function WatchlistInsights({ watchlist, quotes }) {
         <h3 className="font-semibold text-white">Watchlist Insights</h3>
       </div>
       <div className="grid grid-cols-2 gap-3 text-sm">
-        <div className="p-2 rounded-lg bg-gray-700/50">
+        <div className="p-2 rounded-lg bg-white/5">
           <div className="text-gray-400">Top Gainer</div>
           <div className="flex items-center gap-1">
             <span className="font-medium text-white">{topGainer.symbol}</span>
-            <span className="text-green-400">+{topGainer.change.toFixed(1)}%</span>
+            <span className="text-emerald-400">+{topGainer.change.toFixed(1)}%</span>
           </div>
         </div>
-        <div className="p-2 rounded-lg bg-gray-700/50">
+        <div className="p-2 rounded-lg bg-white/5">
           <div className="text-gray-400">Top Loser</div>
           <div className="flex items-center gap-1">
             <span className="font-medium text-white">{topLoser.symbol}</span>
             <span className="text-red-400">{topLoser.change.toFixed(1)}%</span>
           </div>
         </div>
-        <div className="p-2 rounded-lg bg-gray-700/50">
+        <div className="p-2 rounded-lg bg-white/5">
           <div className="text-gray-400">Avg Change</div>
-          <span className={avgChange >= 0 ? 'text-green-400' : 'text-red-400'}>{avgChange >= 0 ? '+' : ''}{avgChange.toFixed(2)}%</span>
+          <span className={avgChange >= 0 ? 'text-emerald-400' : 'text-red-400'}>{avgChange >= 0 ? '+' : ''}{avgChange.toFixed(2)}%</span>
         </div>
-        <div className="p-2 rounded-lg bg-gray-700/50">
+        <div className="p-2 rounded-lg bg-white/5">
           <div className="text-gray-400">Bullish</div>
           <span className="text-white">{bullishCount}/{validQuotes.length}</span>
         </div>
@@ -1492,16 +1492,16 @@ function StockNewsModal({ symbol, onClose }) {
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={onClose}>
-      <div className="bg-gray-800/95 backdrop-blur rounded-xl max-w-2xl w-full max-h-[80vh] overflow-hidden border border-gray-700 shadow-2xl" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between p-4 border-b border-gray-700">
+      <div className="bg-[var(--bg-card)]/95 backdrop-blur rounded-xl max-w-2xl w-full max-h-[80vh] overflow-hidden border border-white/[0.06] shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b border-white/[0.06]">
           <h3 className="text-lg font-semibold text-white">{symbol} News</h3>
-          <button onClick={onClose} className="p-2 hover:bg-gray-700 rounded-lg"><X className="w-5 h-5 text-gray-400" /></button>
+          <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-lg"><X className="w-5 h-5 text-gray-400" /></button>
         </div>
         <div className="overflow-y-auto max-h-[calc(80vh-80px)] p-4 space-y-3">
           {loading ? [1,2,3].map(i => <Skeleton key={i} className="h-20 w-full" />) : news.length > 0 ? news.map((article, i) => {
             const summary = article.summary || ''
             return (
-              <a key={i} href={article.url} target="_blank" rel="noopener noreferrer" className="block bg-gray-700/30 hover:bg-gray-700/50 rounded-lg transition-all group p-4">
+              <a key={i} href={article.url} target="_blank" rel="noopener noreferrer" className="block bg-white/5 hover:bg-white/5/50 rounded-lg transition-all group p-4">
                 <h4 className="text-white font-medium group-hover:text-blue-400 line-clamp-2 mb-1">{article.headline}</h4>
                 {summary && (
                   <p className="text-sm text-gray-400 line-clamp-2 mb-2">{summary}</p>
@@ -1550,7 +1550,7 @@ function MobileBottomNav({ activePage, setActivePage, onSearchOpen }) {
         <div className="md:hidden fixed inset-0 z-50" onClick={() => setShowMoreMenu(false)}>
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
           <div
-            className="absolute bottom-20 left-4 right-4 bg-gray-800 rounded-2xl border border-gray-700 shadow-2xl overflow-hidden"
+            className="absolute bottom-20 left-4 right-4 bg-[var(--bg-card)] rounded-2xl border border-white/[0.06] shadow-2xl overflow-hidden"
             onClick={e => e.stopPropagation()}
           >
             <div className="p-2">
@@ -1561,7 +1561,7 @@ function MobileBottomNav({ activePage, setActivePage, onSearchOpen }) {
                   className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-xl transition-all ${
                     activePage === item.id
                       ? 'bg-blue-600 text-white'
-                      : 'text-gray-300 hover:bg-gray-700 active:bg-gray-600'
+                      : 'text-gray-300 hover:bg-white/5 active:bg-white/10'
                   }`}
                 >
                   <item.icon className="w-5 h-5" />
@@ -1569,10 +1569,10 @@ function MobileBottomNav({ activePage, setActivePage, onSearchOpen }) {
                 </button>
               ))}
             </div>
-            <div className="border-t border-gray-700 p-2">
+            <div className="border-t border-white/[0.06] p-2">
               <button
                 onClick={() => { onSearchOpen(); setShowMoreMenu(false) }}
-                className="w-full flex items-center gap-4 px-4 py-3.5 rounded-xl text-gray-300 hover:bg-gray-700 active:bg-gray-600 transition-all"
+                className="w-full flex items-center gap-4 px-4 py-3.5 rounded-xl text-gray-300 hover:bg-white/5 active:bg-white/10 transition-all"
               >
                 <Search className="w-5 h-5" />
                 <span className="font-medium">Search Stocks</span>
@@ -1583,7 +1583,7 @@ function MobileBottomNav({ activePage, setActivePage, onSearchOpen }) {
       )}
 
       {/* Bottom Nav Bar */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-gray-800/95 backdrop-blur-lg border-t border-gray-700 z-40 pb-safe">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-[#0b0f19]/90 backdrop-blur-xl border-t border-white/[0.06] z-40 pb-safe">
         <div className="flex items-center justify-around py-1">
           {mainItems.map(item => (
             <button
@@ -1592,8 +1592,8 @@ function MobileBottomNav({ activePage, setActivePage, onSearchOpen }) {
               aria-label={item.label}
               className={`flex flex-col items-center justify-center gap-0.5 min-w-[64px] min-h-[52px] px-2 py-1.5 rounded-xl transition-all active:scale-95 ${
                 activePage === item.id
-                  ? 'text-blue-500 bg-blue-500/10'
-                  : 'text-gray-400 active:bg-gray-700'
+                  ? 'text-blue-400'
+                  : 'text-gray-600'
               }`}
             >
               <item.icon className="w-6 h-6" />
@@ -1605,8 +1605,8 @@ function MobileBottomNav({ activePage, setActivePage, onSearchOpen }) {
             aria-label="More options"
             className={`flex flex-col items-center justify-center gap-0.5 min-w-[64px] min-h-[52px] px-2 py-1.5 rounded-xl transition-all active:scale-95 ${
               isMoreActive || showMoreMenu
-                ? 'text-blue-500 bg-blue-500/10'
-                : 'text-gray-400 active:bg-gray-700'
+                ? 'text-blue-400'
+                : 'text-gray-600'
             }`}
           >
             <Menu className="w-6 h-6" />
@@ -1634,32 +1634,30 @@ function DesktopNav({ activePage, setActivePage, onSearchOpen, syncStatus }) {
   ]
 
   return (
-    <nav className="glass-strong gradient-border sticky top-0 z-40 overflow-visible">
+    <nav className="nav-bar sticky top-0 z-40 overflow-visible">
       <div className="max-w-7xl mx-auto px-4">
-        <div className="flex items-center justify-between h-16">
+        <div className="flex items-center justify-between h-14">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600 rounded-lg flex items-center justify-center shadow-lg shadow-blue-500/25 ring-1 ring-white/10">
-              <TrendingUp className="w-5 h-5 text-white" />
+            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+              <TrendingUp className="w-4 h-4 text-white" />
             </div>
-            <span className="font-bold text-lg hidden sm:block tracking-tight bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">Stock Research Hub</span>
+            <span className="text-sm font-semibold text-gray-200 hidden sm:block">Stock Research Hub</span>
           </div>
           <div className="hidden md:flex items-center gap-1">
             {navItems.map(item => (
               <button key={item.id} onClick={() => setActivePage(item.id)}
                 data-tour={item.tour}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all ${
-                  activePage === item.id ? 'nav-active text-white' : 'text-gray-400 hover:text-white hover:bg-white/5'
-                }`}>
+                className={`nav-tab flex items-center gap-2 ${activePage === item.id ? 'nav-tab-active' : ''}`}>
                 <item.icon className="w-4 h-4" />
-                <span className="text-sm font-medium">{item.label}</span>
+                <span>{item.label}</span>
               </button>
             ))}
           </div>
           <div className="flex items-center gap-2 overflow-visible">
             {user && (
-              <Tooltip content={syncStatus.synced ? 'Synced to cloud' : syncStatus.syncing ? 'Syncing...' : 'Local only - check console for sync errors'}>
-                <div className={`hidden sm:flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full ${
-                  syncStatus.synced ? 'bg-green-500/20 text-green-400' : syncStatus.syncing ? 'bg-yellow-500/20 text-yellow-400' : 'bg-gray-500/20 text-gray-400'
+              <Tooltip content={syncStatus.synced ? 'Synced to cloud' : syncStatus.syncing ? 'Syncing...' : 'Local only'}>
+                <div className={`hidden sm:flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-full ${
+                  syncStatus.synced ? 'badge-green' : syncStatus.syncing ? 'badge-yellow' : 'badge-gray'
                 }`}>
                   {syncStatus.syncing ? <RefreshCw className="w-3 h-3 animate-spin" /> : syncStatus.synced ? <Cloud className="w-3 h-3" /> : <CloudOff className="w-3 h-3" />}
                   <span>{syncStatus.synced ? 'Synced' : syncStatus.syncing ? 'Syncing' : 'Local'}</span>
@@ -1670,19 +1668,19 @@ function DesktopNav({ activePage, setActivePage, onSearchOpen, syncStatus }) {
               data-tour="search"
               aria-label="Search (Press /)"
               onClick={onSearchOpen}
-              className="p-2 rounded-lg transition-colors hover:bg-gray-700 text-gray-300"
+              className="p-2 rounded-lg transition-colors hover:bg-white/5 text-gray-400"
             >
               <Search className="w-5 h-5" />
             </button>
             {authLoading ? (
-              <div className="w-8 h-8 rounded-full bg-gray-700 animate-pulse" />
+              <div className="w-8 h-8 rounded-full bg-white/10 animate-pulse" />
             ) : user ? (
               <div className="relative">
                 <button onClick={() => setShowUserMenu(!showUserMenu)} className="flex items-center gap-2">
                   {user.photoURL ? (
                     <img src={user.photoURL} alt={user.displayName} className="w-8 h-8 rounded-full border-2 border-blue-500" />
                   ) : (
-                    <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center">
+                    <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center">
                       <User className="w-4 h-4 text-gray-400" />
                     </div>
                   )}
@@ -1690,13 +1688,13 @@ function DesktopNav({ activePage, setActivePage, onSearchOpen, syncStatus }) {
                 {showUserMenu && (
                   <>
                     <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
-                    <div className="absolute right-0 top-full mt-2 w-56 rounded-xl shadow-xl border z-50 overflow-hidden bg-gray-800 border-gray-700">
-                      <div className="p-3 border-b border-gray-700">
+                    <div className="absolute right-0 top-full mt-2 w-56 rounded-xl shadow-xl border z-50 overflow-hidden bg-[var(--bg-card)] border-white/[0.06]">
+                      <div className="p-3 border-b border-white/[0.06]">
                         <div className="font-medium text-white">{user.displayName}</div>
                         <div className="text-sm text-gray-400 truncate">{user.email}</div>
                       </div>
                       <button onClick={() => { handleSignOut(); setShowUserMenu(false) }}
-                        className="w-full flex items-center gap-2 p-3 text-left transition-colors hover:bg-gray-700 text-gray-300">
+                        className="w-full flex items-center gap-2 p-3 text-left transition-colors hover:bg-white/5 text-gray-300">
                         <LogOut className="w-4 h-4" />
                         <span>Sign out</span>
                       </button>
@@ -1706,7 +1704,7 @@ function DesktopNav({ activePage, setActivePage, onSearchOpen, syncStatus }) {
               </div>
             ) : (
               <button onClick={signIn} data-tour="signin"
-                className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg text-white text-sm transition-colors">
+                className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-white text-sm transition-colors">
                 <LogIn className="w-4 h-4" />
                 <span className="hidden sm:inline">Sign in</span>
               </button>
@@ -1750,12 +1748,12 @@ function SectorPerformance({ onSelectStock, sectorData, loading }) {
 
   return (
     <div className="space-y-4">
-      <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+      <h3 className="section-header">
         <PieChart className="w-5 h-5 text-blue-400" />
         Sector Performance
       </h3>
-      <div className="card-premium rounded-xl p-4 space-y-2">
-        {sortedSectors.map((sector, idx) => {
+      <div className="card p-4 space-y-1">
+        {sortedSectors.map((sector) => {
           const data = sectorData[sector.symbol]
           const change = data?.changePercent ?? 0
           const isPositive = change >= 0
@@ -1765,33 +1763,33 @@ function SectorPerformance({ onSelectStock, sectorData, loading }) {
             <button
               key={sector.symbol}
               onClick={() => onSelectStock(sector.symbol)}
-              className={`w-full flex items-center gap-3 py-2 px-3 rounded-lg transition-all hover:bg-white/5 stagger-${Math.min(idx + 1, 8)} animate-fade-in`}
+              className="stock-row w-full"
             >
               {/* Sector name */}
               <div className="w-24 text-left">
-                <span className="text-xs font-medium text-gray-400">{sector.name}</span>
+                <span className="text-xs text-gray-500">{sector.name}</span>
               </div>
 
               {/* Bar chart */}
-              <div className="flex-1 h-6 flex items-center">
+              <div className="flex-1 h-4 flex items-center">
                 {/* Center axis and bars */}
                 <div className="w-full flex items-center relative">
                   {/* Negative bar (left of center) */}
                   <div className="w-1/2 flex justify-end">
                     {!isPositive && !loading && (
                       <div
-                        className="h-5 rounded-l-sm sector-bar-negative"
+                        className="h-3 rounded-l-sm bg-red-500/60"
                         style={{ width: `${barWidth}%` }}
                       />
                     )}
                   </div>
                   {/* Center line */}
-                  <div className="w-px h-6 bg-gray-600 flex-shrink-0" />
+                  <div className="w-px h-4 bg-white/10 flex-shrink-0" />
                   {/* Positive bar (right of center) */}
                   <div className="w-1/2 flex justify-start">
                     {isPositive && !loading && (
                       <div
-                        className="h-5 rounded-r-sm sector-bar-positive"
+                        className="h-3 rounded-r-sm bg-emerald-500/60"
                         style={{ width: `${barWidth}%` }}
                       />
                     )}
@@ -1804,7 +1802,7 @@ function SectorPerformance({ onSelectStock, sectorData, loading }) {
                 {loading ? (
                   <div className="h-4 w-12 ml-auto animate-shimmer rounded" />
                 ) : (
-                  <span className={`font-mono text-sm font-semibold ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
+                  <span className={`font-mono text-sm ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}>
                     {isPositive ? '+' : ''}{change.toFixed(2)}%
                   </span>
                 )}
@@ -1832,7 +1830,7 @@ const STOCK_UNIVERSE = {
 const SECTOR_COLORS = {
   'Technology': 'text-blue-400',
   'Finance': 'text-yellow-400',
-  'Healthcare': 'text-green-400',
+  'Healthcare': 'text-emerald-400',
   'Consumer': 'text-pink-400',
   'Energy': 'text-orange-400',
   'Industrials': 'text-slate-400',
@@ -1935,19 +1933,19 @@ function ExplorePage({ onSelectStock }) {
           </p>
         </div>
         {/* View Toggle */}
-        <div className="flex items-center gap-1 bg-gray-800 rounded-lg p-1">
+        <div className="flex items-center gap-1 bg-[#0f1629] border border-white/[0.06] rounded-lg p-1">
           <button
             onClick={() => setViewMode('grid')}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
-              viewMode === 'grid' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 ${
+              viewMode === 'grid' ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white'
             }`}
           >
             <LayoutGrid className="w-4 h-4" /> Grid
           </button>
           <button
             onClick={() => setViewMode('heatmap')}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
-              viewMode === 'heatmap' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 ${
+              viewMode === 'heatmap' ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white'
             }`}
           >
             <Layers className="w-4 h-4" /> Heatmap
@@ -1957,13 +1955,13 @@ function ExplorePage({ onSelectStock }) {
 
       {/* Search */}
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
         <input
           type="text"
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
           placeholder="Search by symbol or name..."
-          className="w-full pl-10 pr-4 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+          className="w-full pl-10 pr-4 py-2.5 bg-[#0f1629] border border-white/[0.06] rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-blue-500/50"
         />
       </div>
 
@@ -1974,7 +1972,7 @@ function ExplorePage({ onSelectStock }) {
             key={sec}
             onClick={() => setActiveSector(sec)}
             className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
-              activeSector === sec ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+              activeSector === sec ? 'bg-blue-600 text-white' : 'bg-[#0f1629] border border-white/[0.06] text-gray-300 hover:border-white/10'
             }`}
           >
             {sec} {sec !== 'All' && `(${STOCK_UNIVERSE[sec]?.length || 0})`}
@@ -1987,9 +1985,9 @@ function ExplorePage({ onSelectStock }) {
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-2 sm:gap-3">
           {[...Array(24)].map((_, i) => (
             <div key={i} className="p-3 sm:p-4 rounded-xl animate-shimmer">
-              <div className="h-4 bg-gray-700 rounded mb-2" />
-              <div className="h-3 bg-gray-700 rounded mb-2" />
-              <div className="h-4 bg-gray-700 rounded" />
+              <div className="h-4 bg-white/10 rounded mb-2" />
+              <div className="h-3 bg-white/10 rounded mb-2" />
+              <div className="h-4 bg-white/10 rounded" />
             </div>
           ))}
         </div>
@@ -2054,19 +2052,16 @@ function ExplorePage({ onSelectStock }) {
                       <button
                         key={symbol}
                         onClick={() => onSelectStock(symbol)}
-                        className={`p-3 sm:p-4 rounded-xl border transition-all hover:scale-[1.02] active:scale-[0.98] text-left ${
-                          pos ? 'bg-green-900/20 border-green-500/30 hover:border-green-500 hover-glow-positive'
-                            : 'bg-red-900/20 border-red-500/30 hover:border-red-500 hover-glow-negative'
-                        }`}
+                        className={`card p-3 cursor-pointer text-left ${pos ? 'hover:border-emerald-500/30' : 'hover:border-red-500/30'}`}
                       >
-                        <div className="text-sm sm:text-base font-bold text-white">{symbol}</div>
-                        <div className="text-xs text-gray-400 truncate">
+                        <div className="font-mono font-bold text-white text-sm">{symbol}</div>
+                        <div className="text-xs text-gray-500 truncate">
                           {quote?.name ? quote.name.split(' ')[0] : '—'}
                         </div>
                         {quote?.c ? (
                           <>
-                            <div className="text-sm text-gray-300 mt-1">${quote.c.toFixed(2)}</div>
-                            <div className={`text-sm font-medium ${pos ? 'text-green-400' : 'text-red-400'}`}>
+                            <div className="font-mono text-sm text-gray-200 mt-1">${quote.c.toFixed(2)}</div>
+                            <div className={`font-mono text-xs ${pos ? 'text-emerald-400' : 'text-red-400'}`}>
                               {pos ? '+' : ''}{pct.toFixed(2)}%
                             </div>
                           </>
@@ -2380,7 +2375,7 @@ function ScreenerTab({ onSelectStock }) {
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-          <Filter className="w-7 h-7 text-green-400" />
+          <Filter className="w-7 h-7 text-emerald-400" />
           Stock Screener
         </h2>
         <p className="text-gray-400 mt-1">Curated stock screens for different investment strategies</p>
@@ -2394,8 +2389,8 @@ function ScreenerTab({ onSelectStock }) {
             onClick={() => runScreen(screen)}
             className={`p-4 rounded-xl text-left transition-all hover:scale-[1.02] border ${
               selectedScreen?.id === screen.id
-                ? 'border-blue-500 ring-2 ring-blue-500/30 bg-gray-800'
-                : 'border-gray-700 hover:border-gray-600 bg-gray-800/50'
+                ? 'border-blue-500 ring-2 ring-blue-500/30 bg-[var(--bg-card)]'
+                : 'border-white/[0.06] hover:border-white/10 bg-[var(--bg-card)]/50'
             }`}
           >
             <div className="flex items-start gap-3">
@@ -2414,9 +2409,9 @@ function ScreenerTab({ onSelectStock }) {
 
       {/* Screen Results */}
       {selectedScreen && (
-        <div className="bg-gray-800/50 rounded-xl border border-gray-700 overflow-hidden">
+        <div className="bg-[var(--bg-card)]/50 rounded-xl border border-white/[0.06] overflow-hidden">
           {/* Results Header */}
-          <div className="p-4 border-b border-gray-700 flex flex-wrap items-center justify-between gap-4">
+          <div className="p-4 border-b border-white/[0.06] flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-2">
               <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${selectedScreen.color} flex items-center justify-center`}>
                 <selectedScreen.icon className="w-4 h-4 text-white" />
@@ -2433,7 +2428,7 @@ function ScreenerTab({ onSelectStock }) {
               <select
                 value={sectorFilter}
                 onChange={e => setSectorFilter(e.target.value)}
-                className="bg-gray-700 border border-gray-600 rounded-lg px-3 py-1.5 text-sm text-white"
+                className="bg-white/10 border border-gray-600 rounded-lg px-3 py-1.5 text-sm text-white"
               >
                 {uniqueSectors.map(s => (
                   <option key={s} value={s}>{s === 'All' ? 'All Sectors' : s}</option>
@@ -2444,7 +2439,7 @@ function ScreenerTab({ onSelectStock }) {
               <select
                 value={capFilter}
                 onChange={e => setCapFilter(e.target.value)}
-                className="bg-gray-700 border border-gray-600 rounded-lg px-3 py-1.5 text-sm text-white"
+                className="bg-white/10 border border-gray-600 rounded-lg px-3 py-1.5 text-sm text-white"
               >
                 <option value="All">All Caps</option>
                 <option value="Mega">Mega Cap</option>
@@ -2454,7 +2449,7 @@ function ScreenerTab({ onSelectStock }) {
               </select>
 
               {/* View Toggle */}
-              <div className="flex items-center bg-gray-700 rounded-lg p-1">
+              <div className="flex items-center bg-white/10 rounded-lg p-1">
                 <button
                   onClick={() => setViewMode('table')}
                   className={`p-1.5 rounded ${viewMode === 'table' ? 'bg-gray-600 text-white' : 'text-gray-400'}`}
@@ -2474,14 +2469,14 @@ function ScreenerTab({ onSelectStock }) {
           {/* Results Content */}
           {loading ? (
             <div className="p-4 space-y-3">
-              {[1,2,3,4,5].map(i => <div key={i} className="h-16 bg-gray-700 rounded-lg animate-pulse" />)}
+              {[1,2,3,4,5].map(i => <div key={i} className="h-16 bg-white/10 rounded-lg animate-pulse" />)}
             </div>
           ) : viewMode === 'table' ? (
             /* Table View */
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="text-left text-xs border-b border-gray-700">
+                  <tr className="text-left text-xs border-b border-white/[0.06]">
                     <th className="p-3"><SortHeader field="symbol" label="Symbol" /></th>
                     <th className="p-3 hidden sm:table-cell"><SortHeader field="name" label="Name" /></th>
                     <th className="p-3 text-right"><SortHeader field="price" label="Price" className="justify-end" /></th>
@@ -2508,11 +2503,11 @@ function ScreenerTab({ onSelectStock }) {
                     <tr
                       key={stock.symbol}
                       onClick={() => onSelectStock(stock.symbol)}
-                      className={`cursor-pointer transition-colors hover:bg-gray-700/50 ${i % 2 === 0 ? 'bg-gray-800/30' : ''}`}
+                      className={`cursor-pointer transition-colors hover:bg-white/5/50 ${i % 2 === 0 ? 'bg-[var(--bg-card)]/30' : ''}`}
                     >
                       <td className="p-3">
                         <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 rounded-lg bg-gray-700 flex items-center justify-center flex-shrink-0">
+                          <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center flex-shrink-0">
                             <span className="text-white font-bold text-sm">{stock.symbol.charAt(0)}</span>
                           </div>
                           <span className="font-medium text-white">{stock.symbol}</span>
@@ -2520,7 +2515,7 @@ function ScreenerTab({ onSelectStock }) {
                       </td>
                       <td className="p-3 text-gray-400 text-sm truncate max-w-[200px] hidden sm:table-cell">{stock.name}</td>
                       <td className="p-3 text-right text-white font-medium">{formatCurrency(stock.price)}</td>
-                      <td className={`p-3 text-right font-medium ${stock.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      <td className={`p-3 text-right font-medium ${stock.change >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                         {stock.change >= 0 ? '+' : ''}{stock.change.toFixed(2)}%
                       </td>
                       {selectedScreen.metrics?.includes('pe') && (
@@ -2535,7 +2530,7 @@ function ScreenerTab({ onSelectStock }) {
                         </td>
                       )}
                       {selectedScreen.metrics?.includes('distanceFrom52High') && (
-                        <td className={`p-3 text-right hidden md:table-cell ${stock.distanceFrom52High && stock.distanceFrom52High < 0 ? 'text-red-400' : 'text-green-400'}`}>
+                        <td className={`p-3 text-right hidden md:table-cell ${stock.distanceFrom52High && stock.distanceFrom52High < 0 ? 'text-red-400' : 'text-emerald-400'}`}>
                           {stock.distanceFrom52High ? `${stock.distanceFrom52High.toFixed(1)}%` : 'N/A'}
                         </td>
                       )}
@@ -2556,11 +2551,11 @@ function ScreenerTab({ onSelectStock }) {
                 <button
                   key={stock.symbol}
                   onClick={() => onSelectStock(stock.symbol)}
-                  className="p-4 rounded-xl bg-gray-700/30 hover:bg-gray-700/50 transition-colors text-left border border-gray-700"
+                  className="p-4 rounded-xl bg-white/5 hover:bg-white/5/50 transition-colors text-left border border-white/[0.06]"
                 >
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
-                      <div className="w-10 h-10 rounded-lg bg-gray-700 flex items-center justify-center">
+                      <div className="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center">
                         <span className="text-white font-bold">{stock.symbol.charAt(0)}</span>
                       </div>
                       <div>
@@ -2570,7 +2565,7 @@ function ScreenerTab({ onSelectStock }) {
                     </div>
                     <div className="text-right">
                       <div className="text-white font-medium">{formatCurrency(stock.price)}</div>
-                      <div className={`text-sm ${stock.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      <div className={`text-sm ${stock.change >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                         {stock.change >= 0 ? '+' : ''}{stock.change.toFixed(2)}%
                       </div>
                     </div>
@@ -2584,7 +2579,7 @@ function ScreenerTab({ onSelectStock }) {
                           <span className="text-gray-500">{label}:</span>
                           <span className={`ml-1 ${
                             metric === 'distanceFrom52High' && stock.distanceFrom52High < 0 ? 'text-red-400' :
-                            metric === 'changePercent' && stock.change >= 0 ? 'text-green-400' :
+                            metric === 'changePercent' && stock.change >= 0 ? 'text-emerald-400' :
                             metric === 'changePercent' && stock.change < 0 ? 'text-red-400' :
                             'text-gray-300'
                           }`}>{value}</span>
@@ -2678,7 +2673,7 @@ function EarningsTab({ onSelectStock, watchlist }) {
           <button
             onClick={() => setFilter('all')}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              filter === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              filter === 'all' ? 'bg-blue-600 text-white' : 'bg-white/10 text-gray-300 hover:bg-gray-600'
             }`}
           >
             All
@@ -2686,7 +2681,7 @@ function EarningsTab({ onSelectStock, watchlist }) {
           <button
             onClick={() => setFilter('watchlist')}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              filter === 'watchlist' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              filter === 'watchlist' ? 'bg-blue-600 text-white' : 'bg-white/10 text-gray-300 hover:bg-gray-600'
             }`}
           >
             Watchlist
@@ -2696,7 +2691,7 @@ function EarningsTab({ onSelectStock, watchlist }) {
 
       {loading ? (
         <div className="space-y-3">
-          {[1,2,3,4,5].map(i => <div key={i} className="h-20 bg-gray-800 rounded-xl animate-pulse" />)}
+          {[1,2,3,4,5].map(i => <div key={i} className="h-20 bg-[var(--bg-card)] rounded-xl animate-pulse" />)}
         </div>
       ) : (
         <div className="space-y-3">
@@ -2709,7 +2704,7 @@ function EarningsTab({ onSelectStock, watchlist }) {
                 className={`w-full rounded-xl p-4 border transition-all cursor-pointer hover:scale-[1.01] ${
                   isThisWeek
                     ? 'bg-yellow-900/20 border-yellow-500/30 hover:border-yellow-500/50'
-                    : 'bg-gray-800/50 border-gray-700 hover:border-gray-500'
+                    : 'bg-[var(--bg-card)]/50 border-white/[0.06] hover:border-gray-500'
                 }`}
               >
                 <div className="flex items-center justify-between flex-wrap gap-4">
@@ -2902,7 +2897,7 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock }) {
             </p>
           )}
         </div>
-        <button onClick={fetchAllData} disabled={loading} className="flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-gray-700 hover:bg-gray-600 text-gray-200">
+        <button onClick={fetchAllData} disabled={loading} className="flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all bg-white/5 hover:bg-white/10 text-gray-300 text-sm">
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
         </button>
       </div>
@@ -2917,25 +2912,24 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock }) {
           const sparkData = data ? generateSparklineData(data.c, data.pc) : []
           return (
             <div key={symbol} onClick={() => onSelectStock(symbol)}
-              className={`card-premium rounded-xl p-4 cursor-pointer transition-all hover:scale-[1.02] relative overflow-hidden stagger-${idx + 1} animate-fade-in ${positive ? 'inner-glow-green' : 'inner-glow-red'}`}
-              style={{ borderLeft: `4px solid ${positive ? '#22c55e' : '#ef4444'}` }}>
+              className={`index-card p-4 cursor-pointer ${positive ? 'positive' : 'negative'}`}>
               {/* Background sparkline */}
               <div className="absolute bottom-0 left-0 right-0 h-16 opacity-20">
                 <MiniSparkline data={sparkData} positive={positive} height={64} />
               </div>
               <div className="relative z-10">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="font-mono font-semibold text-gray-300">{symbol}</span>
-                  {positive ? <TrendingUp className="w-4 h-4 text-green-400" /> : <TrendingDown className="w-4 h-4 text-red-400" />}
+                  <span className="font-mono text-sm text-gray-400">{symbol}</span>
+                  {positive ? <TrendingUp className="w-4 h-4 text-emerald-400" /> : <TrendingDown className="w-4 h-4 text-red-400" />}
                 </div>
                 {loading ? <Skeleton className="h-12 w-full" /> : (
                   <div>
-                    <div className="font-mono text-2xl font-bold text-white">{formatCurrency(data?.c)}</div>
+                    <div className="font-mono text-xl font-semibold text-white">{formatCurrency(data?.c)}</div>
                     <div className="flex items-center gap-2 mt-1">
-                      <span className={`font-mono text-sm font-semibold ${positive ? 'text-green-400' : 'text-red-400'}`}>
+                      <span className={`font-mono text-sm ${positive ? 'text-emerald-400' : 'text-red-400'}`}>
                         {positive ? '+' : ''}{pct.toFixed(2)}%
                       </span>
-                      <span className={`font-mono text-xs ${positive ? 'text-green-400/70' : 'text-red-400/70'}`}>
+                      <span className={`font-mono text-xs ${positive ? 'text-emerald-400/70' : 'text-red-400/70'}`}>
                         {positive ? '+' : ''}{formatCurrency(change)}
                       </span>
                     </div>
@@ -2951,11 +2945,11 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock }) {
       {/* Your Watchlist Section */}
       <div className="space-y-4" data-tour="watchlist">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+          <h3 className="section-header">
             <Star className="w-5 h-5 text-yellow-400" />
             Your Watchlist
           </h3>
-          <button onClick={() => setShowAddStock(!showAddStock)} className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg text-white text-sm transition-all">
+          <button onClick={() => setShowAddStock(!showAddStock)} className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-white text-sm transition-all">
             <Plus className="w-4 h-4" /> Add
           </button>
         </div>
@@ -2983,13 +2977,7 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock }) {
                 <div
                   key={symbol}
                   onClick={() => onSelectStock(symbol)}
-                  className={`card-premium rounded-xl p-4 cursor-pointer transition-all hover:scale-[1.02] relative overflow-hidden stagger-${Math.min(idx + 1, 8)} animate-fade-in ${positive ? 'hover-glow-positive' : 'hover-glow-negative'}`}
-                  style={{
-                    background: positive
-                      ? 'linear-gradient(135deg, rgba(34, 197, 94, 0.08) 0%, rgba(17, 24, 39, 0.95) 100%)'
-                      : 'linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(17, 24, 39, 0.95) 100%)',
-                    borderLeft: `3px solid ${positive ? '#22c55e' : '#ef4444'}`
-                  }}
+                  className="card p-4 cursor-pointer group relative overflow-hidden"
                 >
                   {/* Background sparkline */}
                   <div className="absolute bottom-0 left-0 right-0 h-12 opacity-30">
@@ -2998,7 +2986,7 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock }) {
                   <div className="relative z-10">
                     <div className="flex items-center justify-between mb-1">
                       <div>
-                        <span className="font-mono font-bold text-white">{symbol}</span>
+                        <span className="font-mono font-semibold text-white">{symbol}</span>
                         {shortName && (
                           <div className="text-xs text-gray-500 truncate max-w-[120px]">{shortName}</div>
                         )}
@@ -3015,20 +3003,14 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock }) {
                     </div>
                     {quote ? (
                       <>
-                        <div className="font-mono text-xl font-bold text-white">{formatCurrency(quote.c)}</div>
+                        <div className="font-mono text-lg text-white">{formatCurrency(quote.c)}</div>
                         <div className="flex items-center justify-between mt-1">
-                          <div className="flex items-center gap-2">
-                            <span className={`font-mono text-sm font-semibold flex items-center gap-1 ${positive ? 'text-green-400' : 'text-red-400'}`}>
-                              {positive ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
-                              {positive ? '+' : ''}{pct.toFixed(2)}%
-                            </span>
-                            <span className={`font-mono text-xs ${positive ? 'text-green-400/70' : 'text-red-400/70'}`}>
-                              {positive ? '+' : ''}{formatCurrency(dollarChange)}
-                            </span>
-                          </div>
+                          <span className={`badge ${positive ? 'badge-green' : 'badge-red'}`}>
+                            {positive ? '+' : ''}{pct.toFixed(2)}%
+                          </span>
                           {/* Volume indicator */}
                           <div className="flex items-center gap-1" title={`Volume: ${volRatio.toFixed(1)}x avg`}>
-                            <div className="h-1.5 w-8 bg-gray-700 rounded-full overflow-hidden">
+                            <div className="h-1.5 w-8 bg-white/10 rounded-full overflow-hidden">
                               <div
                                 className={`h-full rounded-full ${volRatio > 1.5 ? 'bg-blue-400' : 'bg-gray-500'}`}
                                 style={{ width: `${Math.min(volRatio * 50, 100)}%` }}
@@ -3046,7 +3028,7 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock }) {
             })}
           </div>
         ) : (
-          <div className="card-premium rounded-xl p-8 text-center">
+          <div className="card p-8 text-center">
             <Star className="w-10 h-10 mx-auto mb-3 text-gray-600" />
             <p className="text-gray-400">Add stocks to track them here</p>
           </div>
@@ -3055,15 +3037,15 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock }) {
 
       {/* Today's Movers Section */}
       <div className="space-y-4">
-        <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+        <h3 className="section-header">
           <Activity className="w-5 h-5 text-blue-400" />
           Today's Movers
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Top Gainers */}
-          <div className="card-premium rounded-xl p-4">
-            <h4 className="font-medium text-white mb-3 flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-green-400" />
+          <div className="card p-4">
+            <h4 className="font-medium text-gray-200 mb-3 flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-emerald-400" />
               Top Gainers
             </h4>
             <div className="space-y-1">
@@ -3071,28 +3053,20 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock }) {
                 [1,2,3,4,5].map(i => <Skeleton key={i} className="h-11 w-full" />)
               ) : moversData.gainers.map((stock, i) => (
                 <button key={stock.symbol} onClick={() => onSelectStock(stock.symbol)}
-                  className={`w-full flex items-center gap-3 p-2.5 rounded-lg transition-all hover:bg-white/5 relative overflow-hidden stagger-${i + 1} animate-fade-in`}>
-                  {/* Background magnitude bar */}
-                  <div
-                    className="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-green-500/20 to-transparent"
-                    style={{ width: `${Math.min(stock.change * 5, 100)}%` }}
-                  />
-                  {/* Rank badge */}
-                  <div className={`relative w-6 h-6 rounded-md flex items-center justify-center text-xs font-bold ${i === 0 ? 'rank-badge-gold text-yellow-400' : 'rank-badge text-blue-400'}`}>
-                    {i + 1}
-                  </div>
-                  <span className="relative font-mono font-semibold text-white text-sm">{stock.symbol}</span>
-                  <span className="relative font-mono text-gray-400 text-xs">${stock.price.toFixed(2)}</span>
+                  className="stock-row w-full cursor-pointer">
+                  <span className="font-mono text-xs text-gray-600 w-4">{i + 1}</span>
+                  <span className="font-mono font-medium text-white ml-3">{stock.symbol}</span>
+                  <span className="font-mono text-gray-400 text-xs ml-2">${stock.price.toFixed(2)}</span>
                   <div className="flex-1" />
-                  <span className="relative font-mono text-green-400 text-sm font-semibold">+{stock.change.toFixed(2)}%</span>
+                  <span className="font-mono text-sm text-emerald-400">+{stock.change.toFixed(2)}%</span>
                 </button>
               ))}
             </div>
           </div>
 
           {/* Top Losers */}
-          <div className="card-premium rounded-xl p-4">
-            <h4 className="font-medium text-white mb-3 flex items-center gap-2">
+          <div className="card p-4">
+            <h4 className="font-medium text-gray-200 mb-3 flex items-center gap-2">
               <TrendingDown className="w-4 h-4 text-red-400" />
               Top Losers
             </h4>
@@ -3101,20 +3075,12 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock }) {
                 [1,2,3,4,5].map(i => <Skeleton key={i} className="h-11 w-full" />)
               ) : moversData.losers.map((stock, i) => (
                 <button key={stock.symbol} onClick={() => onSelectStock(stock.symbol)}
-                  className={`w-full flex items-center gap-3 p-2.5 rounded-lg transition-all hover:bg-white/5 relative overflow-hidden stagger-${i + 1} animate-fade-in`}>
-                  {/* Background magnitude bar */}
-                  <div
-                    className="absolute right-0 top-0 bottom-0 bg-gradient-to-l from-red-500/20 to-transparent"
-                    style={{ width: `${Math.min(Math.abs(stock.change) * 5, 100)}%` }}
-                  />
-                  {/* Rank badge */}
-                  <div className="relative w-6 h-6 rounded-md flex items-center justify-center text-xs font-bold rank-badge text-blue-400">
-                    {i + 1}
-                  </div>
-                  <span className="relative font-mono font-semibold text-white text-sm">{stock.symbol}</span>
-                  <span className="relative font-mono text-gray-400 text-xs">${stock.price.toFixed(2)}</span>
+                  className="stock-row w-full cursor-pointer">
+                  <span className="font-mono text-xs text-gray-600 w-4">{i + 1}</span>
+                  <span className="font-mono font-medium text-white ml-3">{stock.symbol}</span>
+                  <span className="font-mono text-gray-400 text-xs ml-2">${stock.price.toFixed(2)}</span>
                   <div className="flex-1" />
-                  <span className="relative font-mono text-red-400 text-sm font-semibold">{stock.change.toFixed(2)}%</span>
+                  <span className="font-mono text-sm text-red-400">{stock.change.toFixed(2)}%</span>
                 </button>
               ))}
             </div>
@@ -3124,27 +3090,27 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock }) {
 
       {/* Unusual Volume Section */}
       <div className="space-y-4">
-        <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+        <h3 className="section-header">
           <Activity className="w-5 h-5 text-orange-400" />
           Unusual Volume
         </h3>
         {unusualVolumeStocks.length > 0 ? (
-          <div className="card-premium rounded-xl p-4">
-            <div className="space-y-2">
-              {unusualVolumeStocks.map((stock, i) => (
+          <div className="card p-4">
+            <div className="space-y-1">
+              {unusualVolumeStocks.map((stock) => (
                 <button
                   key={stock.symbol}
                   onClick={() => onSelectStock(stock.symbol)}
-                  className={`w-full flex items-center gap-3 p-2.5 rounded-lg transition-all hover:bg-white/5 stagger-${i + 1} animate-fade-in`}
+                  className="stock-row w-full cursor-pointer"
                 >
-                  <span className="font-mono font-semibold text-white text-sm w-16">{stock.symbol}</span>
+                  <span className="font-mono font-medium text-white text-sm w-16">{stock.symbol}</span>
                   <VolumeAnomaly volume={stock.volume} avgVolume={stock.avgVolume} />
                   <div className="flex-1 text-right">
-                    <span className="font-mono text-gray-400 text-xs">
+                    <span className="font-mono text-gray-500 text-xs">
                       {formatVolume(stock.volume)} vs {formatVolume(stock.avgVolume)} avg
                     </span>
                   </div>
-                  <span className={`font-mono text-sm font-medium ${stock.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  <span className={`font-mono text-sm ${stock.change >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                     {stock.change >= 0 ? '+' : ''}{stock.change.toFixed(2)}%
                   </span>
                 </button>
@@ -3152,7 +3118,7 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock }) {
             </div>
           </div>
         ) : (
-          <div className="card-premium rounded-xl p-6 text-center">
+          <div className="card p-6 text-center">
             <Activity className="w-8 h-8 mx-auto mb-2 text-gray-600" />
             <p className="text-gray-500 text-sm">No unusual volume activity today</p>
           </div>
@@ -3204,7 +3170,7 @@ function MarketOverview({ onSelectStock }) {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-white">Market Overview</h2>
-        <button onClick={fetchData} disabled={loading} className="flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-gray-700 hover:bg-gray-600 text-gray-200">
+        <button onClick={fetchData} disabled={loading} className="flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-white/5 hover:bg-white/10 text-gray-300">
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
         </button>
       </div>
@@ -3218,7 +3184,7 @@ function MarketOverview({ onSelectStock }) {
             const sparkData = data ? generateSparklineData(data.c, data.pc) : []
             return (
               <div key={symbol} onClick={() => onSelectStock(symbol)}
-                className="rounded-xl p-4 cursor-pointer transition-all hover:scale-[1.02] bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700 hover:border-gray-600">
+                className="rounded-xl p-4 cursor-pointer transition-all hover:scale-[1.02] bg-gradient-to-br from-gray-800 to-gray-900 border border-white/[0.06] hover:border-white/10">
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-medium text-gray-300">{symbol}</span>
                   {positive ? <TrendingUp className="w-4 h-4 text-green-500" /> : <TrendingDown className="w-4 h-4 text-red-500" />}
@@ -3227,7 +3193,7 @@ function MarketOverview({ onSelectStock }) {
                   <div className="flex items-end justify-between">
                     <div>
                       <div className="text-xl font-bold text-white">{formatCurrency(data?.c)}</div>
-                      <div className={`text-sm font-medium ${positive ? 'text-green-400' : 'text-red-400'}`}>{positive ? '+' : ''}{pct.toFixed(2)}%</div>
+                      <div className={`text-sm font-medium ${positive ? 'text-emerald-400' : 'text-red-400'}`}>{positive ? '+' : ''}{pct.toFixed(2)}%</div>
                     </div>
                     <MiniSparkline data={sparkData} positive={positive} />
                   </div>
@@ -3365,12 +3331,12 @@ function StockChart({ symbol, range = '1mo', interval = '1d', onRangeData }) {
   }, [symbol, range, interval, onRangeData])
 
   if (loading) {
-    return <div className="h-64 bg-gray-700/30 rounded-xl animate-pulse" />
+    return <div className="h-64 bg-white/5 rounded-xl animate-pulse" />
   }
 
   if (chartData.length === 0) {
     return (
-      <div className="h-64 bg-gray-700/30 rounded-xl flex items-center justify-center text-gray-400">
+      <div className="h-64 bg-white/5 rounded-xl flex items-center justify-center text-gray-400">
         No chart data available
       </div>
     )
@@ -3513,7 +3479,7 @@ const classifyTransaction = (code) => {
 const getTransactionDisplay = (code) => {
   const { label, color } = classifyTransaction(code)
   const colorMap = {
-    green: { color: 'text-green-400', bg: 'bg-green-500/20' },
+    green: { color: 'text-emerald-400', bg: 'bg-green-500/20' },
     red: { color: 'text-red-400', bg: 'bg-red-500/20' },
     blue: { color: 'text-blue-400', bg: 'bg-blue-500/20' },
     yellow: { color: 'text-yellow-400', bg: 'bg-yellow-500/20' },
@@ -3553,7 +3519,7 @@ function InsiderActivity({ symbol }) {
 
   if (loading) {
     return (
-      <div className="rounded-xl bg-gray-700/30 p-4">
+      <div className="rounded-xl bg-white/5 p-4">
         <div className="h-6 w-32 animate-shimmer rounded mb-2" />
         <div className="h-4 w-48 animate-shimmer rounded" />
       </div>
@@ -3575,7 +3541,7 @@ function InsiderActivity({ symbol }) {
   const exercises = recentData.filter(t => classifyTransaction(t.transactionCode).type === 'exercise').length
 
   return (
-    <div className="rounded-xl bg-gray-700/30 p-4">
+    <div className="rounded-xl bg-white/5 p-4">
       <button
         onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center justify-between"
@@ -3592,7 +3558,7 @@ function InsiderActivity({ symbol }) {
           {data.slice(0, 10).map((t, i) => {
             const type = getTransactionDisplay(t.transactionCode)
             return (
-              <div key={i} className="flex items-center justify-between text-xs p-2 rounded-lg bg-gray-800/50">
+              <div key={i} className="flex items-center justify-between text-xs p-2 rounded-lg bg-[var(--bg-card)]/50">
                 <div className="flex-1 min-w-0">
                   <div className="text-white font-medium truncate">{t.name}</div>
                   <div className="text-gray-500">{new Date(t.transactionDate).toLocaleDateString()}</div>
@@ -3644,7 +3610,7 @@ function EarningsSurprise({ symbol }) {
 
   if (loading) {
     return (
-      <div className="rounded-xl bg-gray-700/30 p-4">
+      <div className="rounded-xl bg-white/5 p-4">
         <div className="h-6 w-32 animate-shimmer rounded mb-2" />
         <div className="h-4 w-48 animate-shimmer rounded" />
       </div>
@@ -3667,7 +3633,7 @@ function EarningsSurprise({ symbol }) {
   }))
 
   return (
-    <div className="rounded-xl bg-gray-700/30 p-4">
+    <div className="rounded-xl bg-white/5 p-4">
       <button
         onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center justify-between"
@@ -3688,7 +3654,7 @@ function EarningsSurprise({ symbol }) {
           <div className="flex justify-around mb-2">
             {chartData.map((q, i) => (
               <div key={i} className="text-center">
-                <span className={`text-xs font-mono px-1.5 py-0.5 rounded ${q.beat ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                <span className={`text-xs font-mono px-1.5 py-0.5 rounded ${q.beat ? 'bg-green-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
                   {q.surprise >= 0 ? '+' : ''}{q.surprise.toFixed(1)}%
                 </span>
               </div>
@@ -3796,13 +3762,13 @@ function RelativeStrength({ symbol, range, interval }) {
   const outperforming = data.relativeStrength > 0
 
   return (
-    <div className="rounded-xl bg-gray-700/30 p-4">
+    <div className="rounded-xl bg-white/5 p-4">
       <h3 className="text-sm font-medium text-gray-400 mb-3">Relative Strength vs SPY</h3>
       <div className="flex items-center gap-4">
         {/* Stock performance */}
         <div className="flex-1">
           <div className="text-xs text-gray-500 mb-1">{symbol}</div>
-          <div className={`font-mono text-lg font-semibold ${data.stockChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+          <div className={`font-mono text-lg font-semibold ${data.stockChange >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
             {data.stockChange >= 0 ? '+' : ''}{data.stockChange.toFixed(2)}%
           </div>
         </div>
@@ -3811,20 +3777,20 @@ function RelativeStrength({ symbol, range, interval }) {
         {/* SPY performance */}
         <div className="flex-1">
           <div className="text-xs text-gray-500 mb-1">SPY</div>
-          <div className={`font-mono text-lg font-semibold ${data.spyChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+          <div className={`font-mono text-lg font-semibold ${data.spyChange >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
             {data.spyChange >= 0 ? '+' : ''}{data.spyChange.toFixed(2)}%
           </div>
         </div>
         {/* Relative strength */}
         <div className={`px-3 py-2 rounded-lg ${outperforming ? 'bg-green-500/20' : 'bg-red-500/20'}`}>
           <div className="text-xs text-gray-400 mb-0.5">Relative</div>
-          <div className={`font-mono font-bold ${outperforming ? 'text-green-400' : 'text-red-400'}`}>
+          <div className={`font-mono font-bold ${outperforming ? 'text-emerald-400' : 'text-red-400'}`}>
             {outperforming ? '+' : ''}{data.relativeStrength.toFixed(2)}%
           </div>
         </div>
       </div>
       {/* Visual bar */}
-      <div className="mt-3 h-2 bg-gray-800 rounded-full overflow-hidden relative">
+      <div className="mt-3 h-2 bg-[var(--bg-card)] rounded-full overflow-hidden relative">
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="w-px h-full bg-gray-600" />
         </div>
@@ -3895,11 +3861,11 @@ function StockDetail({ symbol, onClose, watchlist, setWatchlist }) {
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4 z-50" onClick={onClose}>
       <div
-        className="bg-gray-800/95 backdrop-blur w-full sm:max-w-3xl sm:rounded-2xl rounded-t-2xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden border-t sm:border border-gray-700 shadow-2xl transform transition-transform"
+        className="bg-[#111827] w-full sm:max-w-3xl sm:rounded-2xl rounded-t-2xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden border border-white/[0.06] shadow-2xl"
         onClick={e => e.stopPropagation()}
       >
-        {/* Header - sticky on mobile with gradient tint */}
-        <div className={`sticky top-0 z-10 backdrop-blur p-4 border-b border-gray-700 flex items-center justify-between ${positive ? 'bg-gradient-to-r from-green-900/20 to-gray-800/95' : 'bg-gradient-to-r from-red-900/20 to-gray-800/95'}`}>
+        {/* Header */}
+        <div className="sticky top-0 z-10 bg-[#111827] p-4 border-b border-white/[0.06] flex items-center justify-between">
           <div className="flex items-center gap-3 sm:gap-4 min-w-0">
             <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0">
               <span className="text-white font-bold text-base sm:text-lg">{symbol.charAt(0)}</span>
@@ -3910,7 +3876,7 @@ function StockDetail({ symbol, onClose, watchlist, setWatchlist }) {
                 {quote?.marketState && (
                   <span className={`text-xs px-2 py-0.5 rounded-full ${
                     quote.marketState === 'REGULAR'
-                      ? 'bg-green-500/20 text-green-400'
+                      ? 'bg-green-500/20 text-emerald-400'
                       : 'bg-yellow-500/20 text-yellow-400'
                   }`}>
                     {quote.marketState === 'REGULAR' ? 'Open' : quote.marketState === 'PRE' ? 'Pre-Market' : quote.marketState === 'POST' ? 'After Hours' : 'Closed'}
@@ -3931,21 +3897,21 @@ function StockDetail({ symbol, onClose, watchlist, setWatchlist }) {
                 }
               }}
               aria-label={isInWatchlist ? "Remove from watchlist" : "Add to watchlist"}
-              className={`p-2 sm:p-2.5 rounded-lg transition-colors ${isInWatchlist ? 'bg-yellow-500/20 text-yellow-400' : 'hover:bg-gray-700 text-gray-400'}`}
+              className={`p-2 sm:p-2.5 rounded-lg transition-colors ${isInWatchlist ? 'bg-yellow-500/20 text-yellow-400' : 'hover:bg-white/5 text-gray-400'}`}
             >
               <Star className={`w-5 h-5 ${isInWatchlist ? 'fill-current' : ''}`} />
             </button>
             <button
               onClick={() => setShowNews(true)}
               aria-label="View news"
-              className="p-2 sm:p-2.5 rounded-lg hover:bg-gray-700 active:bg-gray-600 transition-colors"
+              className="p-2 sm:p-2.5 rounded-lg hover:bg-white/5 active:bg-white/10 transition-colors"
             >
               <Newspaper className="w-5 h-5 text-gray-400" />
             </button>
             <button
               onClick={onClose}
               aria-label="Close"
-              className="p-2 sm:p-2.5 rounded-lg hover:bg-gray-700 active:bg-gray-600 transition-colors"
+              className="p-2 sm:p-2.5 rounded-lg hover:bg-white/5 active:bg-white/10 transition-colors"
             >
               <X className="w-5 h-5 text-gray-400" />
             </button>
@@ -3958,17 +3924,17 @@ function StockDetail({ symbol, onClose, watchlist, setWatchlist }) {
           <div className="p-4 sm:p-6 space-y-4 sm:space-y-6 overflow-y-auto max-h-[calc(95vh-80px)] sm:max-h-[calc(90vh-80px)]">
             {/* Price Header */}
             <div className="flex items-baseline gap-2 sm:gap-4 flex-wrap">
-              <span className="text-3xl sm:text-4xl font-bold text-white">{formatCurrency(quote?.c)}</span>
-              <span className={`text-base sm:text-lg font-medium px-2.5 sm:px-3 py-1 rounded-full ${positive ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-                {positive ? '+' : ''}{displayPctChange?.toFixed(2)}% <span className="text-xs opacity-75">{currentRangeOption.displayLabel}</span>
+              <span className="font-mono text-3xl font-bold text-white">{formatCurrency(quote?.c)}</span>
+              <span className={`badge ${positive ? 'badge-green' : 'badge-red'}`}>
+                {positive ? '+' : ''}{displayPctChange?.toFixed(2)}%
               </span>
-              <span className={`text-sm ${positive ? 'text-green-400' : 'text-red-400'}`}>
-                {positive ? '+' : ''}{formatCurrency(displayChange)}
+              <span className={`font-mono text-sm ${positive ? 'text-emerald-400' : 'text-red-400'}`}>
+                {positive ? '+' : ''}{formatCurrency(displayChange)} {currentRangeOption.displayLabel}
               </span>
             </div>
 
             {/* Chart with Range Selector */}
-            <div className="rounded-xl bg-gray-700/30 p-4">
+            <div className="card-flush p-4">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-medium text-gray-400">Price Chart</h3>
                 <div className="flex gap-1">
@@ -3976,10 +3942,10 @@ function StockDetail({ symbol, onClose, watchlist, setWatchlist }) {
                     <button
                       key={option.value}
                       onClick={() => setChartRange(option.value)}
-                      className={`px-3 py-1 text-xs font-medium rounded-lg transition-colors ${
+                      className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
                         chartRange === option.value
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                          ? 'bg-white/10 text-white'
+                          : 'text-gray-500 hover:text-gray-300'
                       }`}
                     >
                       {option.label}
@@ -4005,11 +3971,11 @@ function StockDetail({ symbol, onClose, watchlist, setWatchlist }) {
               ].filter(m => m.value && (typeof m.value !== 'number' || m.value > 0))
 
               return metrics.length > 0 ? (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   {metrics.map(m => (
-                    <div key={m.label} className="rounded-lg p-4 bg-gray-700/30">
-                      <div className="text-sm text-gray-400">{m.label}</div>
-                      <div className="font-medium text-white">{m.format(m.value)}</div>
+                    <div key={m.label} className="card-flush p-3">
+                      <div className="text-xs text-gray-500">{m.label}</div>
+                      <div className="font-mono text-sm text-gray-200">{m.format(m.value)}</div>
                     </div>
                   ))}
                 </div>
@@ -4087,11 +4053,11 @@ function Watchlist({ watchlist, setWatchlist, onSelectStock }) {
       <div className="flex items-center justify-between flex-wrap gap-4">
         <h2 className="text-2xl font-bold text-white">Watchlist</h2>
         <div className="flex items-center gap-2">
-          <button onClick={() => setShowSearch(!showSearch)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-white transition-all">
+          <button onClick={() => setShowSearch(!showSearch)} className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-white text-sm transition-all">
             <Plus className="w-4 h-4" /> Add Stock
           </button>
-          <button onClick={fetchQuotes} disabled={loading} className="p-2 rounded-lg transition-all bg-gray-700 hover:bg-gray-600">
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''} text-gray-300`} />
+          <button onClick={fetchQuotes} disabled={loading} className="p-2 rounded-lg transition-all bg-white/5 hover:bg-white/10">
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''} text-gray-400`} />
           </button>
         </div>
       </div>
@@ -4112,21 +4078,20 @@ function Watchlist({ watchlist, setWatchlist, onSelectStock }) {
             const positive = pct >= 0
             const sparkData = quote ? generateSparklineData(quote.c, quote.pc) : []
             return (
-              <div key={symbol} className="rounded-xl p-4 border transition-all hover:scale-[1.02] bg-gray-800/50 border-gray-700 hover:border-gray-600">
+              <div key={symbol} className="card p-4">
                 <div className="flex items-center justify-between mb-3">
-                  <button onClick={() => onSelectStock(symbol)} className="text-lg font-bold hover:text-blue-400 text-white">{symbol}</button>
-                  <button onClick={() => removeSymbol(symbol)} className="p-1 hover:bg-red-600/20 rounded text-gray-400 hover:text-red-400">
+                  <button onClick={() => onSelectStock(symbol)} className="font-mono font-semibold hover:text-blue-400 text-white">{symbol}</button>
+                  <button onClick={() => removeSymbol(symbol)} className="p-1 hover:bg-red-500/20 rounded text-gray-500 hover:text-red-400">
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
                 {quote ? (
                   <div className="flex items-end justify-between">
                     <div>
-                      <div className="text-2xl font-bold text-white">{formatCurrency(quote.c)}</div>
-                      <div className={`text-sm font-medium flex items-center gap-1 ${positive ? 'text-green-400' : 'text-red-400'}`}>
-                        {positive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                      <div className="font-mono text-xl text-white">{formatCurrency(quote.c)}</div>
+                      <span className={`badge ${positive ? 'badge-green' : 'badge-red'}`}>
                         {positive ? '+' : ''}{pct.toFixed(2)}%
-                      </div>
+                      </span>
                     </div>
                     <MiniSparkline data={sparkData} positive={positive} height={40} />
                   </div>
@@ -4138,7 +4103,7 @@ function Watchlist({ watchlist, setWatchlist, onSelectStock }) {
           })}
         </div>
       ) : (
-        <div className="rounded-xl p-12 border text-center bg-gray-800/50 border-gray-700">
+        <div className="card p-12 text-center">
           <Star className="w-12 h-12 mx-auto mb-4 text-gray-600" />
           <h3 className="text-lg font-medium mb-2 text-gray-300">Watchlist is empty</h3>
           <p className="text-gray-400">Add stocks to track them here</p>
@@ -4181,9 +4146,9 @@ function MarketMovers({ onSelectStock }) {
   useEffect(() => { fetchData() }, [fetchData])
 
   const StockList = ({ title, stocks, isGainers }) => (
-    <div className="rounded-xl p-4 border bg-gray-800/50 border-gray-700">
-      <h3 className="font-semibold text-white mb-4 flex items-center gap-2">
-        {isGainers ? <TrendingUp className="w-5 h-5 text-green-400" /> : <TrendingDown className="w-5 h-5 text-red-400" />}
+    <div className="card p-4">
+      <h3 className="font-medium text-gray-200 mb-4 flex items-center gap-2">
+        {isGainers ? <TrendingUp className="w-5 h-5 text-emerald-400" /> : <TrendingDown className="w-5 h-5 text-red-400" />}
         {title}
       </h3>
       <div className="space-y-2">
@@ -4191,14 +4156,14 @@ function MarketMovers({ onSelectStock }) {
           [1,2,3,4,5].map(i => <Skeleton key={i} className="h-12 w-full" />)
         ) : stocks.map((stock, i) => (
           <button key={stock.symbol} onClick={() => onSelectStock(stock.symbol)}
-            className="w-full flex items-center justify-between p-3 rounded-lg transition-colors hover:bg-gray-700/50">
+            className="stock-row w-full cursor-pointer">
             <div className="flex items-center gap-3">
-              <span className="text-gray-400 text-sm w-4">{i + 1}</span>
-              <span className="font-medium text-white">{stock.symbol}</span>
+              <span className="font-mono text-xs text-gray-600 w-4">{i + 1}</span>
+              <span className="font-mono font-medium text-white">{stock.symbol}</span>
             </div>
-            <div className="text-right">
-              <div className="text-white">{formatCurrency(stock.price)}</div>
-              <div className={isGainers ? 'text-green-400 text-sm' : 'text-red-400 text-sm'}>
+            <div className="text-right flex-1">
+              <div className="font-mono text-sm text-gray-200">{formatCurrency(stock.price)}</div>
+              <div className={`font-mono text-xs ${isGainers ? 'text-emerald-400' : 'text-red-400'}`}>
                 {stock.change >= 0 ? '+' : ''}{stock.change.toFixed(2)}%
               </div>
             </div>
@@ -4215,7 +4180,7 @@ function MarketMovers({ onSelectStock }) {
           <h2 className="text-2xl font-bold text-white">Market Movers</h2>
           <p className="text-gray-400">Today's top gainers and losers</p>
         </div>
-        <button onClick={fetchData} disabled={loading} className="flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-gray-700 hover:bg-gray-600 text-gray-200">
+        <button onClick={fetchData} disabled={loading} className="flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-white/5 hover:bg-white/10 text-gray-300">
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
         </button>
       </div>
@@ -4486,7 +4451,7 @@ function NewsPage({ watchlist }) {
           </div>
         </div>
         <button onClick={() => fetchNews(true)} disabled={loading}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl transition-colors bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300">
+          className="flex items-center gap-2 px-4 py-2 rounded-xl transition-colors bg-[var(--bg-card)] hover:bg-white/5 border border-white/[0.06] text-gray-300">
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           <span className="hidden sm:inline">Refresh</span>
         </button>
@@ -4499,7 +4464,7 @@ function NewsPage({ watchlist }) {
             className={`flex items-center gap-2 px-4 py-2 rounded-xl whitespace-nowrap transition-all font-medium ${
               tab === t.id
                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25'
-                : 'bg-gray-800 text-gray-300 hover:bg-gray-700 border border-gray-700'
+                : 'bg-[var(--bg-card)] text-gray-300 hover:bg-white/5 border border-white/[0.06]'
             }`}>
             <t.icon className="w-4 h-4" />
             {t.label}
@@ -4509,14 +4474,14 @@ function NewsPage({ watchlist }) {
 
       {/* Watchlist info message */}
       {tab === 'watchlist' && watchlist && watchlist.length > MAX_WATCHLIST_STOCKS && !loading && (
-        <div className="text-sm text-gray-400 bg-gray-800/50 rounded-lg px-4 py-2 border border-gray-700">
+        <div className="text-sm text-gray-400 bg-[var(--bg-card)]/50 rounded-lg px-4 py-2 border border-white/[0.06]">
           Showing news for your top {MAX_WATCHLIST_STOCKS} watchlist stocks: {watchlist.slice(0, MAX_WATCHLIST_STOCKS).join(', ')}
         </div>
       )}
 
       {/* Watchlist empty state */}
       {tab === 'watchlist' && (!watchlist || watchlist.length === 0) && !loading && (
-        <div className="rounded-xl p-12 border text-center bg-gray-800/50 border-gray-700">
+        <div className="rounded-xl p-12 border text-center bg-[var(--bg-card)]/50 border-white/[0.06]">
           <Star className="w-12 h-12 mx-auto mb-4 text-gray-600" />
           <h3 className="text-lg font-medium mb-2 text-gray-300">Add stocks to your watchlist</h3>
           <p className="text-gray-400">News from your watchlist stocks will appear here</p>
@@ -4527,14 +4492,14 @@ function NewsPage({ watchlist }) {
       {loading && (
         <div className="space-y-4">
           {[1, 2, 3].map(i => (
-            <div key={i} className="h-28 rounded-xl animate-pulse bg-gray-800" />
+            <div key={i} className="h-28 rounded-xl animate-pulse bg-[var(--bg-card)]" />
           ))}
         </div>
       )}
 
       {/* Empty watchlist prompt for Your Feed */}
       {!loading && tab === 'feed' && (!watchlist || watchlist.length === 0) && (
-        <div className="rounded-xl p-12 border text-center bg-gray-800/50 border-gray-700">
+        <div className="rounded-xl p-12 border text-center bg-[var(--bg-card)]/50 border-white/[0.06]">
           <Star className="w-12 h-12 mx-auto mb-4 text-yellow-400/50" />
           <h3 className="text-lg font-medium mb-2 text-gray-300">No watchlist stocks</h3>
           <p className="text-gray-400">Add stocks to your watchlist on the Dashboard to see personalized news here</p>
@@ -4543,7 +4508,7 @@ function NewsPage({ watchlist }) {
 
       {/* No news state */}
       {!loading && news.length === 0 && tab !== 'feed' && (
-        <div className="rounded-xl p-12 border text-center bg-gray-800/50 border-gray-700">
+        <div className="rounded-xl p-12 border text-center bg-[var(--bg-card)]/50 border-white/[0.06]">
           <Newspaper className="w-12 h-12 mx-auto mb-4 text-gray-600" />
           <h3 className="text-lg font-medium mb-2 text-gray-300">No news found</h3>
           <p className="text-gray-400">Try refreshing or check back later</p>
@@ -4552,7 +4517,7 @@ function NewsPage({ watchlist }) {
 
       {/* No news state for feed with watchlist */}
       {!loading && news.length === 0 && tab === 'feed' && watchlist && watchlist.length > 0 && (
-        <div className="rounded-xl p-12 border text-center bg-gray-800/50 border-gray-700">
+        <div className="rounded-xl p-12 border text-center bg-[var(--bg-card)]/50 border-white/[0.06]">
           <Newspaper className="w-12 h-12 mx-auto mb-4 text-gray-600" />
           <h3 className="text-lg font-medium mb-2 text-gray-300">No recent news</h3>
           <p className="text-gray-400">No news found for your watchlist stocks</p>
@@ -4566,7 +4531,7 @@ function NewsPage({ watchlist }) {
             const summary = article.summary || ''
             return (
               <a key={`${article.ticker}-${i}`} href={article.url} target="_blank" rel="noopener noreferrer"
-                className="block rounded-xl border transition-all hover:scale-[1.002] bg-gray-800/50 border-gray-700 hover:border-gray-600 hover:bg-gray-800 overflow-hidden group">
+                className="block rounded-xl border transition-all hover:scale-[1.002] bg-[var(--bg-card)]/50 border-white/[0.06] hover:border-white/10 hover:bg-[var(--bg-card)] overflow-hidden group">
                 <div className="flex gap-4 p-4">
                   {/* Stock Badge */}
                   {article.ticker && (
@@ -4605,7 +4570,7 @@ function NewsPage({ watchlist }) {
             <button
               onClick={loadMoreNews}
               disabled={loadingMore}
-              className="w-full py-3 rounded-xl border border-gray-700 bg-gray-800/50 hover:bg-gray-700 text-gray-300 font-medium transition-colors flex items-center justify-center gap-2"
+              className="w-full py-3 rounded-xl border border-white/[0.06] bg-[var(--bg-card)]/50 hover:bg-white/5 text-gray-300 font-medium transition-colors flex items-center justify-center gap-2"
             >
               {loadingMore ? (
                 <>
@@ -4644,7 +4609,7 @@ function SettingsPage({ syncStatus, onShowTour }) {
         <p className="text-sm text-gray-400">Manage your account and preferences</p>
       </div>
 
-      <div className="rounded-xl border p-6 bg-gray-800 border-gray-700">
+      <div className="rounded-xl border p-6 bg-[var(--bg-card)] border-white/[0.06]">
         <div className="flex items-center gap-3 mb-4">
           <User className="w-5 h-5 text-gray-400" />
           <h3 className="text-lg font-medium text-white">Account</h3>
@@ -4655,7 +4620,7 @@ function SettingsPage({ syncStatus, onShowTour }) {
               {user.photoURL ? (
                 <img src={user.photoURL} alt={user.displayName} className="w-12 h-12 rounded-full border-2 border-blue-500" />
               ) : (
-                <div className="w-12 h-12 rounded-full bg-gray-700 flex items-center justify-center">
+                <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center">
                   <User className="w-6 h-6 text-gray-400" />
                 </div>
               )}
@@ -4668,16 +4633,16 @@ function SettingsPage({ syncStatus, onShowTour }) {
               {syncStatus.syncing ? (
                 <RefreshCw className="w-4 h-4 text-yellow-400 animate-spin" />
               ) : syncStatus.synced ? (
-                <Cloud className="w-4 h-4 text-green-400" />
+                <Cloud className="w-4 h-4 text-emerald-400" />
               ) : (
                 <CloudOff className="w-4 h-4 text-yellow-400" />
               )}
-              <span className={`text-sm ${syncStatus.synced ? 'text-green-400' : 'text-yellow-400'}`}>
+              <span className={`text-sm ${syncStatus.synced ? 'text-emerald-400' : 'text-yellow-400'}`}>
                 {syncStatus.syncing ? 'Syncing data to cloud...' : syncStatus.synced ? 'Data synced to cloud' : 'Waiting to sync...'}
               </span>
             </div>
             <button onClick={handleSignOut}
-              className="flex items-center gap-2 px-4 py-2.5 bg-gray-600 hover:bg-gray-700 rounded-xl text-white transition-colors">
+              className="flex items-center gap-2 px-4 py-2.5 bg-gray-600 hover:bg-white/5 rounded-xl text-white transition-colors">
               <LogOut className="w-4 h-4" />
               Sign out
             </button>
@@ -4693,7 +4658,7 @@ function SettingsPage({ syncStatus, onShowTour }) {
                 Sign in to sync your watchlist and settings across all your devices.
               </p>
               <button onClick={signIn}
-                className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 rounded-xl text-white transition-colors">
+                className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 rounded-xl text-white transition-colors">
                 <LogIn className="w-4 h-4" />
                 Sign in with Google
               </button>
@@ -4702,7 +4667,7 @@ function SettingsPage({ syncStatus, onShowTour }) {
         )}
       </div>
 
-      <div className="rounded-xl border p-6 bg-gray-800 border-gray-700">
+      <div className="rounded-xl border p-6 bg-[var(--bg-card)] border-white/[0.06]">
         <div className="flex items-center gap-3 mb-4">
           <BarChart3 className="w-5 h-5 text-gray-400" />
           <h3 className="text-lg font-medium text-white">About</h3>
@@ -4713,7 +4678,7 @@ function SettingsPage({ syncStatus, onShowTour }) {
         </p>
       </div>
 
-      <div className="rounded-xl border p-6 bg-gray-800 border-gray-700">
+      <div className="rounded-xl border p-6 bg-[var(--bg-card)] border-white/[0.06]">
         <div className="flex items-center gap-3 mb-4">
           <HelpCircle className="w-5 h-5 text-gray-400" />
           <h3 className="text-lg font-medium text-white">Help</h3>
@@ -4722,13 +4687,13 @@ function SettingsPage({ syncStatus, onShowTour }) {
           New to Stock Research Hub? Take a quick tour to learn the basics.
         </p>
         <button onClick={onShowTour}
-          className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 rounded-xl text-white flex items-center gap-2 transition-colors">
+          className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 rounded-xl text-white flex items-center gap-2 transition-colors">
           <Sparkles className="w-4 h-4" />
           Show Tour
         </button>
       </div>
 
-      <div className="rounded-xl border p-6 bg-gray-800 border-gray-700">
+      <div className="rounded-xl border p-6 bg-[var(--bg-card)] border-white/[0.06]">
         <div className="flex items-center gap-3 mb-4">
           <Trash2 className="w-5 h-5 text-gray-400" />
           <h3 className="text-lg font-medium text-white">Data Management</h3>
@@ -4768,7 +4733,7 @@ function BackToTopButton() {
     <button
       onClick={scrollToTop}
       aria-label="Back to top"
-      className="fixed bottom-24 md:bottom-8 right-4 z-30 p-3 bg-gray-700 hover:bg-gray-600 active:bg-gray-500 rounded-full shadow-lg transition-all transform hover:scale-105 active:scale-95"
+      className="fixed bottom-24 md:bottom-8 right-4 z-30 p-3 bg-[var(--bg-card)] border border-white/[0.06] hover:bg-white/10 active:bg-white/15 rounded-full shadow-lg transition-all"
     >
       <ArrowUp className="w-5 h-5 text-white" />
     </button>
@@ -4862,10 +4827,10 @@ function AppContent() {
               <span className="text-gray-300">Sign in to sync your data across devices</span>
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={signIn} className="px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded-lg text-white text-sm">
+              <button onClick={signIn} className="px-3 py-1 bg-blue-600 hover:bg-blue-500 rounded-lg text-white text-sm">
                 Sign in
               </button>
-              <button onClick={dismissBanner} className="p-1 rounded hover:bg-gray-700 text-gray-400">
+              <button onClick={dismissBanner} className="p-1 rounded hover:bg-white/5 text-gray-400">
                 <X className="w-4 h-4" />
               </button>
             </div>
