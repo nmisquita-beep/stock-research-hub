@@ -469,7 +469,7 @@ function Tooltip({ children, content, position = 'bottom' }) {
 }
 
 function Skeleton({ className }) {
-  return <div className={`animate-pulse bg-gray-700 rounded ${className}`} />
+  return <div className={`animate-shimmer rounded ${className}`} />
 }
 
 function MiniSparkline({ data, positive, height = 32 }) {
@@ -1811,6 +1811,7 @@ function ExplorePage({ onSelectStock }) {
   const [loading, setLoading] = useState(true)
   const [activeSector, setActiveSector] = useState('All')
   const [searchQuery, setSearchQuery] = useState('')
+  const [viewMode, setViewMode] = useState('grid') // 'grid' or 'heatmap'
 
   // Fetch all stocks on mount
   useEffect(() => {
@@ -1877,17 +1878,48 @@ function ExplorePage({ onSelectStock }) {
 
   const loadedCount = Object.keys(stockData).length
 
+  // Get heatmap color based on change percent
+  const getHeatmapColor = (changePercent) => {
+    if (changePercent >= 3) return 'bg-green-700'
+    if (changePercent >= 1) return 'bg-green-600/70'
+    if (changePercent >= 0) return 'bg-green-500/40'
+    if (changePercent >= -1) return 'bg-red-500/40'
+    if (changePercent >= -3) return 'bg-red-600/70'
+    return 'bg-red-700'
+  }
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-page-enter">
       {/* Header */}
-      <div>
-        <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-          <Grid3X3 className="w-7 h-7 text-purple-400" />
-          Explore Stocks
-        </h2>
-        <p className="text-gray-400 mt-1">
-          {loading ? 'Loading...' : `${loadedCount} stocks loaded`}
-        </p>
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+            <Grid3X3 className="w-7 h-7 text-purple-400" />
+            Explore Stocks
+          </h2>
+          <p className="text-gray-400 mt-1">
+            {loading ? 'Loading...' : `${loadedCount} stocks loaded`}
+          </p>
+        </div>
+        {/* View Toggle */}
+        <div className="flex items-center gap-1 bg-gray-800 rounded-lg p-1">
+          <button
+            onClick={() => setViewMode('grid')}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
+              viewMode === 'grid' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            <LayoutGrid className="w-4 h-4" /> Grid
+          </button>
+          <button
+            onClick={() => setViewMode('heatmap')}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
+              viewMode === 'heatmap' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            <Layers className="w-4 h-4" /> Heatmap
+          </button>
+        </div>
       </div>
 
       {/* Search */}
@@ -1917,18 +1949,61 @@ function ExplorePage({ onSelectStock }) {
         ))}
       </div>
 
-      {/* Stock Grid */}
+      {/* Stock Grid / Heatmap */}
       {loading && loadedCount === 0 ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-2 sm:gap-3">
           {[...Array(24)].map((_, i) => (
-            <div key={i} className="p-3 sm:p-4 rounded-xl bg-gray-800 animate-pulse">
+            <div key={i} className="p-3 sm:p-4 rounded-xl animate-shimmer">
               <div className="h-4 bg-gray-700 rounded mb-2" />
               <div className="h-3 bg-gray-700 rounded mb-2" />
               <div className="h-4 bg-gray-700 rounded" />
             </div>
           ))}
         </div>
+      ) : viewMode === 'heatmap' ? (
+        // Heatmap View
+        <div className="space-y-6">
+          {getDisplayStocks().map(([sector, symbols]) => {
+            if (!symbols || symbols.length === 0) return null
+            // Sort by market cap for treemap-style sizing
+            const sortedSymbols = [...symbols].sort((a, b) => (stockData[b]?.marketCap || 0) - (stockData[a]?.marketCap || 0))
+            const maxMcap = Math.max(...sortedSymbols.map(s => stockData[s]?.marketCap || 1))
+
+            return (
+              <div key={sector} className="space-y-3">
+                <h3 className={`text-sm font-semibold ${SECTOR_COLORS[sector] || 'text-gray-300'}`}>
+                  {sector} ({symbols.length})
+                </h3>
+                <div className="flex flex-wrap gap-1.5">
+                  {sortedSymbols.map(symbol => {
+                    const quote = stockData[symbol]
+                    const pct = quote?.changePercent ?? 0
+                    const mcap = quote?.marketCap || 1
+                    // Scale cell size by market cap (min 80px, max 200px)
+                    const scale = Math.sqrt(mcap / maxMcap)
+                    const size = Math.max(80, Math.min(200, 80 + scale * 120))
+                    return (
+                      <button
+                        key={symbol}
+                        onClick={() => onSelectStock(symbol)}
+                        className={`${getHeatmapColor(pct)} rounded-lg p-2 flex flex-col justify-center items-center transition-all hover:scale-105 hover:z-10 hover:shadow-lg`}
+                        style={{ width: size, height: size * 0.75 }}
+                      >
+                        <div className="text-xs sm:text-sm font-bold text-white">{symbol}</div>
+                        {quote?.c && <div className="text-xs text-white/80">${quote.c.toFixed(2)}</div>}
+                        <div className={`text-xs font-medium ${pct >= 0 ? 'text-green-200' : 'text-red-200'}`}>
+                          {pct >= 0 ? '+' : ''}{pct.toFixed(2)}%
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+        </div>
       ) : (
+        // Grid View
         <div className="space-y-6">
           {getDisplayStocks().map(([sector, symbols]) => {
             if (!symbols || symbols.length === 0) return null
@@ -1947,8 +2022,8 @@ function ExplorePage({ onSelectStock }) {
                         key={symbol}
                         onClick={() => onSelectStock(symbol)}
                         className={`p-3 sm:p-4 rounded-xl border transition-all hover:scale-[1.02] active:scale-[0.98] text-left ${
-                          pos ? 'bg-green-900/20 border-green-500/30 hover:border-green-500'
-                            : 'bg-red-900/20 border-red-500/30 hover:border-red-500'
+                          pos ? 'bg-green-900/20 border-green-500/30 hover:border-green-500 hover-glow-positive'
+                            : 'bg-red-900/20 border-red-500/30 hover:border-red-500 hover-glow-negative'
                         }`}
                       >
                         <div className="text-sm sm:text-base font-bold text-white">{symbol}</div>
@@ -1963,7 +2038,7 @@ function ExplorePage({ onSelectStock }) {
                             </div>
                           </>
                         ) : (
-                          <div className="h-10 bg-gray-700/50 rounded animate-pulse mt-1" />
+                          <div className="h-10 animate-shimmer rounded mt-1" />
                         )}
                       </button>
                     )
@@ -2808,6 +2883,32 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock }) {
         <FearGreedIndicator value={mood} />
       </div>
 
+      {/* Mini Sector Heatmap Bar */}
+      <div className="flex flex-wrap gap-1.5">
+        {SECTORS.map(sector => {
+          const data = sectorData[sector.symbol]
+          const change = data?.changePercent ?? 0
+          const getColor = (v) => {
+            if (v >= 3) return 'bg-green-700'
+            if (v >= 1) return 'bg-green-600/70'
+            if (v >= 0) return 'bg-green-500/40'
+            if (v >= -1) return 'bg-red-500/40'
+            if (v >= -3) return 'bg-red-600/70'
+            return 'bg-red-700'
+          }
+          return (
+            <button
+              key={sector.symbol}
+              onClick={() => onSelectStock(sector.symbol)}
+              title={`${sector.name}: ${change >= 0 ? '+' : ''}${change.toFixed(2)}%`}
+              className={`${getColor(change)} px-2 py-1.5 rounded text-xs font-medium text-white transition-all hover:scale-105 hover:shadow-lg`}
+            >
+              {sector.symbol}
+            </button>
+          )
+        })}
+      </div>
+
       {/* Your Watchlist Section */}
       <div className="space-y-4" data-tour="watchlist">
         <div className="flex items-center justify-between">
@@ -3033,7 +3134,7 @@ function MarketOverview({ onSelectStock }) {
 }
 
 // ============ STOCK CHART COMPONENT ============
-function StockChart({ symbol, range = '1mo', interval = '1d' }) {
+function StockChart({ symbol, range = '1mo', interval = '1d', onRangeData }) {
   const [chartData, setChartData] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -3092,6 +3193,15 @@ function StockChart({ symbol, range = '1mo', interval = '1d' }) {
 
         console.log('Formatted chart data points:', formatted.length)
         setChartData(formatted)
+
+        // Calculate and report range data for price change display
+        if (onRangeData && formatted.length >= 2) {
+          const firstPrice = formatted[0].close
+          const lastPrice = formatted[formatted.length - 1].close
+          const changeForRange = lastPrice - firstPrice
+          const changePercentForRange = ((lastPrice - firstPrice) / firstPrice) * 100
+          onRangeData({ change: changeForRange, changePercent: changePercentForRange })
+        }
       } catch (err) {
         console.error('Chart fetch error:', err)
         setChartData([])
@@ -3099,7 +3209,7 @@ function StockChart({ symbol, range = '1mo', interval = '1d' }) {
       setLoading(false)
     }
     fetchChart()
-  }, [symbol, range, interval])
+  }, [symbol, range, interval, onRangeData])
 
   if (loading) {
     return <div className="h-64 bg-gray-700/30 rounded-xl animate-pulse" />
@@ -3182,24 +3292,124 @@ function StockChart({ symbol, range = '1mo', interval = '1d' }) {
   )
 }
 
+// ============ INSIDER ACTIVITY COMPONENT ============
+function InsiderActivity({ symbol }) {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [expanded, setExpanded] = useState(false)
+
+  useEffect(() => {
+    const fetchInsider = async () => {
+      setLoading(true)
+      try {
+        const response = await fetch(`https://stock-api-proxy-seven.vercel.app/api/finnhub?endpoint=stock/insider-transactions&symbol=${symbol}`)
+        if (response.ok) {
+          const result = await response.json()
+          setData(result.data || [])
+        } else {
+          setData([])
+        }
+      } catch (err) {
+        console.error('Insider data error:', err)
+        setData([])
+      }
+      setLoading(false)
+    }
+    fetchInsider()
+  }, [symbol])
+
+  if (loading) {
+    return (
+      <div className="rounded-xl bg-gray-700/30 p-4">
+        <div className="h-6 w-32 animate-shimmer rounded mb-2" />
+        <div className="h-4 w-48 animate-shimmer rounded" />
+      </div>
+    )
+  }
+
+  if (!data || data.length === 0) {
+    return null
+  }
+
+  // Filter last 90 days
+  const ninetyDaysAgo = new Date()
+  ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90)
+  const recentData = data.filter(t => new Date(t.transactionDate) >= ninetyDaysAgo)
+
+  const buys = recentData.filter(t => t.transactionCode === 'P').length
+  const sells = recentData.filter(t => t.transactionCode === 'S').length
+
+  const getTransactionType = (code) => {
+    if (code === 'P') return { label: 'Buy', color: 'text-green-400', bg: 'bg-green-500/20' }
+    if (code === 'S') return { label: 'Sell', color: 'text-red-400', bg: 'bg-red-500/20' }
+    return { label: 'Other', color: 'text-gray-400', bg: 'bg-gray-500/20' }
+  }
+
+  return (
+    <div className="rounded-xl bg-gray-700/30 p-4">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between"
+      >
+        <h3 className="text-sm font-medium text-gray-400">Insider Activity</h3>
+        <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+      </button>
+      <div className="mt-2 text-sm text-gray-300">
+        {buys} buy{buys !== 1 ? 's' : ''}, {sells} sell{sells !== 1 ? 's' : ''} in last 90 days
+      </div>
+
+      {expanded && (
+        <div className="mt-4 space-y-2 max-h-60 overflow-y-auto">
+          {data.slice(0, 10).map((t, i) => {
+            const type = getTransactionType(t.transactionCode)
+            return (
+              <div key={i} className="flex items-center justify-between text-xs p-2 rounded-lg bg-gray-800/50">
+                <div className="flex-1 min-w-0">
+                  <div className="text-white font-medium truncate">{t.name}</div>
+                  <div className="text-gray-500">{new Date(t.transactionDate).toLocaleDateString()}</div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className={`px-2 py-0.5 rounded ${type.bg} ${type.color}`}>{type.label}</span>
+                  <div className="text-right">
+                    <div className="text-white">{Math.abs(t.change || 0).toLocaleString()} shares</div>
+                    {t.transactionPrice > 0 && (
+                      <div className="text-gray-400">${t.transactionPrice.toFixed(2)}</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ============ STOCK DETAIL MODAL ============
 function StockDetail({ symbol, onClose }) {
   const [quote, setQuote] = useState(null)
   const [loading, setLoading] = useState(true)
   const [showNews, setShowNews] = useState(false)
   const [chartRange, setChartRange] = useState('1mo')
+  const [rangeChange, setRangeChange] = useState(null)
 
   const rangeOptions = [
-    { value: '1d', label: '1D', interval: '5m' },
-    { value: '5d', label: '1W', interval: '15m' },
-    { value: '1mo', label: '1M', interval: '1d' },
-    { value: '3mo', label: '3M', interval: '1d' },
-    { value: '6mo', label: '6M', interval: '1d' },
-    { value: '1y', label: '1Y', interval: '1d' },
-    { value: '5y', label: '5Y', interval: '1wk' }
+    { value: '1d', label: '1D', interval: '5m', displayLabel: 'today' },
+    { value: '5d', label: '1W', interval: '15m', displayLabel: 'past week' },
+    { value: '1mo', label: '1M', interval: '1d', displayLabel: 'past month' },
+    { value: '3mo', label: '3M', interval: '1d', displayLabel: 'past 3 months' },
+    { value: '6mo', label: '6M', interval: '1d', displayLabel: 'past 6 months' },
+    { value: '1y', label: '1Y', interval: '1d', displayLabel: 'past year' },
+    { value: '5y', label: '5Y', interval: '1wk', displayLabel: 'past 5 years' }
   ]
 
   const currentRangeOption = rangeOptions.find(r => r.value === chartRange) || rangeOptions[2]
+
+  // Reset rangeChange when chartRange changes
+  useEffect(() => {
+    setRangeChange(null)
+  }, [chartRange])
 
   useEffect(() => {
     const fetchData = async () => {
@@ -3217,9 +3427,10 @@ function StockDetail({ symbol, onClose }) {
     fetchData()
   }, [symbol])
 
-  const change = quote?.change || 0
-  const pctChange = quote?.changePercent || 0
-  const positive = change >= 0
+  // Use range change for non-1d ranges, quote change for 1d
+  const displayChange = chartRange !== '1d' && rangeChange ? rangeChange.change : (quote?.change || 0)
+  const displayPctChange = chartRange !== '1d' && rangeChange ? rangeChange.changePercent : (quote?.changePercent || 0)
+  const positive = displayChange >= 0
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4 z-50" onClick={onClose}>
@@ -3227,8 +3438,8 @@ function StockDetail({ symbol, onClose }) {
         className="bg-gray-800/95 backdrop-blur w-full sm:max-w-3xl sm:rounded-2xl rounded-t-2xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden border-t sm:border border-gray-700 shadow-2xl transform transition-transform"
         onClick={e => e.stopPropagation()}
       >
-        {/* Header - sticky on mobile */}
-        <div className="sticky top-0 z-10 bg-gray-800/95 backdrop-blur p-4 border-b border-gray-700 flex items-center justify-between">
+        {/* Header - sticky on mobile with gradient tint */}
+        <div className={`sticky top-0 z-10 backdrop-blur p-4 border-b border-gray-700 flex items-center justify-between ${positive ? 'bg-gradient-to-r from-green-900/20 to-gray-800/95' : 'bg-gradient-to-r from-red-900/20 to-gray-800/95'}`}>
           <div className="flex items-center gap-3 sm:gap-4 min-w-0">
             <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0">
               <span className="text-white font-bold text-base sm:text-lg">{symbol.charAt(0)}</span>
@@ -3275,10 +3486,10 @@ function StockDetail({ symbol, onClose }) {
             <div className="flex items-baseline gap-2 sm:gap-4 flex-wrap">
               <span className="text-3xl sm:text-4xl font-bold text-white">{formatCurrency(quote?.c)}</span>
               <span className={`text-base sm:text-lg font-medium px-2.5 sm:px-3 py-1 rounded-full ${positive ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-                {positive ? '+' : ''}{pctChange?.toFixed(2)}%
+                {positive ? '+' : ''}{displayPctChange?.toFixed(2)}% <span className="text-xs opacity-75">{currentRangeOption.displayLabel}</span>
               </span>
               <span className={`text-sm ${positive ? 'text-green-400' : 'text-red-400'}`}>
-                {positive ? '+' : ''}{formatCurrency(change)}
+                {positive ? '+' : ''}{formatCurrency(displayChange)}
               </span>
             </div>
 
@@ -3302,7 +3513,7 @@ function StockDetail({ symbol, onClose }) {
                   ))}
                 </div>
               </div>
-              <StockChart symbol={symbol} range={chartRange} interval={currentRangeOption.interval} />
+              <StockChart symbol={symbol} range={chartRange} interval={currentRangeOption.interval} onRangeData={setRangeChange} />
             </div>
 
             {/* Key Metrics - only show metrics with valid data */}
@@ -3330,6 +3541,9 @@ function StockDetail({ symbol, onClose }) {
                 </div>
               ) : null
             })()}
+
+            {/* Insider Activity */}
+            <InsiderActivity symbol={symbol} />
           </div>
         )}
       </div>
@@ -4118,6 +4332,11 @@ function AppContent() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
+  // Scroll to top when switching pages
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [activePage])
+
   if (authLoading) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
@@ -4160,14 +4379,16 @@ function AppContent() {
       )}
 
       <main className="max-w-7xl mx-auto px-4 py-6 pb-24 md:pb-6">
-        {activePage === 'dashboard' && <Dashboard watchlist={watchlist} setWatchlist={setWatchlist} onSelectStock={setSelectedStock} />}
-        {activePage === 'explore' && <ExplorePage onSelectStock={setSelectedStock} />}
-        {activePage === 'insights' && <AIInsights finnhubFetch={finnhubFetch} />}
-        {activePage === 'screener' && <ScreenerTab onSelectStock={setSelectedStock} />}
-        {activePage === 'earnings' && <EarningsTab onSelectStock={setSelectedStock} watchlist={watchlist} />}
-        {activePage === 'news' && <NewsPage watchlist={watchlist} />}
-        {activePage === 'watchlist' && <Watchlist watchlist={watchlist} setWatchlist={setWatchlist} onSelectStock={setSelectedStock} />}
-        {activePage === 'settings' && <SettingsPage syncStatus={syncStatus} onShowTour={() => setShowTour(true)} />}
+        <div key={activePage} className="animate-page-enter">
+          {activePage === 'dashboard' && <Dashboard watchlist={watchlist} setWatchlist={setWatchlist} onSelectStock={setSelectedStock} />}
+          {activePage === 'explore' && <ExplorePage onSelectStock={setSelectedStock} />}
+          {activePage === 'insights' && <AIInsights finnhubFetch={finnhubFetch} />}
+          {activePage === 'screener' && <ScreenerTab onSelectStock={setSelectedStock} />}
+          {activePage === 'earnings' && <EarningsTab onSelectStock={setSelectedStock} watchlist={watchlist} />}
+          {activePage === 'news' && <NewsPage watchlist={watchlist} />}
+          {activePage === 'watchlist' && <Watchlist watchlist={watchlist} setWatchlist={setWatchlist} onSelectStock={setSelectedStock} />}
+          {activePage === 'settings' && <SettingsPage syncStatus={syncStatus} onShowTour={() => setShowTour(true)} />}
+        </div>
       </main>
 
       {selectedStock && <StockDetail symbol={selectedStock} onClose={() => setSelectedStock(null)} />}
