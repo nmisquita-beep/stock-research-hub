@@ -511,54 +511,76 @@ function HeatMapCell({ value, label, onClick }) {
 
 // ============ FEAR & GREED INDICATOR ============
 function FearGreedIndicator({ value }) {
+  // Ensure value is a valid number and clamp to 0-100
+  const safeValue = Math.max(0, Math.min(100, Number(value) || 50))
+  const roundedValue = Math.round(safeValue)
+
+  // Simplified labels: Fear (0-35), Neutral (35-65), Greed (65-100)
   const getLabel = (v) => {
-    if (v <= 25) return { text: 'Extreme Fear', color: 'text-red-400', bgColor: '#ef4444' }
-    if (v <= 45) return { text: 'Fear', color: 'text-orange-400', bgColor: '#f97316' }
-    if (v <= 55) return { text: 'Neutral', color: 'text-yellow-400', bgColor: '#eab308' }
-    if (v <= 75) return { text: 'Greed', color: 'text-lime-400', bgColor: '#84cc16' }
-    return { text: 'Extreme Greed', color: 'text-green-400', bgColor: '#22c55e' }
+    if (v < 35) return { text: 'Fear', color: 'text-red-400', bgColor: '#ef4444' }
+    if (v < 65) return { text: 'Neutral', color: 'text-yellow-400', bgColor: '#eab308' }
+    return { text: 'Greed', color: 'text-green-400', bgColor: '#22c55e' }
   }
-  const label = getLabel(value)
+  const label = getLabel(roundedValue)
+
   // Convert 0-100 to 0-180 degrees for semicircle
-  const rotation = (value / 100) * 180 - 90
+  const rotation = (safeValue / 100) * 180 - 90
 
   return (
     <div className="card-premium rounded-xl p-4">
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center justify-between mb-3">
         <span className="text-gray-300 text-sm font-semibold">Market Mood</span>
-        <span className="font-mono text-lg font-bold" style={{ color: label.bgColor }}>{value}</span>
+        <span className={`text-sm font-semibold ${label.color}`}>{label.text}</span>
       </div>
 
       {/* Semicircle Gauge */}
-      <div className="relative flex justify-center mb-2">
-        <div className="relative w-32 h-16 overflow-hidden">
+      <div className="relative flex justify-center mb-2 overflow-hidden">
+        <svg width="128" height="72" viewBox="0 0 128 72" className="overflow-hidden">
           {/* Background arc */}
-          <div className="absolute bottom-0 left-0 w-32 h-32 rounded-full"
-            style={{
-              background: `conic-gradient(from 180deg, #ef4444 0deg, #f97316 45deg, #eab308 90deg, #84cc16 135deg, #22c55e 180deg, transparent 180deg)`,
-              opacity: 0.3
-            }}
+          <defs>
+            <linearGradient id="gaugeGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="#ef4444" />
+              <stop offset="25%" stopColor="#f97316" />
+              <stop offset="50%" stopColor="#eab308" />
+              <stop offset="75%" stopColor="#84cc16" />
+              <stop offset="100%" stopColor="#22c55e" />
+            </linearGradient>
+          </defs>
+          {/* Background track */}
+          <path
+            d="M 12 64 A 52 52 0 0 1 116 64"
+            fill="none"
+            stroke="url(#gaugeGradient)"
+            strokeWidth="8"
+            strokeLinecap="round"
+            opacity="0.3"
           />
-          {/* Foreground arc (filled portion) */}
-          <div className="absolute bottom-0 left-0 w-32 h-32 rounded-full"
-            style={{
-              background: `conic-gradient(from 180deg, #ef4444 0deg, #f97316 45deg, #eab308 90deg, #84cc16 135deg, #22c55e 180deg, transparent 180deg)`,
-              clipPath: `polygon(50% 100%, 50% 50%, ${50 + Math.cos((rotation - 90) * Math.PI / 180) * 50}% ${100 - Math.sin((rotation + 90) * Math.PI / 180) * 100}%, 0% 100%)`
-            }}
+          {/* Foreground arc (filled portion based on value) */}
+          <path
+            d="M 12 64 A 52 52 0 0 1 116 64"
+            fill="none"
+            stroke="url(#gaugeGradient)"
+            strokeWidth="8"
+            strokeLinecap="round"
+            strokeDasharray={`${(safeValue / 100) * 163.4} 163.4`}
           />
           {/* Needle */}
-          <div
-            className="absolute bottom-0 left-1/2 w-0.5 h-12 bg-white rounded-full origin-bottom shadow-lg"
-            style={{ transform: `translateX(-50%) rotate(${rotation}deg)` }}
+          <line
+            x1="64"
+            y1="64"
+            x2={64 + Math.cos((rotation - 90) * Math.PI / 180) * 40}
+            y2={64 + Math.sin((rotation - 90) * Math.PI / 180) * 40}
+            stroke="white"
+            strokeWidth="2"
+            strokeLinecap="round"
           />
           {/* Center dot */}
-          <div className="absolute bottom-0 left-1/2 w-3 h-3 -translate-x-1/2 translate-y-1/2 bg-white rounded-full shadow-lg" />
-        </div>
+          <circle cx="64" cy="64" r="4" fill="white" />
+        </svg>
       </div>
 
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center px-2">
         <span className="text-[10px] text-red-400 font-medium">FEAR</span>
-        <span className={`text-sm font-semibold ${label.color}`}>{label.text}</span>
         <span className="text-[10px] text-green-400 font-medium">GREED</span>
       </div>
     </div>
@@ -1682,10 +1704,10 @@ function DesktopNav({ activePage, setActivePage, onSearchOpen, syncStatus }) {
       <div className="max-w-7xl mx-auto px-4">
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
-              <BarChart3 className="w-5 h-5 text-white" />
+            <div className="w-9 h-9 bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600 rounded-lg flex items-center justify-center shadow-lg shadow-blue-500/25 ring-1 ring-white/10">
+              <TrendingUp className="w-5 h-5 text-white" />
             </div>
-            <span className="font-bold text-lg hidden sm:block text-white tracking-tight">Stock Research Hub</span>
+            <span className="font-bold text-lg hidden sm:block tracking-tight bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">Stock Research Hub</span>
           </div>
           <div className="hidden md:flex items-center gap-1">
             {navItems.map(item => (
@@ -3484,7 +3506,7 @@ function StockDetail({ symbol, onClose }) {
   const [quote, setQuote] = useState(null)
   const [loading, setLoading] = useState(true)
   const [showNews, setShowNews] = useState(false)
-  const [chartRange, setChartRange] = useState('1mo')
+  const [chartRange, setChartRange] = useState('1d')
   const [rangeChange, setRangeChange] = useState(null)
 
   const rangeOptions = [
