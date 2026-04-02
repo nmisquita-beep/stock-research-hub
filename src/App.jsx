@@ -617,343 +617,200 @@ function FearGreedIndicator({ value }) {
 function OnboardingTour({ onComplete, onOpenSearch, setActivePage }) {
   const [step, setStep] = useState(0)
   const [highlightRect, setHighlightRect] = useState(null)
-  const [highlightReady, setHighlightReady] = useState(false)
-  const [isAnimating, setIsAnimating] = useState(false)
+  const [visible, setVisible] = useState(false)
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
 
   const steps = [
-    {
-      type: 'welcome',
-      tab: null,
-      title: 'Welcome to Stock Research Hub!',
-      description: 'Your personal dashboard for stock research and market insights.',
-      emoji: '🚀'
-    },
-    {
-      type: 'highlight',
-      tab: 'dashboard',
-      target: '[data-tour="dashboard"]',
-      title: 'Dashboard',
-      description: 'View market indices, your watchlist, and sector performance at a glance.'
-    },
-    {
-      type: 'highlight',
-      tab: 'dashboard',
-      target: '[data-tour="watchlist"]',
-      title: 'Your Watchlist',
-      description: 'Track your favorite stocks - click any stock to see detailed charts and data.'
-    },
-    {
-      type: 'highlight',
-      tab: 'explore',
-      target: '[data-tour="explore"]',
-      title: 'Explore Stocks',
-      description: 'Browse 100+ stocks organized by sector - discover new investment opportunities.'
-    },
-    {
-      type: 'highlight',
-      tab: 'insights',
-      target: '[data-tour="ai-search"]',
-      title: 'AI Insights',
-      description: 'Get AI-powered analysis on any stock with technical and fundamental insights.'
-    },
-    {
-      type: 'highlight',
-      tab: 'screener',
-      target: '[data-tour="screener"]',
-      title: 'Stock Screener',
-      description: 'Find stocks using pre-built screens like Undervalued Growth and Dividend Champions.'
-    },
-    {
-      type: 'highlight',
-      tab: 'earnings',
-      target: '[data-tour="earnings"]',
-      title: 'Earnings Calendar',
-      description: 'Track upcoming earnings reports with expected vs previous EPS.'
-    },
-    {
-      type: 'highlight',
-      tab: 'news',
-      target: '[data-tour="news"]',
-      title: 'Market News',
-      description: 'Stay updated with market-moving news for your watchlist and top movers.'
-    },
-    {
-      type: 'highlight',
-      tab: null,
-      target: '[data-tour="search"]',
-      title: 'Quick Search',
-      description: 'Press / anytime to quickly search for any stock.',
-      isFinal: true
-    }
+    { type: 'welcome', tab: null, title: 'Welcome to Stock Research Hub!', description: 'Your personal dashboard for stock research and market insights.', emoji: '🚀' },
+    { type: 'highlight', tab: 'dashboard', target: '[data-tour="dashboard"]', title: 'Dashboard', description: 'View market indices, your watchlist, and sector performance at a glance.' },
+    { type: 'highlight', tab: 'dashboard', target: '[data-tour="watchlist"]', title: 'Your Watchlist', description: 'Track your favorite stocks — click any stock to see detailed charts and data.' },
+    { type: 'highlight', tab: 'explore', target: '[data-tour="explore"]', title: 'Explore Stocks', description: 'Browse 100+ stocks organized by sector. Toggle between grid and heatmap views.' },
+    { type: 'highlight', tab: 'insights', target: '[data-tour="ai-search"]', title: 'AI Insights', description: 'Get AI-powered analysis on any stock with technical and fundamental insights.' },
+    { type: 'highlight', tab: 'screener', target: '[data-tour="screener"]', title: 'Stock Screener', description: 'Find stocks using pre-built screens like Undervalued Growth and Dividend Champions.' },
+    { type: 'highlight', tab: 'earnings', target: '[data-tour="earnings"]', title: 'Earnings Calendar', description: 'Track upcoming earnings reports with expected vs previous EPS.' },
+    { type: 'highlight', tab: 'news', target: '[data-tour="news"]', title: 'Market News', description: 'Stay updated with market-moving news for your watchlist and top movers.' },
+    { type: 'highlight', tab: null, target: '[data-tour="search"]', title: 'Quick Search', description: 'Press / anytime to quickly search for any stock.', isFinal: true }
   ]
 
   const currentStep = steps[step]
   const isModal = currentStep.type === 'welcome'
-  const isFinalStep = currentStep.isFinal
-  const totalSteps = steps.length
 
-  // Handle window resize
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768)
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
-  // Keyboard navigation (desktop only)
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === 'ArrowRight' || e.key === ' ') {
-        e.preventDefault()
-        handleNext()
-      } else if (e.key === 'ArrowLeft') {
-        e.preventDefault()
-        handleBack()
-      } else if (e.key === 'Escape') {
-        handleSkip()
-      } else if (e.key === '/' && isFinalStep) {
-        e.preventDefault()
-        handleSkip()
-        if (onOpenSearch) onOpenSearch()
-      }
+      if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); goNext() }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); goBack() }
+      else if (e.key === 'Escape') { finish() }
     }
-
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [step, isFinalStep])
+  }, [step])
 
-  // Update highlight and switch tabs
+  // Core: switch tab, wait, find element, show everything at once
   useEffect(() => {
-    // Reset highlight ready state at start of each step
-    setHighlightReady(false)
+    setVisible(false)
+    setHighlightRect(null)
 
     if (isModal) {
-      setHighlightRect(null)
-      setHighlightReady(true)
+      // Welcome modal — show immediately
+      requestAnimationFrame(() => setVisible(true))
       return
     }
 
-    // Switch to the correct tab if specified
+    // Switch tab first
     if (currentStep.tab && setActivePage) {
       setActivePage(currentStep.tab)
     }
 
-    // Retry finding element up to 8 times
-    const findAndHighlight = (attempt = 0) => {
-      const element = document.querySelector(currentStep.target)
-      if (element) {
-        const rect = element.getBoundingClientRect()
+    // Retry finding the element
+    let cancelled = false
+    let attempts = 0
+    const maxAttempts = 12
+
+    const tryFind = () => {
+      if (cancelled) return
+      const el = document.querySelector(currentStep.target)
+      if (el) {
+        const rect = el.getBoundingClientRect()
         setHighlightRect({
-          top: rect.top - 6,
-          left: rect.left - 6,
-          width: rect.width + 12,
-          height: rect.height + 12
+          top: rect.top - 8,
+          left: rect.left - 8,
+          width: rect.width + 16,
+          height: rect.height + 16
         })
-        if (isMobile) {
-          element.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        }
-        // Small delay before showing tooltip so spotlight renders first
-        setTimeout(() => setHighlightReady(true), 100)
-      } else if (attempt < 8) {
-        setTimeout(() => findAndHighlight(attempt + 1), 250)
+        if (isMobile) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        // Show tooltip + spotlight together after a single frame
+        requestAnimationFrame(() => {
+          if (!cancelled) setVisible(true)
+        })
+      } else if (attempts < maxAttempts) {
+        attempts++
+        setTimeout(tryFind, 200)
       } else {
-        setHighlightRect(null)
-        setHighlightReady(true) // show tooltip anyway as fallback
+        // Element not found — show tooltip anyway
+        setVisible(true)
       }
     }
 
-    // Delay to allow tab content to render
-    const timeout = setTimeout(() => findAndHighlight(0), 300)
+    // Initial delay for tab to render
+    const timeout = setTimeout(tryFind, 400)
 
-    // Reposition on scroll/resize
-    const updateHighlight = () => {
-      const element = document.querySelector(currentStep.target)
-      if (element) {
-        const rect = element.getBoundingClientRect()
+    // Keep repositioning to handle layout shifts
+    const reposition = () => {
+      const el = document.querySelector(currentStep.target)
+      if (el) {
+        const rect = el.getBoundingClientRect()
         setHighlightRect({
-          top: rect.top - 6,
-          left: rect.left - 6,
-          width: rect.width + 12,
-          height: rect.height + 12
+          top: rect.top - 8,
+          left: rect.left - 8,
+          width: rect.width + 16,
+          height: rect.height + 16
         })
       }
     }
-
-    window.addEventListener('resize', updateHighlight)
-    window.addEventListener('scroll', updateHighlight)
-
-    // Reposition every 500ms for 2 seconds to catch layout shifts as data loads
-    let repositionCount = 0
-    const repositionInterval = setInterval(() => {
-      updateHighlight()
-      repositionCount++
-      if (repositionCount >= 4) clearInterval(repositionInterval)
-    }, 500)
+    window.addEventListener('scroll', reposition, true)
+    window.addEventListener('resize', reposition)
 
     return () => {
+      cancelled = true
       clearTimeout(timeout)
-      clearInterval(repositionInterval)
-      window.removeEventListener('resize', updateHighlight)
-      window.removeEventListener('scroll', updateHighlight)
+      window.removeEventListener('scroll', reposition, true)
+      window.removeEventListener('resize', reposition)
     }
-  }, [step, currentStep, setActivePage, isMobile])
+  }, [step])
 
-  const handleNext = () => {
-    if (step === steps.length - 1) {
-      localStorage.setItem('tour_completed', 'true')
-      onComplete()
-    } else {
-      setHighlightReady(false)
-      setIsAnimating(true)
-      setTimeout(() => {
-        setStep(step + 1)
-        setIsAnimating(false)
-      }, 200)
-    }
+  const goNext = () => {
+    if (step >= steps.length - 1) return finish()
+    setStep(s => s + 1)
   }
-
-  const handleBack = () => {
-    if (step > 0) {
-      setHighlightReady(false)
-      setIsAnimating(true)
-      setTimeout(() => {
-        setStep(step - 1)
-        setIsAnimating(false)
-      }, 200)
-    }
-  }
-
-  const handleSkip = () => {
-    localStorage.setItem('tour_completed', 'true')
-    onComplete()
-  }
+  const goBack = () => { if (step > 0) setStep(s => s - 1) }
+  const finish = () => { localStorage.setItem('tour_completed', 'true'); onComplete() }
 
   return (
-    <div className={`fixed inset-0 z-[200] transition-opacity duration-300 ${isAnimating ? 'opacity-90' : 'opacity-100'}`}>
-      {/* Semi-transparent overlay - does NOT dismiss on click */}
+    <>
+      {/* Single overlay — only the spotlight box-shadow creates the dark backdrop */}
       <div
-        className="absolute inset-0 bg-black/60"
-        onClick={(e) => e.stopPropagation()}
-      />
+        className="fixed inset-0 z-[200]"
+        style={{ opacity: visible ? 1 : 0, transition: 'opacity 0.25s ease', pointerEvents: visible ? 'auto' : 'none' }}
+      >
+        {/* Dark backdrop — only used when no spotlight (welcome modal or element not found) */}
+        {(isModal || !highlightRect) && (
+          <div className="absolute inset-0 bg-black/70" onClick={e => e.stopPropagation()} />
+        )}
 
-      {/* Highlight cutout for non-modal steps */}
-      {!isModal && highlightRect && (
-        <>
-          {/* Spotlight effect */}
+        {/* Spotlight cutout — its box-shadow IS the backdrop */}
+        {!isModal && highlightRect && (
           <div
-            className="absolute rounded-xl transition-all duration-300 ease-out pointer-events-none"
+            className="absolute rounded-xl pointer-events-none"
             style={{
               top: highlightRect.top,
               left: highlightRect.left,
               width: highlightRect.width,
               height: highlightRect.height,
-              boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.6)',
-              background: 'transparent',
-              border: '3px solid #8b5cf6',
-              animation: 'pulse-border 2s ease-in-out infinite'
+              boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.7)',
+              border: '2px solid rgba(139, 92, 246, 0.8)',
+              transition: 'top 0.3s ease, left 0.3s ease, width 0.3s ease, height 0.3s ease'
             }}
           />
-          {/* Glow effect */}
-          <div
-            className="absolute rounded-xl pointer-events-none"
-            style={{
-              top: highlightRect.top - 4,
-              left: highlightRect.left - 4,
-              width: highlightRect.width + 8,
-              height: highlightRect.height + 8,
-              boxShadow: '0 0 30px 10px rgba(139, 92, 246, 0.4)',
-              transition: 'all 0.3s ease-out'
-            }}
-          />
-        </>
-      )}
+        )}
 
-      {/* Welcome Modal (centered) */}
-      {isModal && (
-        <div className="absolute inset-0 flex items-center justify-center p-4">
-          <div className="bg-gray-800 rounded-2xl border border-purple-500/50 shadow-2xl max-w-md w-full overflow-hidden">
-            <div className="p-6 md:p-8 text-center">
-              <div className="text-5xl mb-4">{currentStep.emoji}</div>
-              <h2 className="text-xl md:text-2xl font-bold text-white mb-3">{currentStep.title}</h2>
-              <p className="text-gray-400 leading-relaxed">{currentStep.description}</p>
-            </div>
-            <div className="px-6 md:px-8 pb-6 flex flex-col gap-3">
-              <button
-                onClick={handleNext}
-                className="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-medium transition-colors"
-              >
-                Let's go!
-              </button>
-              <button
-                onClick={handleSkip}
-                className="w-full py-2 text-gray-400 hover:text-gray-300 text-sm transition-colors"
-              >
-                Skip tour
-              </button>
+        {/* Click blocker over the full page except the tooltip */}
+        <div className="absolute inset-0" onClick={e => e.stopPropagation()} />
+
+        {/* Welcome Modal */}
+        {isModal && visible && (
+          <div className="absolute inset-0 flex items-center justify-center p-4 z-10">
+            <div className="bg-gray-800 rounded-2xl border border-purple-500/30 shadow-2xl max-w-md w-full">
+              <div className="p-8 text-center">
+                <div className="text-5xl mb-4">{currentStep.emoji}</div>
+                <h2 className="text-2xl font-bold text-white mb-3">{currentStep.title}</h2>
+                <p className="text-gray-400 leading-relaxed">{currentStep.description}</p>
+              </div>
+              <div className="px-8 pb-6 flex flex-col gap-3">
+                <button onClick={goNext} className="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-medium transition-colors">
+                  Let's go!
+                </button>
+                <button onClick={finish} className="w-full py-2 text-gray-500 hover:text-gray-300 text-sm transition-colors">
+                  Skip tour
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Tooltip - Fixed at bottom on mobile, positioned near element on desktop */}
-      {/* Only show after highlight is positioned to prevent lag */}
-      {!isModal && highlightReady && (
-        <div className={`fixed z-50 ${isMobile ? 'inset-x-4 bottom-4' : 'bottom-8 left-1/2 -translate-x-1/2'}`}>
-          <div className="bg-gray-800 rounded-xl border border-purple-500/50 shadow-2xl max-w-md mx-auto overflow-hidden">
-            {/* Progress dots */}
-            <div className="flex justify-center gap-1.5 pt-4">
-              {steps.map((_, i) => (
-                <div
-                  key={i}
-                  className={`w-2 h-2 rounded-full transition-colors ${
-                    i === step ? 'bg-purple-500' : i < step ? 'bg-purple-400/50' : 'bg-gray-600'
-                  }`}
-                />
-              ))}
-            </div>
-
-            {/* Content */}
-            <div className="p-4 md:p-5 pt-3">
-              <h3 className="text-lg md:text-xl font-bold text-white mb-2">{currentStep.title}</h3>
-              <p className="text-gray-300 text-sm md:text-base leading-relaxed">{currentStep.description}</p>
-            </div>
-
-            {/* Navigation buttons */}
-            <div className="flex items-center justify-between px-4 md:px-5 pb-4 gap-3">
-              {step > 0 ? (
-                <button
-                  onClick={handleBack}
-                  className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
-                >
-                  Back
+        {/* Tooltip — appears at same time as spotlight */}
+        {!isModal && visible && (
+          <div className={`fixed z-10 ${isMobile ? 'inset-x-4 bottom-4' : 'bottom-8 left-1/2 -translate-x-1/2'}`}>
+            <div className="bg-gray-800/95 backdrop-blur rounded-xl border border-purple-500/30 shadow-2xl max-w-md mx-auto">
+              <div className="flex justify-center gap-1.5 pt-4">
+                {steps.map((_, i) => (
+                  <div key={i} className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${i === step ? 'bg-purple-400 w-4' : i < step ? 'bg-purple-600' : 'bg-gray-600'}`} />
+                ))}
+              </div>
+              <div className="p-5 pt-3">
+                <h3 className="text-lg font-bold text-white mb-1">{currentStep.title}</h3>
+                <p className="text-gray-400 text-sm leading-relaxed">{currentStep.description}</p>
+              </div>
+              <div className="flex items-center justify-between px-5 pb-4">
+                {step > 0 ? (
+                  <button onClick={goBack} className="px-4 py-2 text-gray-500 hover:text-white text-sm transition-colors">Back</button>
+                ) : (
+                  <button onClick={finish} className="px-4 py-2 text-gray-500 hover:text-white text-sm transition-colors">Skip</button>
+                )}
+                <button onClick={goNext} className="px-5 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-white text-sm font-medium transition-colors">
+                  {currentStep.isFinal ? 'Start Exploring' : 'Next →'}
                 </button>
-              ) : (
-                <button
-                  onClick={handleSkip}
-                  className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
-                >
-                  Skip
-                </button>
-              )}
-              <button
-                onClick={handleNext}
-                className="px-6 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-white font-medium transition-colors"
-              >
-                {isFinalStep ? 'Start Exploring' : 'Next'}
-              </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* CSS for pulse animation */}
-      <style>{`
-        @keyframes pulse-border {
-          0%, 100% { border-color: #8b5cf6; }
-          50% { border-color: #a78bfa; }
-        }
-      `}</style>
-    </div>
+        )}
+      </div>
+    </>
   )
 }
 
