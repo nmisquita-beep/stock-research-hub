@@ -744,7 +744,11 @@ function OnboardingTour({ onComplete, onOpenSearch, setActivePage }) {
       }, 50)
     }
   }
-  const finish = () => { localStorage.setItem('tour_completed', 'true'); onComplete() }
+  const finish = () => {
+    localStorage.setItem('tour_completed', 'true')
+    if (setActivePage) setActivePage('dashboard')
+    onComplete()
+  }
 
   return (
     <>
