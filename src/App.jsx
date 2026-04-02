@@ -3513,28 +3513,36 @@ function StockChart({ symbol, range = '1mo', interval = '1d', onRangeData }) {
 }
 
 // ============ INSIDER ACTIVITY COMPONENT ============
-// Classify transaction codes - handles various formats like "S", "S-Sale", "Sale", etc.
+// Classify transaction codes - handles all Finnhub SEC form codes
 const classifyTransaction = (code) => {
-  if (!code) return 'other'
-  const c = code.toUpperCase()
-  if (c.startsWith('P') || c.includes('PURCHASE')) return 'buy'
-  if (c.startsWith('S') || c.includes('SALE')) return 'sell'
-  if (c.startsWith('M') || c.includes('EXERCISE') || c.includes('EXEMPT')) return 'exercise'
-  if (c.startsWith('F') || c.includes('TAX')) return 'tax'
-  if (c.startsWith('G') || c.includes('GIFT')) return 'gift'
-  return 'other'
+  if (!code) return { type: 'other', label: 'Other', color: 'gray' }
+  const c = String(code).toUpperCase()
+  if (c.startsWith('P') || c.includes('PURCHASE')) return { type: 'buy', label: 'Buy', color: 'green' }
+  if (c.startsWith('S') || c.includes('SALE')) return { type: 'sell', label: 'Sell', color: 'red' }
+  if (c.startsWith('M') || c.includes('EXEMPT') || c.includes('EXERCISE')) return { type: 'exercise', label: 'Exercise', color: 'blue' }
+  if (c.startsWith('F') || c.includes('TAX') || c.includes('INKIND')) return { type: 'tax', label: 'Tax', color: 'yellow' }
+  if (c.startsWith('G') || c.includes('GIFT')) return { type: 'gift', label: 'Gift', color: 'purple' }
+  if (c.startsWith('A') || c.includes('AWARD') || c.includes('GRANT')) return { type: 'award', label: 'Award', color: 'cyan' }
+  if (c.startsWith('D') || c.includes('DISPOSITION')) return { type: 'dispose', label: 'Dispose', color: 'orange' }
+  if (c.startsWith('W') || c.includes('WILL') || c.includes('INHERIT')) return { type: 'inherit', label: 'Inherit', color: 'gray' }
+  if (c.startsWith('J') || c.startsWith('C') || c.startsWith('I')) return { type: 'other', label: 'Other', color: 'gray' }
+  return { type: 'other', label: code, color: 'gray' }
 }
 
 const getTransactionDisplay = (code) => {
-  const type = classifyTransaction(code)
-  switch (type) {
-    case 'buy': return { label: 'Buy', color: 'text-green-400', bg: 'bg-green-500/20' }
-    case 'sell': return { label: 'Sell', color: 'text-red-400', bg: 'bg-red-500/20' }
-    case 'exercise': return { label: 'Exercise', color: 'text-blue-400', bg: 'bg-blue-500/20' }
-    case 'tax': return { label: 'Tax', color: 'text-yellow-400', bg: 'bg-yellow-500/20' }
-    case 'gift': return { label: 'Gift', color: 'text-purple-400', bg: 'bg-purple-500/20' }
-    default: return { label: 'Other', color: 'text-gray-400', bg: 'bg-gray-500/20' }
+  const { label, color } = classifyTransaction(code)
+  const colorMap = {
+    green: { color: 'text-green-400', bg: 'bg-green-500/20' },
+    red: { color: 'text-red-400', bg: 'bg-red-500/20' },
+    blue: { color: 'text-blue-400', bg: 'bg-blue-500/20' },
+    yellow: { color: 'text-yellow-400', bg: 'bg-yellow-500/20' },
+    purple: { color: 'text-purple-400', bg: 'bg-purple-500/20' },
+    cyan: { color: 'text-cyan-400', bg: 'bg-cyan-500/20' },
+    orange: { color: 'text-orange-400', bg: 'bg-orange-500/20' },
+    gray: { color: 'text-gray-400', bg: 'bg-gray-500/20' }
   }
+  const colors = colorMap[color] || colorMap.gray
+  return { label, ...colors }
 }
 
 function InsiderActivity({ symbol }) {
@@ -3549,7 +3557,9 @@ function InsiderActivity({ symbol }) {
         const response = await fetch(`https://stock-api-proxy-seven.vercel.app/api/finnhub?endpoint=stock/insider-transactions&symbol=${symbol}`)
         if (response.ok) {
           const result = await response.json()
-          console.log('Insider data:', result.data?.slice(0, 3))
+          const codes = [...new Set(result.data?.map(t => t.transactionCode) || [])]
+          console.log('All insider transaction codes for', symbol, ':', codes)
+          console.log('Insider data sample:', result.data?.slice(0, 3))
           setData(result.data || [])
         } else {
           setData([])
@@ -3582,8 +3592,9 @@ function InsiderActivity({ symbol }) {
   const recentData = data.filter(t => new Date(t.transactionDate) >= ninetyDaysAgo)
 
   // Use the same classification function for summary counts
-  const buys = recentData.filter(t => classifyTransaction(t.transactionCode) === 'buy').length
-  const sells = recentData.filter(t => classifyTransaction(t.transactionCode) === 'sell').length
+  const buys = recentData.filter(t => classifyTransaction(t.transactionCode).type === 'buy').length
+  const sells = recentData.filter(t => classifyTransaction(t.transactionCode).type === 'sell').length
+  const exercises = recentData.filter(t => classifyTransaction(t.transactionCode).type === 'exercise').length
 
   return (
     <div className="rounded-xl bg-gray-700/30 p-4">
@@ -3595,7 +3606,7 @@ function InsiderActivity({ symbol }) {
         <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
       </button>
       <div className="mt-2 text-sm text-gray-300">
-        {buys} buy{buys !== 1 ? 's' : ''}, {sells} sell{sells !== 1 ? 's' : ''} in last 90 days
+        {buys} buy{buys !== 1 ? 's' : ''}, {sells} sell{sells !== 1 ? 's' : ''}{exercises > 0 ? `, ${exercises} exercise${exercises !== 1 ? 's' : ''}` : ''} in last 90 days
       </div>
 
       {expanded && (
@@ -3632,12 +3643,15 @@ function RelativeStrength({ symbol, range, interval }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    // Reset data when symbol or range changes
+    setData(null)
+    setLoading(true)
+
     const fetchComparison = async () => {
       if (symbol === 'SPY') {
         setLoading(false)
         return
       }
-      setLoading(true)
       try {
         // Fetch both stock and SPY data in parallel
         const [stockData, spyData] = await Promise.all([
@@ -3645,18 +3659,18 @@ function RelativeStrength({ symbol, range, interval }) {
           yahooFetch('SPY', 'chart', { range, interval })
         ])
 
-        // Parse chart data
-        const parseChart = (data) => {
-          if (data && Array.isArray(data.data) && data.data.length > 0) {
-            return data.data.filter(d => d.close !== null)
-          } else if (data?.chart?.result?.[0]) {
-            const result = data.chart.result[0]
+        // Parse chart data - handle both proxy and raw Yahoo formats
+        const parseChart = (responseData) => {
+          if (responseData && Array.isArray(responseData.data) && responseData.data.length > 0) {
+            return responseData.data.filter(d => d.close !== null && d.close !== undefined)
+          } else if (responseData?.chart?.result?.[0]) {
+            const result = responseData.chart.result[0]
             const timestamps = result.timestamp || []
             const quotes = result.indicators?.quote?.[0] || {}
             return timestamps.map((t, i) => ({
               time: t,
               close: quotes.close?.[i]
-            })).filter(d => d.close !== null)
+            })).filter(d => d.close !== null && d.close !== undefined)
           }
           return []
         }
@@ -3664,22 +3678,28 @@ function RelativeStrength({ symbol, range, interval }) {
         const stockChart = parseChart(stockData)
         const spyChart = parseChart(spyData)
 
+        console.log('RelativeStrength fetch:', symbol, 'range:', range, 'stockPoints:', stockChart.length, 'spyPoints:', spyChart.length)
+
         if (stockChart.length >= 2 && spyChart.length >= 2) {
           const stockStart = stockChart[0].close
           const stockEnd = stockChart[stockChart.length - 1].close
-          const stockChange = ((stockEnd - stockStart) / stockStart) * 100
+          const stockPct = ((stockEnd - stockStart) / stockStart) * 100
 
           const spyStart = spyChart[0].close
           const spyEnd = spyChart[spyChart.length - 1].close
-          const spyChange = ((spyEnd - spyStart) / spyStart) * 100
+          const spyPct = ((spyEnd - spyStart) / spyStart) * 100
 
-          const relativeStrength = stockChange - spyChange
+          const diff = stockPct - spyPct
+
+          console.log('Relative strength:', symbol, 'stock%:', stockPct.toFixed(2), 'SPY%:', spyPct.toFixed(2), 'diff:', diff.toFixed(2))
 
           setData({
-            stockChange,
-            spyChange,
-            relativeStrength
+            stockChange: stockPct,
+            spyChange: spyPct,
+            relativeStrength: diff
           })
+        } else {
+          console.log('RelativeStrength: insufficient data for', symbol)
         }
       } catch (err) {
         console.error('Relative strength error:', err)
