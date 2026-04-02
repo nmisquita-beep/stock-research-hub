@@ -386,19 +386,14 @@ function useCloudSync(key, localValue, setLocalValue, user) {
     const docRef = doc(db, `users/${user.uid}/${key}`, 'data')
 
     const initializeSync = async () => {
-      console.log('[Sync] Initializing sync for', key, 'user:', user?.uid)
       setSyncing(true)
       try {
-        console.log('[Sync] Calling getDoc for', key)
         const docSnap = await getDoc(docRef)
-        console.log('[Sync] getDoc completed for', key, '- exists:', docSnap.exists())
         if (!docSnap.exists()) {
-          console.log('[Sync] Creating initial doc for', key)
           await setDoc(docRef, { value: localValueRef.current, updatedAt: new Date().toISOString() })
-          console.log('[Sync] Initial doc created for', key)
         }
       } catch (error) {
-        console.error('[Sync] Init error for', key, ':', error.code, error.message)
+        console.error('[Sync] Init error:', error.code, error.message)
       }
       setSyncing(false)
     }
@@ -411,13 +406,10 @@ function useCloudSync(key, localValue, setLocalValue, user) {
         if (cloudData && cloudData.value !== undefined && cloudData.value !== null) {
           setLocalValue(cloudData.value)
         }
-        console.log('[Sync] Snapshot received for', key, '- synced:', true)
         setSynced(true)
-      } else {
-        console.log('[Sync] Snapshot received for', key, '- doc does not exist')
       }
     }, (error) => {
-      console.error('[Sync] Snapshot ERROR for', key, ':', error.code, error.message)
+      console.error('[Sync] Snapshot error:', error.code, error.message)
       setSynced(false)
     })
 
@@ -3304,13 +3296,10 @@ function StockChart({ symbol, range = '1mo', interval = '1d', onRangeData }) {
       setLoading(true)
       try {
         const data = await yahooFetch(symbol, 'chart', { range, interval })
-        console.log('Chart API response for', symbol, ':', data)
-
         let formatted = []
 
         // Format 1: Proxy pre-formatted response { data: [{time, open, high, low, close, volume}] }
         if (data && Array.isArray(data.data) && data.data.length > 0) {
-          console.log('Using proxy format, data points:', data.data.length)
           formatted = data.data.map(d => ({
             time: d.time * 1000,
             date: new Date(d.time * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
@@ -3323,7 +3312,6 @@ function StockChart({ symbol, range = '1mo', interval = '1d', onRangeData }) {
         }
         // Format 2: Raw Yahoo format { chart: { result: [{ timestamp, indicators }] } }
         else if (data && data.chart && data.chart.result && data.chart.result[0]) {
-          console.log('Using raw Yahoo format')
           const result = data.chart.result[0]
           const timestamps = result.timestamp || []
           const quotes = result.indicators?.quote?.[0] || {}
@@ -3340,7 +3328,6 @@ function StockChart({ symbol, range = '1mo', interval = '1d', onRangeData }) {
         }
         // Format 3: Direct array response
         else if (Array.isArray(data) && data.length > 0) {
-          console.log('Using direct array format')
           formatted = data.map(d => ({
             time: (d.time || d.timestamp || d.date) * 1000,
             date: new Date((d.time || d.timestamp || d.date) * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
@@ -3363,7 +3350,6 @@ function StockChart({ symbol, range = '1mo', interval = '1d', onRangeData }) {
           }))
         }
 
-        console.log('Formatted chart data points:', formatted.length)
         setChartData(formatted)
 
         // Calculate and report range data for price change display
@@ -3557,9 +3543,6 @@ function InsiderActivity({ symbol }) {
         const response = await fetch(`https://stock-api-proxy-seven.vercel.app/api/finnhub?endpoint=stock/insider-transactions&symbol=${symbol}`)
         if (response.ok) {
           const result = await response.json()
-          const codes = [...new Set(result.data?.map(t => t.transactionCode) || [])]
-          console.log('All insider transaction codes for', symbol, ':', codes)
-          console.log('Insider data sample:', result.data?.slice(0, 3))
           setData(result.data || [])
         } else {
           setData([])
@@ -3678,8 +3661,6 @@ function RelativeStrength({ symbol, range, interval }) {
         const stockChart = parseChart(stockData)
         const spyChart = parseChart(spyData)
 
-        console.log('RelativeStrength fetch:', symbol, 'range:', range, 'stockPoints:', stockChart.length, 'spyPoints:', spyChart.length)
-
         if (stockChart.length >= 2 && spyChart.length >= 2) {
           const stockStart = stockChart[0].close
           const stockEnd = stockChart[stockChart.length - 1].close
@@ -3691,15 +3672,11 @@ function RelativeStrength({ symbol, range, interval }) {
 
           const diff = stockPct - spyPct
 
-          console.log('Relative strength:', symbol, 'stock%:', stockPct.toFixed(2), 'SPY%:', spyPct.toFixed(2), 'diff:', diff.toFixed(2))
-
           setData({
             stockChange: stockPct,
             spyChange: spyPct,
             relativeStrength: diff
           })
-        } else {
-          console.log('RelativeStrength: insufficient data for', symbol)
         }
       } catch (err) {
         console.error('Relative strength error:', err)
@@ -3853,7 +3830,7 @@ function StockDetail({ symbol, onClose, watchlist, setWatchlist }) {
               aria-label={isInWatchlist ? "Remove from watchlist" : "Add to watchlist"}
               className={`p-2 sm:p-2.5 rounded-lg transition-colors ${isInWatchlist ? 'bg-yellow-500/20 text-yellow-400' : 'hover:bg-gray-700 text-gray-400'}`}
             >
-              <Star className={`w-5 h-5 ${isInWatchlist ? 'fill-yellow-400' : ''}`} />
+              <Star className={`w-5 h-5 ${isInWatchlist ? 'fill-current' : ''}`} />
             </button>
             <button
               onClick={() => setShowNews(true)}
@@ -4732,6 +4709,21 @@ function AppContent() {
   // Scroll to top when switching pages
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [activePage])
+
+  // Update page title based on active page
+  useEffect(() => {
+    const titles = {
+      dashboard: 'Dashboard',
+      explore: 'Explore Stocks',
+      insights: 'AI Insights',
+      screener: 'Screener',
+      earnings: 'Earnings Calendar',
+      news: 'Market News',
+      watchlist: 'Watchlist',
+      settings: 'Settings'
+    }
+    document.title = `${titles[activePage] || 'Dashboard'} | Stock Research Hub`
   }, [activePage])
 
   if (authLoading) {
