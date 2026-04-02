@@ -3765,12 +3765,14 @@ function RelativeStrength({ symbol, range, interval }) {
 }
 
 // ============ STOCK DETAIL MODAL ============
-function StockDetail({ symbol, onClose }) {
+function StockDetail({ symbol, onClose, watchlist, setWatchlist }) {
   const [quote, setQuote] = useState(null)
   const [loading, setLoading] = useState(true)
   const [showNews, setShowNews] = useState(false)
   const [chartRange, setChartRange] = useState('1d')
   const [rangeChange, setRangeChange] = useState(null)
+
+  const isInWatchlist = watchlist?.includes(symbol)
 
   const rangeOptions = [
     { value: '1d', label: '1D', interval: '5m', displayLabel: 'today' },
@@ -3839,6 +3841,20 @@ function StockDetail({ symbol, onClose }) {
             </div>
           </div>
           <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                if (isInWatchlist) {
+                  setWatchlist(watchlist.filter(s => s !== symbol))
+                } else {
+                  setWatchlist([...watchlist, symbol])
+                }
+              }}
+              aria-label={isInWatchlist ? "Remove from watchlist" : "Add to watchlist"}
+              className={`p-2 sm:p-2.5 rounded-lg transition-colors ${isInWatchlist ? 'bg-yellow-500/20 text-yellow-400' : 'hover:bg-gray-700 text-gray-400'}`}
+            >
+              <Star className={`w-5 h-5 ${isInWatchlist ? 'fill-yellow-400' : ''}`} />
+            </button>
             <button
               onClick={() => setShowNews(true)}
               aria-label="View news"
@@ -4772,7 +4788,7 @@ function AppContent() {
         </div>
       </main>
 
-      {selectedStock && <StockDetail symbol={selectedStock} onClose={() => setSelectedStock(null)} />}
+      {selectedStock && <StockDetail symbol={selectedStock} onClose={() => setSelectedStock(null)} watchlist={watchlist} setWatchlist={setWatchlist} />}
       {showSearch && <PredictiveSearch onSelect={setSelectedStock} onClose={() => setShowSearch(false)} />}
       {showTour && <OnboardingTour onComplete={() => setShowTour(false)} onOpenSearch={() => setShowSearch(true)} setActivePage={setActivePage} />}
       <BackToTopButton />
