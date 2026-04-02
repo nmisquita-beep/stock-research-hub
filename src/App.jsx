@@ -368,6 +368,8 @@ function useCloudSync(key, localValue, setLocalValue, user) {
   const isInitialMount = useRef(true)
   const unsubscribeRef = useRef(null)
   const localValueRef = useRef(localValue)
+  const isFromCloud = useRef(false)
+  const lastWritten = useRef(null)
 
   useEffect(() => {
     localValueRef.current = localValue
@@ -393,7 +395,7 @@ function useCloudSync(key, localValue, setLocalValue, user) {
           await setDoc(docRef, { value: localValueRef.current, updatedAt: new Date().toISOString() })
         }
       } catch (error) {
-        console.error('[Sync] Init error:', error.code, error.message)
+        console.error('Sync init error:', error.code)
       }
       setSyncing(false)
     }
@@ -404,12 +406,19 @@ function useCloudSync(key, localValue, setLocalValue, user) {
       if (docSnap.exists()) {
         const cloudData = docSnap.data()
         if (cloudData && cloudData.value !== undefined && cloudData.value !== null) {
-          setLocalValue(cloudData.value)
+          // Check if this snapshot is from our own write — skip to prevent loop
+          const cloudStr = JSON.stringify(cloudData.value)
+          if (cloudStr !== lastWritten.current) {
+            isFromCloud.current = true
+            setLocalValue(cloudData.value)
+            // Reset flag after React processes the state update
+            setTimeout(() => { isFromCloud.current = false }, 100)
+          }
         }
         setSynced(true)
       }
     }, (error) => {
-      console.error('[Sync] Snapshot error:', error.code, error.message)
+      console.error('Sync snapshot error:', error.code)
       setSynced(false)
     })
 
@@ -426,6 +435,9 @@ function useCloudSync(key, localValue, setLocalValue, user) {
       return
     }
 
+    // Don't write back if this change came from Firestore
+    if (isFromCloud.current) return
+
     if (!user) {
       localStorage.setItem(key, JSON.stringify(localValue))
       return
@@ -435,10 +447,12 @@ function useCloudSync(key, localValue, setLocalValue, user) {
       setSyncing(true)
       try {
         const docRef = doc(db, `users/${user.uid}/${key}`, 'data')
+        const valueStr = JSON.stringify(localValue)
+        lastWritten.current = valueStr
         await setDoc(docRef, { value: localValue, updatedAt: new Date().toISOString() })
         setSynced(true)
       } catch (error) {
-        console.error('Sync error:', error)
+        console.error('Sync write error:', error)
       }
       setSyncing(false)
     }, 1000)
