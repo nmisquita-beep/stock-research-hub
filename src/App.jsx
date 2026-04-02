@@ -618,6 +618,7 @@ function OnboardingTour({ onComplete, onOpenSearch, setActivePage }) {
   const [step, setStep] = useState(0)
   const [highlightRect, setHighlightRect] = useState(null)
   const [visible, setVisible] = useState(false)
+  const [transitioning, setTransitioning] = useState(false)
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
 
   const steps = [
@@ -726,9 +727,23 @@ function OnboardingTour({ onComplete, onOpenSearch, setActivePage }) {
 
   const goNext = () => {
     if (step >= steps.length - 1) return finish()
-    setStep(s => s + 1)
+    setTransitioning(true)
+    setVisible(false)
+    setTimeout(() => {
+      setStep(s => s + 1)
+      setTransitioning(false)
+    }, 50)
   }
-  const goBack = () => { if (step > 0) setStep(s => s - 1) }
+  const goBack = () => {
+    if (step > 0) {
+      setTransitioning(true)
+      setVisible(false)
+      setTimeout(() => {
+        setStep(s => s - 1)
+        setTransitioning(false)
+      }, 50)
+    }
+  }
   const finish = () => { localStorage.setItem('tour_completed', 'true'); onComplete() }
 
   return (
@@ -736,7 +751,7 @@ function OnboardingTour({ onComplete, onOpenSearch, setActivePage }) {
       {/* Single overlay — only the spotlight box-shadow creates the dark backdrop */}
       <div
         className="fixed inset-0 z-[200]"
-        style={{ opacity: visible ? 1 : 0, transition: 'opacity 0.25s ease', pointerEvents: visible ? 'auto' : 'none' }}
+        style={{ opacity: visible ? 1 : 0, transition: transitioning ? 'none' : 'opacity 0.25s ease', pointerEvents: visible ? 'auto' : 'none' }}
       >
         {/* Dark backdrop — only used when no spotlight (welcome modal or element not found) */}
         {(isModal || !highlightRect) && (
@@ -753,8 +768,7 @@ function OnboardingTour({ onComplete, onOpenSearch, setActivePage }) {
               width: highlightRect.width,
               height: highlightRect.height,
               boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.7)',
-              border: '2px solid rgba(139, 92, 246, 0.8)',
-              transition: 'top 0.3s ease, left 0.3s ease, width 0.3s ease, height 0.3s ease'
+              border: '2px solid rgba(139, 92, 246, 0.8)'
             }}
           />
         )}
