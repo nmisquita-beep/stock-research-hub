@@ -10,7 +10,7 @@ import {
   Crown, Leaf, Heart, Cpu, TrendingDown as TrendDown, Gem, Shield, LayoutGrid, List,
   Menu, ChevronUp, ArrowUp
 } from 'lucide-react'
-import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip as RechartsTooltip, CartesianGrid, BarChart, Bar, ComposedChart, Line } from 'recharts'
+import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip as RechartsTooltip, CartesianGrid, BarChart, Bar, ComposedChart, Line, Cell } from 'recharts'
 import AIInsights from './components/AIInsights'
 import { auth, db, googleProvider } from './firebase'
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth'
@@ -492,6 +492,33 @@ function MiniSparkline({ data, positive, height = 32 }) {
   )
 }
 
+// Volume anomaly badge - shows when volume is unusually high
+function VolumeAnomaly({ volume, avgVolume, compact = false }) {
+  if (!volume || !avgVolume || avgVolume === 0) return null
+  const ratio = volume / avgVolume
+  if (ratio < 1.5) return null
+
+  if (ratio >= 3.0) {
+    return (
+      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 text-xs font-medium animate-pulse ${compact ? 'text-[10px] px-1.5' : ''}`}>
+        ⚡ {ratio.toFixed(1)}x Vol
+      </span>
+    )
+  }
+  if (ratio >= 2.0) {
+    return (
+      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-400 text-xs font-medium ${compact ? 'text-[10px] px-1.5' : ''}`}>
+        🔥 {ratio.toFixed(1)}x Vol
+      </span>
+    )
+  }
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400 text-xs font-medium ${compact ? 'text-[10px] px-1.5' : ''}`}>
+      ↑ {ratio.toFixed(1)}x Vol
+    </span>
+  )
+}
+
 function HeatMapCell({ value, label, onClick }) {
   const getColor = (v) => {
     if (v >= 3) return 'bg-green-500'
@@ -590,6 +617,7 @@ function FearGreedIndicator({ value }) {
 function OnboardingTour({ onComplete, onOpenSearch, setActivePage }) {
   const [step, setStep] = useState(0)
   const [highlightRect, setHighlightRect] = useState(null)
+  const [highlightReady, setHighlightReady] = useState(false)
   const [isAnimating, setIsAnimating] = useState(false)
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
 
@@ -696,8 +724,12 @@ function OnboardingTour({ onComplete, onOpenSearch, setActivePage }) {
 
   // Update highlight and switch tabs
   useEffect(() => {
+    // Reset highlight ready state at start of each step
+    setHighlightReady(false)
+
     if (isModal) {
       setHighlightRect(null)
+      setHighlightReady(true)
       return
     }
 
@@ -706,7 +738,7 @@ function OnboardingTour({ onComplete, onOpenSearch, setActivePage }) {
       setActivePage(currentStep.tab)
     }
 
-    // Retry finding element up to 5 times with increasing delays
+    // Retry finding element up to 8 times
     const findAndHighlight = (attempt = 0) => {
       const element = document.querySelector(currentStep.target)
       if (element) {
@@ -720,10 +752,13 @@ function OnboardingTour({ onComplete, onOpenSearch, setActivePage }) {
         if (isMobile) {
           element.scrollIntoView({ behavior: 'smooth', block: 'center' })
         }
-      } else if (attempt < 5) {
-        setTimeout(() => findAndHighlight(attempt + 1), 300)
+        // Small delay before showing tooltip so spotlight renders first
+        setTimeout(() => setHighlightReady(true), 100)
+      } else if (attempt < 8) {
+        setTimeout(() => findAndHighlight(attempt + 1), 250)
       } else {
         setHighlightRect(null)
+        setHighlightReady(true) // show tooltip anyway as fallback
       }
     }
 
@@ -768,6 +803,7 @@ function OnboardingTour({ onComplete, onOpenSearch, setActivePage }) {
       localStorage.setItem('tour_completed', 'true')
       onComplete()
     } else {
+      setHighlightReady(false)
       setIsAnimating(true)
       setTimeout(() => {
         setStep(step + 1)
@@ -778,6 +814,7 @@ function OnboardingTour({ onComplete, onOpenSearch, setActivePage }) {
 
   const handleBack = () => {
     if (step > 0) {
+      setHighlightReady(false)
       setIsAnimating(true)
       setTimeout(() => {
         setStep(step - 1)
@@ -792,7 +829,7 @@ function OnboardingTour({ onComplete, onOpenSearch, setActivePage }) {
   }
 
   return (
-    <div className={`fixed inset-0 z-[200] transition-opacity duration-300 ${isAnimating ? 'opacity-80' : 'opacity-100'}`}>
+    <div className={`fixed inset-0 z-[200] transition-opacity duration-300 ${isAnimating ? 'opacity-90' : 'opacity-100'}`}>
       {/* Semi-transparent overlay - does NOT dismiss on click */}
       <div
         className="absolute inset-0 bg-black/60"
@@ -859,7 +896,8 @@ function OnboardingTour({ onComplete, onOpenSearch, setActivePage }) {
       )}
 
       {/* Tooltip - Fixed at bottom on mobile, positioned near element on desktop */}
-      {!isModal && (
+      {/* Only show after highlight is positioned to prevent lag */}
+      {!isModal && highlightReady && (
         <div className={`fixed z-50 ${isMobile ? 'inset-x-4 bottom-4' : 'bottom-8 left-1/2 -translate-x-1/2'}`}>
           <div className="bg-gray-800 rounded-xl border border-purple-500/50 shadow-2xl max-w-md mx-auto overflow-hidden">
             {/* Progress dots */}
@@ -2849,6 +2887,7 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock }) {
   const [watchlistQuotes, setWatchlistQuotes] = useState({})
   const [sectorData, setSectorData] = useState({})
   const [moversData, setMoversData] = useState({ gainers: [], losers: [] })
+  const [unusualVolumeStocks, setUnusualVolumeStocks] = useState([])
   const [loading, setLoading] = useState(true)
   const [showAddStock, setShowAddStock] = useState(false)
   const [lastUpdated, setLastUpdated] = useState(null)
@@ -2920,6 +2959,25 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock }) {
       gainers: stockData.slice(0, 5),
       losers: stockData.slice(-5).reverse()
     })
+
+    // Calculate unusual volume stocks
+    const allStocksForVolume = [...new Set([...popularStocks, ...currentWatchlist])]
+    const volumeStocks = allStocksForVolume
+      .filter(s => {
+        const d = allData[s]
+        return d && d.volume && d.avgVolume && d.avgVolume > 0 && (d.volume / d.avgVolume) >= 1.5
+      })
+      .map(s => ({
+        symbol: s,
+        volume: allData[s].volume,
+        avgVolume: allData[s].avgVolume,
+        ratio: allData[s].volume / allData[s].avgVolume,
+        price: allData[s].c,
+        change: allData[s].changePercent ?? 0
+      }))
+      .sort((a, b) => b.ratio - a.ratio)
+      .slice(0, 8)
+    setUnusualVolumeStocks(volumeStocks)
 
     setLastUpdated(new Date())
     setLoading(false)
@@ -3074,12 +3132,15 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock }) {
                           <div className="text-xs text-gray-500 truncate max-w-[120px]">{shortName}</div>
                         )}
                       </div>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); removeSymbol(symbol); }}
-                        className="p-1.5 hover:bg-red-600/20 rounded-lg text-gray-500 hover:text-red-400 z-10 transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <VolumeAnomaly volume={quote?.volume} avgVolume={quote?.avgVolume} compact />
+                        <button
+                          onClick={(e) => { e.stopPropagation(); removeSymbol(symbol); }}
+                          className="p-1.5 hover:bg-red-600/20 rounded-lg text-gray-500 hover:text-red-400 z-10 transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                     {quote ? (
                       <>
@@ -3188,6 +3249,43 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock }) {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Unusual Volume Section */}
+      <div className="space-y-4">
+        <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+          <Activity className="w-5 h-5 text-orange-400" />
+          Unusual Volume
+        </h3>
+        {unusualVolumeStocks.length > 0 ? (
+          <div className="card-premium rounded-xl p-4">
+            <div className="space-y-2">
+              {unusualVolumeStocks.map((stock, i) => (
+                <button
+                  key={stock.symbol}
+                  onClick={() => onSelectStock(stock.symbol)}
+                  className={`w-full flex items-center gap-3 p-2.5 rounded-lg transition-all hover:bg-white/5 stagger-${i + 1} animate-fade-in`}
+                >
+                  <span className="font-mono font-semibold text-white text-sm w-16">{stock.symbol}</span>
+                  <VolumeAnomaly volume={stock.volume} avgVolume={stock.avgVolume} />
+                  <div className="flex-1 text-right">
+                    <span className="font-mono text-gray-400 text-xs">
+                      {formatVolume(stock.volume)} vs {formatVolume(stock.avgVolume)} avg
+                    </span>
+                  </div>
+                  <span className={`font-mono text-sm font-medium ${stock.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    {stock.change >= 0 ? '+' : ''}{stock.change.toFixed(2)}%
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="card-premium rounded-xl p-6 text-center">
+            <Activity className="w-8 h-8 mx-auto mb-2 text-gray-600" />
+            <p className="text-gray-500 text-sm">No unusual volume activity today</p>
+          </div>
+        )}
       </div>
 
       {/* Sector Performance */}
@@ -3646,6 +3744,114 @@ function InsiderActivity({ symbol }) {
   )
 }
 
+// ============ EARNINGS SURPRISE COMPONENT ============
+function EarningsSurprise({ symbol }) {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [expanded, setExpanded] = useState(false)
+
+  useEffect(() => {
+    const fetchEarnings = async () => {
+      setLoading(true)
+      try {
+        const response = await fetch(`https://stock-api-proxy-seven.vercel.app/api/finnhub?endpoint=stock/earnings&symbol=${symbol}`)
+        if (response.ok) {
+          const result = await response.json()
+          // Get last 4 quarters
+          setData((result || []).slice(0, 4).reverse())
+        } else {
+          setData([])
+        }
+      } catch (err) {
+        console.error('Earnings data error:', err)
+        setData([])
+      }
+      setLoading(false)
+    }
+    fetchEarnings()
+  }, [symbol])
+
+  if (loading) {
+    return (
+      <div className="rounded-xl bg-gray-700/30 p-4">
+        <div className="h-6 w-32 animate-shimmer rounded mb-2" />
+        <div className="h-4 w-48 animate-shimmer rounded" />
+      </div>
+    )
+  }
+
+  if (!data || data.length === 0) {
+    return null
+  }
+
+  const beats = data.filter(q => q.actual > q.estimate).length
+  const misses = data.filter(q => q.actual < q.estimate).length
+
+  const chartData = data.map(q => ({
+    quarter: `Q${q.quarter} '${String(q.year).slice(-2)}`,
+    estimate: q.estimate,
+    actual: q.actual,
+    beat: q.actual >= q.estimate,
+    surprise: q.surprisePercent || ((q.actual - q.estimate) / Math.abs(q.estimate) * 100)
+  }))
+
+  return (
+    <div className="rounded-xl bg-gray-700/30 p-4">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between"
+      >
+        <h3 className="text-sm font-medium text-gray-400 flex items-center gap-2">
+          <BarChart3 className="w-4 h-4" />
+          Earnings History
+        </h3>
+        <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+      </button>
+      <div className="mt-2 text-sm text-gray-300">
+        Beat {beats} of last {data.length} quarter{data.length !== 1 ? 's' : ''}
+      </div>
+
+      {expanded && (
+        <div className="mt-4">
+          {/* Surprise badges */}
+          <div className="flex justify-around mb-2">
+            {chartData.map((q, i) => (
+              <div key={i} className="text-center">
+                <span className={`text-xs font-mono px-1.5 py-0.5 rounded ${q.beat ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                  {q.surprise >= 0 ? '+' : ''}{q.surprise.toFixed(1)}%
+                </span>
+              </div>
+            ))}
+          </div>
+          {/* Bar chart */}
+          <div className="h-32">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData} barGap={2}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
+                <XAxis dataKey="quarter" tick={{ fill: '#9ca3af', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: '#9ca3af', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => `$${v.toFixed(2)}`} width={45} />
+                <RechartsTooltip
+                  contentStyle={{ background: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
+                  formatter={(value, name) => [`$${value?.toFixed(2)}`, name === 'estimate' ? 'Est.' : 'Actual']}
+                />
+                <Bar dataKey="estimate" fill="#6b7280" radius={[2, 2, 0, 0]} />
+                <Bar dataKey="actual" radius={[2, 2, 0, 0]}>
+                  {chartData.map((entry, index) => (
+                    <Cell key={index} fill={entry.beat ? '#22c55e' : '#ef4444'} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="text-xs text-gray-500 text-center mt-2">
+            Gray = Estimate, Color = Actual (green = beat, red = miss)
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ============ RELATIVE STRENGTH VS SPY ============
 function RelativeStrength({ symbol, range, interval }) {
   const [data, setData] = useState(null)
@@ -3944,6 +4150,9 @@ function StockDetail({ symbol, onClose, watchlist, setWatchlist }) {
 
             {/* Insider Activity */}
             <InsiderActivity symbol={symbol} />
+
+            {/* Earnings Surprises */}
+            <EarningsSurprise symbol={symbol} />
           </div>
         )}
       </div>
