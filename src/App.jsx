@@ -386,14 +386,19 @@ function useCloudSync(key, localValue, setLocalValue, user) {
     const docRef = doc(db, `users/${user.uid}/${key}`, 'data')
 
     const initializeSync = async () => {
+      console.log('[Sync] Initializing sync for', key, 'user:', user?.uid)
       setSyncing(true)
       try {
+        console.log('[Sync] Calling getDoc for', key)
         const docSnap = await getDoc(docRef)
+        console.log('[Sync] getDoc completed for', key, '- exists:', docSnap.exists())
         if (!docSnap.exists()) {
+          console.log('[Sync] Creating initial doc for', key)
           await setDoc(docRef, { value: localValueRef.current, updatedAt: new Date().toISOString() })
+          console.log('[Sync] Initial doc created for', key)
         }
       } catch (error) {
-        console.error('Migration error:', error)
+        console.error('[Sync] Init error for', key, ':', error.code, error.message)
       }
       setSyncing(false)
     }
@@ -406,11 +411,13 @@ function useCloudSync(key, localValue, setLocalValue, user) {
         if (cloudData && cloudData.value !== undefined && cloudData.value !== null) {
           setLocalValue(cloudData.value)
         }
-        console.log(`[Sync] ${key} synced successfully`)
+        console.log('[Sync] Snapshot received for', key, '- synced:', true)
         setSynced(true)
+      } else {
+        console.log('[Sync] Snapshot received for', key, '- doc does not exist')
       }
     }, (error) => {
-      console.error(`[Sync] ${key} error:`, error)
+      console.error('[Sync] Snapshot ERROR for', key, ':', error.code, error.message)
       setSynced(false)
     })
 
@@ -1723,7 +1730,7 @@ function DesktopNav({ activePage, setActivePage, onSearchOpen, syncStatus }) {
           </div>
           <div className="flex items-center gap-2 overflow-visible">
             {user && (
-              <Tooltip content={syncStatus.synced ? 'Synced to cloud' : syncStatus.syncing ? 'Syncing...' : 'Not synced'}>
+              <Tooltip content={syncStatus.synced ? 'Synced to cloud' : syncStatus.syncing ? 'Syncing...' : 'Local only - check console for sync errors'}>
                 <div className={`hidden sm:flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full ${
                   syncStatus.synced ? 'bg-green-500/20 text-green-400' : syncStatus.syncing ? 'bg-yellow-500/20 text-yellow-400' : 'bg-gray-500/20 text-gray-400'
                 }`}>
