@@ -3024,9 +3024,14 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock }) {
             {watchlist.map((symbol, idx) => {
               const quote = watchlistQuotes[symbol]
               const pct = quote?.changePercent ?? 0
+              const dollarChange = quote?.change ?? 0
               const positive = pct >= 0
               const sparkData = quote ? generateSparklineData(quote.c, quote.pc) : []
               const volRatio = quote?.volume && quote?.avgVolume ? quote.volume / quote.avgVolume : 1
+              // Get short company name (first 2-3 words or before comma/Inc/Corp)
+              const shortName = quote?.name
+                ? quote.name.split(/,|\s+(Inc|Corp|Ltd|LLC|Company|Holdings)/i)[0].split(' ').slice(0, 3).join(' ')
+                : null
               return (
                 <div
                   key={symbol}
@@ -3035,7 +3040,8 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock }) {
                   style={{
                     background: positive
                       ? 'linear-gradient(135deg, rgba(34, 197, 94, 0.08) 0%, rgba(17, 24, 39, 0.95) 100%)'
-                      : 'linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(17, 24, 39, 0.95) 100%)'
+                      : 'linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(17, 24, 39, 0.95) 100%)',
+                    borderLeft: `3px solid ${positive ? '#22c55e' : '#ef4444'}`
                   }}
                 >
                   {/* Background sparkline */}
@@ -3043,8 +3049,13 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock }) {
                     {sparkData.length > 0 && <MiniSparkline data={sparkData} positive={positive} height={48} />}
                   </div>
                   <div className="relative z-10">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-mono font-bold text-white">{symbol}</span>
+                    <div className="flex items-center justify-between mb-1">
+                      <div>
+                        <span className="font-mono font-bold text-white">{symbol}</span>
+                        {shortName && (
+                          <div className="text-xs text-gray-500 truncate max-w-[120px]">{shortName}</div>
+                        )}
+                      </div>
                       <button
                         onClick={(e) => { e.stopPropagation(); removeSymbol(symbol); }}
                         className="p-1.5 hover:bg-red-600/20 rounded-lg text-gray-500 hover:text-red-400 z-10 transition-colors"
@@ -3056,9 +3067,14 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock }) {
                       <>
                         <div className="font-mono text-xl font-bold text-white">{formatCurrency(quote.c)}</div>
                         <div className="flex items-center justify-between mt-1">
-                          <div className={`font-mono text-sm font-semibold flex items-center gap-1 ${positive ? 'text-green-400' : 'text-red-400'}`}>
-                            {positive ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
-                            {positive ? '+' : ''}{pct.toFixed(2)}%
+                          <div className="flex items-center gap-2">
+                            <span className={`font-mono text-sm font-semibold flex items-center gap-1 ${positive ? 'text-green-400' : 'text-red-400'}`}>
+                              {positive ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
+                              {positive ? '+' : ''}{pct.toFixed(2)}%
+                            </span>
+                            <span className={`font-mono text-xs ${positive ? 'text-green-400/70' : 'text-red-400/70'}`}>
+                              {positive ? '+' : ''}{formatCurrency(dollarChange)}
+                            </span>
                           </div>
                           {/* Volume indicator */}
                           <div className="flex items-center gap-1" title={`Volume: ${volRatio.toFixed(1)}x avg`}>
@@ -3105,19 +3121,20 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock }) {
                 [1,2,3,4,5].map(i => <Skeleton key={i} className="h-11 w-full" />)
               ) : moversData.gainers.map((stock, i) => (
                 <button key={stock.symbol} onClick={() => onSelectStock(stock.symbol)}
-                  className={`w-full flex items-center gap-3 p-2.5 rounded-lg transition-all hover:bg-white/5 stagger-${i + 1} animate-fade-in`}>
+                  className={`w-full flex items-center gap-3 p-2.5 rounded-lg transition-all hover:bg-white/5 relative overflow-hidden stagger-${i + 1} animate-fade-in`}>
+                  {/* Background magnitude bar */}
+                  <div
+                    className="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-green-500/20 to-transparent"
+                    style={{ width: `${Math.min(stock.change * 5, 100)}%` }}
+                  />
                   {/* Rank badge */}
-                  <div className={`w-6 h-6 rounded-md flex items-center justify-center text-xs font-bold ${i === 0 ? 'rank-badge-gold text-yellow-400' : 'rank-badge text-blue-400'}`}>
+                  <div className={`relative w-6 h-6 rounded-md flex items-center justify-center text-xs font-bold ${i === 0 ? 'rank-badge-gold text-yellow-400' : 'rank-badge text-blue-400'}`}>
                     {i + 1}
                   </div>
-                  {/* Magnitude bar */}
-                  <div
-                    className="w-1 h-8 rounded-full bg-gradient-to-t from-green-600 to-green-400"
-                    style={{ opacity: 0.3 + (stock.change / 10) * 0.7 }}
-                  />
-                  <span className="font-mono font-semibold text-white text-sm">{stock.symbol}</span>
+                  <span className="relative font-mono font-semibold text-white text-sm">{stock.symbol}</span>
+                  <span className="relative font-mono text-gray-400 text-xs">${stock.price.toFixed(2)}</span>
                   <div className="flex-1" />
-                  <span className="font-mono text-green-400 text-sm font-semibold">+{stock.change.toFixed(2)}%</span>
+                  <span className="relative font-mono text-green-400 text-sm font-semibold">+{stock.change.toFixed(2)}%</span>
                 </button>
               ))}
             </div>
@@ -3134,19 +3151,20 @@ function Dashboard({ watchlist, setWatchlist, onSelectStock }) {
                 [1,2,3,4,5].map(i => <Skeleton key={i} className="h-11 w-full" />)
               ) : moversData.losers.map((stock, i) => (
                 <button key={stock.symbol} onClick={() => onSelectStock(stock.symbol)}
-                  className={`w-full flex items-center gap-3 p-2.5 rounded-lg transition-all hover:bg-white/5 stagger-${i + 1} animate-fade-in`}>
+                  className={`w-full flex items-center gap-3 p-2.5 rounded-lg transition-all hover:bg-white/5 relative overflow-hidden stagger-${i + 1} animate-fade-in`}>
+                  {/* Background magnitude bar */}
+                  <div
+                    className="absolute right-0 top-0 bottom-0 bg-gradient-to-l from-red-500/20 to-transparent"
+                    style={{ width: `${Math.min(Math.abs(stock.change) * 5, 100)}%` }}
+                  />
                   {/* Rank badge */}
-                  <div className="w-6 h-6 rounded-md flex items-center justify-center text-xs font-bold rank-badge text-blue-400">
+                  <div className="relative w-6 h-6 rounded-md flex items-center justify-center text-xs font-bold rank-badge text-blue-400">
                     {i + 1}
                   </div>
-                  {/* Magnitude bar */}
-                  <div
-                    className="w-1 h-8 rounded-full bg-gradient-to-t from-red-600 to-red-400"
-                    style={{ opacity: 0.3 + (Math.abs(stock.change) / 10) * 0.7 }}
-                  />
-                  <span className="font-mono font-semibold text-white text-sm">{stock.symbol}</span>
+                  <span className="relative font-mono font-semibold text-white text-sm">{stock.symbol}</span>
+                  <span className="relative font-mono text-gray-400 text-xs">${stock.price.toFixed(2)}</span>
                   <div className="flex-1" />
-                  <span className="font-mono text-red-400 text-sm font-semibold">{stock.change.toFixed(2)}%</span>
+                  <span className="relative font-mono text-red-400 text-sm font-semibold">{stock.change.toFixed(2)}%</span>
                 </button>
               ))}
             </div>
@@ -3256,9 +3274,30 @@ function MarketOverview({ onSelectStock }) {
 }
 
 // ============ STOCK CHART COMPONENT ============
+// Calculate Simple Moving Average
+function calculateSMA(data, period) {
+  const result = []
+  for (let i = 0; i < data.length; i++) {
+    if (i < period - 1) {
+      result.push(null)
+    } else {
+      let sum = 0
+      for (let j = 0; j < period; j++) {
+        sum += data[i - j].close
+      }
+      result.push(sum / period)
+    }
+  }
+  return result
+}
+
 function StockChart({ symbol, range = '1mo', interval = '1d', onRangeData }) {
   const [chartData, setChartData] = useState([])
   const [loading, setLoading] = useState(true)
+
+  // Determine if we should show SMAs based on range
+  const showSMA50 = ['3mo', '6mo', '1y', '5y'].includes(range)
+  const showSMA200 = ['1y', '5y'].includes(range)
 
   useEffect(() => {
     const fetchChart = async () => {
@@ -3313,6 +3352,17 @@ function StockChart({ symbol, range = '1mo', interval = '1d', onRangeData }) {
           })).filter(d => d.close !== null && d.close !== undefined)
         }
 
+        // Calculate SMAs if we have enough data
+        if (formatted.length > 0) {
+          const sma50 = calculateSMA(formatted, 50)
+          const sma200 = calculateSMA(formatted, 200)
+          formatted = formatted.map((d, i) => ({
+            ...d,
+            sma50: sma50[i],
+            sma200: sma200[i]
+          }))
+        }
+
         console.log('Formatted chart data points:', formatted.length)
         setChartData(formatted)
 
@@ -3354,12 +3404,16 @@ function StockChart({ symbol, range = '1mo', interval = '1d', onRangeData }) {
   const maxPrice = Math.max(...chartData.map(d => d.high || d.close).filter(Boolean))
   const maxVolume = Math.max(...chartData.map(d => d.volume || 0))
 
+  // Check if we have valid SMA data to show
+  const hasSMA50Data = showSMA50 && chartData.some(d => d.sma50 !== null)
+  const hasSMA200Data = showSMA200 && chartData.some(d => d.sma200 !== null)
+
   return (
     <div className="space-y-2">
       {/* Price Chart */}
       <div className="h-48">
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={chartData} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+          <ComposedChart data={chartData} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
             <defs>
               <linearGradient id={`chartGradient-${symbol}`} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={chartColor} stopOpacity={0.3} />
@@ -3385,7 +3439,11 @@ function StockChart({ symbol, range = '1mo', interval = '1d', onRangeData }) {
             <RechartsTooltip
               contentStyle={{ background: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
               labelStyle={{ color: '#9ca3af' }}
-              formatter={(value) => [`$${value?.toFixed(2)}`, 'Price']}
+              formatter={(value, name) => {
+                if (name === 'sma50') return [`$${value?.toFixed(2)}`, '50 SMA']
+                if (name === 'sma200') return [`$${value?.toFixed(2)}`, '200 SMA']
+                return [`$${value?.toFixed(2)}`, 'Price']
+              }}
             />
             <Area
               type="monotone"
@@ -3394,9 +3452,49 @@ function StockChart({ symbol, range = '1mo', interval = '1d', onRangeData }) {
               strokeWidth={2}
               fill={`url(#chartGradient-${symbol})`}
             />
-          </AreaChart>
+            {hasSMA50Data && (
+              <Line
+                type="monotone"
+                dataKey="sma50"
+                stroke="#f59e0b"
+                strokeWidth={1.5}
+                dot={false}
+                strokeDasharray="4 2"
+                connectNulls
+              />
+            )}
+            {hasSMA200Data && (
+              <Line
+                type="monotone"
+                dataKey="sma200"
+                stroke="#8b5cf6"
+                strokeWidth={1.5}
+                dot={false}
+                strokeDasharray="6 3"
+                connectNulls
+              />
+            )}
+          </ComposedChart>
         </ResponsiveContainer>
       </div>
+
+      {/* SMA Legend */}
+      {(hasSMA50Data || hasSMA200Data) && (
+        <div className="flex items-center justify-center gap-4 text-xs">
+          {hasSMA50Data && (
+            <div className="flex items-center gap-1.5">
+              <div className="w-4 h-0.5 bg-amber-500" style={{ borderTop: '2px dashed #f59e0b' }} />
+              <span className="text-gray-400">50 SMA</span>
+            </div>
+          )}
+          {hasSMA200Data && (
+            <div className="flex items-center gap-1.5">
+              <div className="w-4 h-0.5 bg-violet-500" style={{ borderTop: '2px dashed #8b5cf6' }} />
+              <span className="text-gray-400">200 SMA</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Volume Chart */}
       <div className="h-16">
@@ -3415,6 +3513,30 @@ function StockChart({ symbol, range = '1mo', interval = '1d', onRangeData }) {
 }
 
 // ============ INSIDER ACTIVITY COMPONENT ============
+// Classify transaction codes - handles various formats like "S", "S-Sale", "Sale", etc.
+const classifyTransaction = (code) => {
+  if (!code) return 'other'
+  const c = code.toUpperCase()
+  if (c.startsWith('P') || c.includes('PURCHASE')) return 'buy'
+  if (c.startsWith('S') || c.includes('SALE')) return 'sell'
+  if (c.startsWith('M') || c.includes('EXERCISE') || c.includes('EXEMPT')) return 'exercise'
+  if (c.startsWith('F') || c.includes('TAX')) return 'tax'
+  if (c.startsWith('G') || c.includes('GIFT')) return 'gift'
+  return 'other'
+}
+
+const getTransactionDisplay = (code) => {
+  const type = classifyTransaction(code)
+  switch (type) {
+    case 'buy': return { label: 'Buy', color: 'text-green-400', bg: 'bg-green-500/20' }
+    case 'sell': return { label: 'Sell', color: 'text-red-400', bg: 'bg-red-500/20' }
+    case 'exercise': return { label: 'Exercise', color: 'text-blue-400', bg: 'bg-blue-500/20' }
+    case 'tax': return { label: 'Tax', color: 'text-yellow-400', bg: 'bg-yellow-500/20' }
+    case 'gift': return { label: 'Gift', color: 'text-purple-400', bg: 'bg-purple-500/20' }
+    default: return { label: 'Other', color: 'text-gray-400', bg: 'bg-gray-500/20' }
+  }
+}
+
 function InsiderActivity({ symbol }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -3427,6 +3549,7 @@ function InsiderActivity({ symbol }) {
         const response = await fetch(`https://stock-api-proxy-seven.vercel.app/api/finnhub?endpoint=stock/insider-transactions&symbol=${symbol}`)
         if (response.ok) {
           const result = await response.json()
+          console.log('Insider data:', result.data?.slice(0, 3))
           setData(result.data || [])
         } else {
           setData([])
@@ -3458,14 +3581,9 @@ function InsiderActivity({ symbol }) {
   ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90)
   const recentData = data.filter(t => new Date(t.transactionDate) >= ninetyDaysAgo)
 
-  const buys = recentData.filter(t => t.transactionCode === 'P').length
-  const sells = recentData.filter(t => t.transactionCode === 'S').length
-
-  const getTransactionType = (code) => {
-    if (code === 'P') return { label: 'Buy', color: 'text-green-400', bg: 'bg-green-500/20' }
-    if (code === 'S') return { label: 'Sell', color: 'text-red-400', bg: 'bg-red-500/20' }
-    return { label: 'Other', color: 'text-gray-400', bg: 'bg-gray-500/20' }
-  }
+  // Use the same classification function for summary counts
+  const buys = recentData.filter(t => classifyTransaction(t.transactionCode) === 'buy').length
+  const sells = recentData.filter(t => classifyTransaction(t.transactionCode) === 'sell').length
 
   return (
     <div className="rounded-xl bg-gray-700/30 p-4">
@@ -3483,7 +3601,7 @@ function InsiderActivity({ symbol }) {
       {expanded && (
         <div className="mt-4 space-y-2 max-h-60 overflow-y-auto">
           {data.slice(0, 10).map((t, i) => {
-            const type = getTransactionType(t.transactionCode)
+            const type = getTransactionDisplay(t.transactionCode)
             return (
               <div key={i} className="flex items-center justify-between text-xs p-2 rounded-lg bg-gray-800/50">
                 <div className="flex-1 min-w-0">
@@ -3504,6 +3622,124 @@ function InsiderActivity({ symbol }) {
           })}
         </div>
       )}
+    </div>
+  )
+}
+
+// ============ RELATIVE STRENGTH VS SPY ============
+function RelativeStrength({ symbol, range, interval }) {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchComparison = async () => {
+      if (symbol === 'SPY') {
+        setLoading(false)
+        return
+      }
+      setLoading(true)
+      try {
+        // Fetch both stock and SPY data in parallel
+        const [stockData, spyData] = await Promise.all([
+          yahooFetch(symbol, 'chart', { range, interval }),
+          yahooFetch('SPY', 'chart', { range, interval })
+        ])
+
+        // Parse chart data
+        const parseChart = (data) => {
+          if (data && Array.isArray(data.data) && data.data.length > 0) {
+            return data.data.filter(d => d.close !== null)
+          } else if (data?.chart?.result?.[0]) {
+            const result = data.chart.result[0]
+            const timestamps = result.timestamp || []
+            const quotes = result.indicators?.quote?.[0] || {}
+            return timestamps.map((t, i) => ({
+              time: t,
+              close: quotes.close?.[i]
+            })).filter(d => d.close !== null)
+          }
+          return []
+        }
+
+        const stockChart = parseChart(stockData)
+        const spyChart = parseChart(spyData)
+
+        if (stockChart.length >= 2 && spyChart.length >= 2) {
+          const stockStart = stockChart[0].close
+          const stockEnd = stockChart[stockChart.length - 1].close
+          const stockChange = ((stockEnd - stockStart) / stockStart) * 100
+
+          const spyStart = spyChart[0].close
+          const spyEnd = spyChart[spyChart.length - 1].close
+          const spyChange = ((spyEnd - spyStart) / spyStart) * 100
+
+          const relativeStrength = stockChange - spyChange
+
+          setData({
+            stockChange,
+            spyChange,
+            relativeStrength
+          })
+        }
+      } catch (err) {
+        console.error('Relative strength error:', err)
+      }
+      setLoading(false)
+    }
+    fetchComparison()
+  }, [symbol, range, interval])
+
+  if (symbol === 'SPY' || loading || !data) {
+    return null
+  }
+
+  const outperforming = data.relativeStrength > 0
+
+  return (
+    <div className="rounded-xl bg-gray-700/30 p-4">
+      <h3 className="text-sm font-medium text-gray-400 mb-3">Relative Strength vs SPY</h3>
+      <div className="flex items-center gap-4">
+        {/* Stock performance */}
+        <div className="flex-1">
+          <div className="text-xs text-gray-500 mb-1">{symbol}</div>
+          <div className={`font-mono text-lg font-semibold ${data.stockChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+            {data.stockChange >= 0 ? '+' : ''}{data.stockChange.toFixed(2)}%
+          </div>
+        </div>
+        {/* VS indicator */}
+        <div className="text-gray-600 text-xs">vs</div>
+        {/* SPY performance */}
+        <div className="flex-1">
+          <div className="text-xs text-gray-500 mb-1">SPY</div>
+          <div className={`font-mono text-lg font-semibold ${data.spyChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+            {data.spyChange >= 0 ? '+' : ''}{data.spyChange.toFixed(2)}%
+          </div>
+        </div>
+        {/* Relative strength */}
+        <div className={`px-3 py-2 rounded-lg ${outperforming ? 'bg-green-500/20' : 'bg-red-500/20'}`}>
+          <div className="text-xs text-gray-400 mb-0.5">Relative</div>
+          <div className={`font-mono font-bold ${outperforming ? 'text-green-400' : 'text-red-400'}`}>
+            {outperforming ? '+' : ''}{data.relativeStrength.toFixed(2)}%
+          </div>
+        </div>
+      </div>
+      {/* Visual bar */}
+      <div className="mt-3 h-2 bg-gray-800 rounded-full overflow-hidden relative">
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="w-px h-full bg-gray-600" />
+        </div>
+        <div
+          className={`absolute top-0 h-full rounded-full transition-all ${outperforming ? 'bg-green-500' : 'bg-red-500'}`}
+          style={{
+            width: `${Math.min(Math.abs(data.relativeStrength) * 2, 50)}%`,
+            left: outperforming ? '50%' : 'auto',
+            right: outperforming ? 'auto' : '50%'
+          }}
+        />
+      </div>
+      <div className="mt-1 text-xs text-center text-gray-500">
+        {outperforming ? 'Outperforming' : 'Underperforming'} the market
+      </div>
     </div>
   )
 }
@@ -3663,6 +3899,9 @@ function StockDetail({ symbol, onClose }) {
                 </div>
               ) : null
             })()}
+
+            {/* Relative Strength vs SPY */}
+            <RelativeStrength symbol={symbol} range={chartRange} interval={currentRangeOption.interval} />
 
             {/* Insider Activity */}
             <InsiderActivity symbol={symbol} />
