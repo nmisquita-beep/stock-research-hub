@@ -706,7 +706,31 @@ function OnboardingTour({ onComplete, onOpenSearch, setActivePage }) {
       setActivePage(currentStep.tab)
     }
 
-    // Wait for tab to render, then find and highlight element
+    // Retry finding element up to 5 times with increasing delays
+    const findAndHighlight = (attempt = 0) => {
+      const element = document.querySelector(currentStep.target)
+      if (element) {
+        const rect = element.getBoundingClientRect()
+        setHighlightRect({
+          top: rect.top - 6,
+          left: rect.left - 6,
+          width: rect.width + 12,
+          height: rect.height + 12
+        })
+        if (isMobile) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+      } else if (attempt < 5) {
+        setTimeout(() => findAndHighlight(attempt + 1), 300)
+      } else {
+        setHighlightRect(null)
+      }
+    }
+
+    // Delay to allow tab content to render
+    const timeout = setTimeout(() => findAndHighlight(0), 300)
+
+    // Reposition on scroll/resize
     const updateHighlight = () => {
       const element = document.querySelector(currentStep.target)
       if (element) {
@@ -717,21 +741,23 @@ function OnboardingTour({ onComplete, onOpenSearch, setActivePage }) {
           width: rect.width + 12,
           height: rect.height + 12
         })
-        // Scroll element into view on mobile
-        if (isMobile) {
-          element.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        }
-      } else {
-        setHighlightRect(null)
       }
     }
 
-    // Delay to allow tab content to render
-    const timeout = setTimeout(updateHighlight, 150)
     window.addEventListener('resize', updateHighlight)
     window.addEventListener('scroll', updateHighlight)
+
+    // Reposition every 500ms for 2 seconds to catch layout shifts as data loads
+    let repositionCount = 0
+    const repositionInterval = setInterval(() => {
+      updateHighlight()
+      repositionCount++
+      if (repositionCount >= 4) clearInterval(repositionInterval)
+    }, 500)
+
     return () => {
       clearTimeout(timeout)
+      clearInterval(repositionInterval)
       window.removeEventListener('resize', updateHighlight)
       window.removeEventListener('scroll', updateHighlight)
     }
@@ -746,7 +772,7 @@ function OnboardingTour({ onComplete, onOpenSearch, setActivePage }) {
       setTimeout(() => {
         setStep(step + 1)
         setIsAnimating(false)
-      }, 150)
+      }, 200)
     }
   }
 
@@ -756,7 +782,7 @@ function OnboardingTour({ onComplete, onOpenSearch, setActivePage }) {
       setTimeout(() => {
         setStep(step - 1)
         setIsAnimating(false)
-      }, 150)
+      }, 200)
     }
   }
 
@@ -766,7 +792,7 @@ function OnboardingTour({ onComplete, onOpenSearch, setActivePage }) {
   }
 
   return (
-    <div className={`fixed inset-0 z-[200] transition-opacity duration-300 ${isAnimating ? 'opacity-50' : 'opacity-100'}`}>
+    <div className={`fixed inset-0 z-[200] transition-opacity duration-300 ${isAnimating ? 'opacity-80' : 'opacity-100'}`}>
       {/* Semi-transparent overlay - does NOT dismiss on click */}
       <div
         className="absolute inset-0 bg-black/60"
